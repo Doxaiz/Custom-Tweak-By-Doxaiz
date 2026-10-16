@@ -226,8 +226,8 @@ jobs:
         with:
           name: CustomTweakByDoxaiz-win-x64
           path: |
-            dist/CustomTweakByDoxaiz-*.exe
-            dist/CustomTweakByDoxaiz-*-win-x64.zip
+            dist/*.exe
+            dist/*.zip
             dist/SHA256SUMS.txt
           if-no-files-found: error
 
@@ -271,6 +271,6 @@ jobs:
             «Подробнее» → «Выполнить в любом случае». Подпись появится, когда будет сертификат.
           # Имена без номера версии: следующий релиз не потребует править этот список.
           files: |
-            dist/CustomTweakByDoxaiz-*.exe
-            dist/CustomTweakByDoxaiz-*-win-x64.zip
+            dist/*.exe
+            dist/*.zip
             dist/SHA256SUMS.txt
