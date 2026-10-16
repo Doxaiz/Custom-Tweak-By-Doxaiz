@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 <#
     Снятие службы Custom Tweak By Doxaiz.
 

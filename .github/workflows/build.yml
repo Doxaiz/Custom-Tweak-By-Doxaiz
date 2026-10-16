@@ -164,7 +164,21 @@ jobs:
 
           Write-Host '── Служба'
           $service = Get-Service -Name PingForge -ErrorAction SilentlyContinue
-          if (-not $service) { throw 'Служба PingForge не зарегистрирована' }
+          if (-not $service) {
+            $log = Join-Path $installDir 'install-service.log'
+            if (Test-Path $log) {
+              Write-Host '── Журнал установки службы:'
+              Get-Content $log | Select-Object -Last 80
+            } else {
+              Write-Host "Журнала регистрации нет: $log"
+            }
+
+            Write-Host '── Повторяю регистрацию вручную, с выводом на экран'
+            & (Join-Path $installDir 'install-service.ps1') -NoShortcut
+            Write-Host "код возврата скрипта: $LASTEXITCODE"
+
+            throw 'Служба PingForge не зарегистрирована'
+          }
           (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(90))
           Write-Host "  Служба работает: $((Get-Service -Name PingForge).Status)"
 

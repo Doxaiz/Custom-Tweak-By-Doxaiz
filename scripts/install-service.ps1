@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 <#
     Установка службы Custom Tweak By Doxaiz.
 
@@ -121,15 +121,41 @@ $binaryPath = '"' + $servicePath + '"'
 $displayName = 'PingForge (Custom Tweak By Doxaiz)'
 $description = 'Оптимизация соединения для игр: маршрут до игрового сервера, приоритет пакетов, твики Windows. Служба работает от LocalSystem и принимает команды от окна программы.'
 
-New-Service -Name $ServiceName -BinaryPathName $binaryPath -DisplayName $displayName `
-    -Description $description -StartupType Automatic | Out-Null
-Ok "Служба зарегистрирована, запуск: автоматически."
+# Описание службы передаём, только если эта версия PowerShell его умеет: у старых
+# Windows PowerShell параметра -Description у New-Service может не быть, а падать
+# из-за подписи к службе нельзя.
+$newService = @{
+    Name           = $ServiceName
+    BinaryPathName = $binaryPath
+    DisplayName    = $displayName
+    StartupType    = 'Automatic'
+}
+if ((Get-Command New-Service).Parameters.ContainsKey('Description')) {
+    $newService['Description'] = $description
+}
+
+try {
+    New-Service @newService -ErrorAction Stop | Out-Null
+} catch {
+    Fail "Не удалось зарегистрировать службу: $($_.Exception.Message)"
+    Fail "Вручную то же самое: sc.exe create $ServiceName binPath= `"$servicePath`" start= auto"
+    exit 1
+}
+Ok 'Служба зарегистрирована, запуск: автоматически.'
 
 # Перезапуск при сбое: три попытки с минутой между ними. Служба не должна «умереть молча».
 sc.exe failure $ServiceName reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
 Ok 'Настроен перезапуск при сбое (3 попытки).'
 
-Start-Service -Name $ServiceName
+try {
+    Start-Service -Name $ServiceName -ErrorAction Stop
+} catch {
+    Fail "Служба зарегистрирована, но не запустилась: $($_.Exception.Message)"
+    Say '  Что говорит Windows:'
+    sc.exe query $ServiceName | ForEach-Object { Say "    $_" }
+    exit 1
+}
+
 Start-Sleep -Seconds 3
 $state = (Get-Service -Name $ServiceName).Status
 if ($state -eq 'Running') {

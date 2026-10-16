@@ -185,14 +185,16 @@ Section "Служба PingForge (регистрируется и запуска�
   DetailPrint "Регистрирую службу ${SERVICE_NAME}…"
 
   ; Тот же скрипт, что лежит в архиве: одна логика на всех, а не две разные.
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\install-service.ps1" -NoShortcut'
+  ; Вывод уходит в файл рядом с программой: если служба не встанет, будет что показать
+  ; человеку и проверке на сборочной машине, а не пустое окно.
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Transcript -Path $\'$INSTDIR\install-service.log$\' -Force | Out-Null; try { & $\'$INSTDIR\install-service.ps1$\' -NoShortcut; $code = $LASTEXITCODE } catch { $_ | Out-String | Write-Host; $code = 1 } finally { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }; exit $code"'
   Pop $0
 
   ${If} $0 != "0"
     DetailPrint "Служба не зарегистрировалась, код возврата: $0"
     ${IfNot} ${Silent}
       MessageBox MB_ICONEXCLAMATION \
-        "Служба не зарегистрировалась (код $0).$\r$\n$\r$\nПрограмма установится и запустится, но менять настройки не сможет: для этого нужна служба.$\r$\nПопробуйте запустить install-service.ps1 из папки установки от имени администратора."
+        "Служба не зарегистрировалась (код $0).$\r$\n$\r$\nПрограмма установится и запустится, но менять настройки не сможет: для этого нужна служба.$\r$\nЧто именно случилось — в файле install-service.log рядом с программой.$\r$\nПопробуйте запустить install-service.ps1 из папки установки от имени администратора."
     ${EndIf}
   ${Else}
     DetailPrint "Служба ${SERVICE_NAME} зарегистрирована и запущена."
@@ -229,7 +231,7 @@ Section "Uninstall"
 
   DetailPrint "Снимаю службу ${SERVICE_NAME}…"
   ; -KeepFiles: файлы удалит сам установщик, а данные (журнал и снапшоты) не трогаем.
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\uninstall-service.ps1" -KeepFiles'
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Transcript -Path $\'$INSTDIR\uninstall-service.log$\' -Force | Out-Null; try { & $\'$INSTDIR\uninstall-service.ps1$\' -KeepFiles; $code = $LASTEXITCODE } catch { $_ | Out-String | Write-Host; $code = 1 } finally { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }; exit $code"'
   Pop $0
 
   DetailPrint "Удаляю файлы программы…"
@@ -238,6 +240,8 @@ Section "Uninstall"
   Delete "$INSTDIR\install-service.ps1"
   Delete "$INSTDIR\uninstall-service.ps1"
   Delete "$INSTDIR\${DOC_NAME}"
+  Delete "$INSTDIR\install-service.log"
+  Delete "$INSTDIR\uninstall-service.log"
   Delete "$INSTDIR\*.dll"
   Delete "$INSTDIR\*.json"
   Delete "$INSTDIR\Uninstall.exe"
