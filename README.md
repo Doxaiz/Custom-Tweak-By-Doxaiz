@@ -7,6 +7,23 @@
 `PingForge` — рабочее (внутреннее) имя решения. Продуктовое имя в интерфейсе — **Custom Tweak By Doxaiz**
 (см. `docs/NAMING.md`).
 
+## Скачать
+
+Готовые файлы лежат в разделе **[Releases](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/latest)**.
+Вот что забирать в каждом случае:
+
+| Файл | Что это | Размер |
+|---|---|---:|
+| [**`CustomTweakByDoxaiz-Setup-0.2.0.exe`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/download/v0.2.0/CustomTweakByDoxaiz-Setup-0.2.0.exe) | **установщик** — обычный случай: ставит программу в `Program Files`, регистрирует и запускает службу, делает ярлыки, появляется в «Программах и компонентах» | 96,6 МБ |
+| [**`CustomTweakByDoxaiz-0.2.0.exe`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/download/v0.2.0/CustomTweakByDoxaiz-0.2.0.exe) | **готовая программа одним файлом** — скачал и запустил, ставить ничего не нужно | 73,3 МБ |
+| [**`CustomTweakByDoxaiz.Service-0.2.0.exe`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/download/v0.2.0/CustomTweakByDoxaiz.Service-0.2.0.exe) | **служба отдельным файлом** — без неё программе нечем менять настройки Windows | 37,2 МБ |
+| [**все файлы релиза `v0.2.0`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/latest) | ещё два архива (автономный и компактный) и `SHA256SUMS.txt` — контрольные суммы | — |
+
+Репозиторий приватный, поэтому прямая ссылка открывается **под своим аккаунтом GitHub** (в браузере,
+где вы вошли). Если ссылка всё же отвечает «404» — откройте страницу
+[Releases](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/latest) и щёлкните файл в разделе
+«Assets»; для машин без браузера есть команда `gh release download v0.2.0`.
+
 ## Что уже сделано
 
 | | |
