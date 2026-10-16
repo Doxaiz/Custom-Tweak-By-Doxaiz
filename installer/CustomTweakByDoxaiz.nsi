@@ -100,15 +100,22 @@ Function .onInit
   SetRegView 64
 
   ${IfNot} ${RunningX64}
-    MessageBox MB_ICONSTOP "Нужна 64-разрядная Windows 10 или 11: программа работает в 64-разрядном виде."
+    ; В тихом режиме окошко показывать некому — там просто отказ, без зависшего вопроса.
+    ${IfNot} ${Silent}
+      MessageBox MB_ICONSTOP "Нужна 64-разрядная Windows 10 или 11: программа работает в 64-разрядном виде."
+    ${EndIf}
     Abort
   ${EndIf}
 
   ; Программу перед установкой закрываем: иначе Windows не даст заменить файлы.
-  IfSilent +2 0
+  ; Прыжки — только по меткам: относительные здесь считать нельзя, «+2» от IfSilent
+  ; попадает не на ту инструкцию и в тихом режиме установка отменяла сама себя.
+  IfSilent on_init_quiet
   MessageBox MB_OKCANCEL|MB_ICONINFORMATION \
-    "Установка закроет программу, если она сейчас открыта. Продолжить?" IDOK +2
+    "Установка закроет программу, если она сейчас открыта. Продолжить?" IDOK on_init_quiet
   Abort
+
+on_init_quiet:
 FunctionEnd
 
 ; ── файлы программы ─────────────────────────────────────────────────────────────────────────────────
@@ -198,11 +205,13 @@ SectionEnd
 Function un.onInit
   SetRegView 64
 
-  IfSilent +2 0
+  IfSilent un_init_quiet
   MessageBox MB_OKCANCEL|MB_ICONQUESTION \
     "Удалить ${APP_NAME}?$\r$\n$\r$\nСлужба ${SERVICE_NAME} будет снята, файлы программы удалены. Журнал и снапшоты в папке данных по умолчанию остаются." \
-    IDOK +2
+    IDOK un_init_quiet
   Abort
+
+un_init_quiet:
 FunctionEnd
 
 Section "Uninstall"
