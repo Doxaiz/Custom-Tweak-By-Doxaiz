@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <!-- Значок в трее и его меню — из WinForms: это штатный способ, он не тянет сторонних библиотек. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>PingForge.App</RootNamespace>
+    <AssemblyName>CustomTweakByDoxaiz</AssemblyName>
+    <!-- Имя изделия в интерфейсе, в свойствах файла и в окне «О программе». -->
+    <Product>Custom Tweak By Doxaiz</Product>
+    <AssemblyTitle>Custom Tweak By Doxaiz</AssemblyTitle>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms нужен только для значка в трее. Неявный using из него убираем: иначе UserControl
+         и Application неоднозначны, и компилятор справедливо ругается. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PingForge.App.ViewModels\PingForge.App.ViewModels.csproj" />
+    <ProjectReference Include="..\PingForge.Core\PingForge.Core.csproj" />
+    <ProjectReference Include="..\PingForge.Service\PingForge.Service.csproj" />
+    <ProjectReference Include="..\PingForge.Orchestration\PingForge.Orchestration.csproj" />
+    <ProjectReference Include="..\PingForge.Tweaks\PingForge.Tweaks.csproj" />
+  </ItemGroup>
+
+</Project>

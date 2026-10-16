@@ -1,0 +1,19 @@
+<Solution>
+  <Project Path="src/PingForge.Core/PingForge.Core.csproj" />
+  <Project Path="src/PingForge.Data/PingForge.Data.csproj" />
+  <Project Path="src/PingForge.Probing/PingForge.Probing.csproj" />
+    <Project Path="src/PingForge.Analysis/PingForge.Analysis.csproj" />
+  <Project Path="src/PingForge.Routing/PingForge.Routing.csproj" />
+  <Project Path="src/PingForge.Tweaks/PingForge.Tweaks.csproj" />
+  <Project Path="src/PingForge.Tweaks.Windows/PingForge.Tweaks.Windows.csproj" />
+  <Project Path="src/PingForge.Orchestration/PingForge.Orchestration.csproj" />
+  <Project Path="src/PingForge.Service/PingForge.Service.csproj" />
+  <Project Path="src/PingForge.Service.Windows/PingForge.Service.Windows.csproj" />
+  <Project Path="src/PingForge.Service.Host/PingForge.Service.Host.csproj" />
+  <Project Path="src/PingForge.App.ViewModels/PingForge.App.ViewModels.csproj" />
+  <Project Path="src/PingForge.App/PingForge.App.csproj" />
+  <Project Path="src/PingForge.Network/PingForge.Network.csproj" />
+  <Project Path="src/PingForge.Network.Windows/PingForge.Network.Windows.csproj" />
+  <Project Path="tools/PingForge.CatalogDump/PingForge.CatalogDump.csproj" />
+  <Project Path="tests/PingForge.Tests/PingForge.Tests.csproj" />
+</Solution>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>PingForge.Probing</AssemblyName>
+    <RootNamespace>PingForge.Probing</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PingForge.Core\PingForge.Core.csproj" />
+  </ItemGroup>
+
+</Project>

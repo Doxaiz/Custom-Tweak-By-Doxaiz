@@ -1,0 +1,53 @@
+<UserControl x:Class="PingForge.App.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel>
+    <TextBlock Style="{StaticResource Title}" Text="Настройки" />
+
+    <!-- Конфиг живёт здесь, в «Настройках», и путь к файлу виден сразу. -->
+    <Border Style="{StaticResource Card}">
+      <StackPanel>
+        <TextBlock Text="Файл настроек" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding SettingsFilePath}" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
+                   Text="Конфиг лежит рядом с базой службы. Его можно перенести на другой компьютер — тогда настройки переедут вместе с ним." />
+      </StackPanel>
+    </Border>
+
+    <Border Style="{StaticResource Card}">
+      <StackPanel>
+        <TextBlock Text="Профиль потребления ресурсов" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
+                   Text="Программа не должна мешать играть. Профиль задаёт, как часто она позволяет себе обращаться к системе." />
+
+        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+          <RadioButton x:Name="ProfileEconomy" GroupName="Profile" Content="Экономно" Margin="0,0,16,0"
+                       Foreground="{StaticResource Text}" Checked="ProfileEconomyChecked" />
+          <RadioButton x:Name="ProfileBalanced" GroupName="Profile" Content="Обычно" Margin="0,0,16,0"
+                       Foreground="{StaticResource Text}" Checked="ProfileBalancedChecked" />
+          <RadioButton x:Name="ProfileMax" GroupName="Profile" Content="Максимум реакции"
+                       Foreground="{StaticResource Text}" Checked="ProfileMaxChecked" />
+        </StackPanel>
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0" Text="{Binding ProfileNoteRu}" />
+        <Button Style="{StaticResource PrimaryButton}" Padding="16,9" Content="Применить профиль"
+                Command="{Binding ApplyProfileCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" />
+      </StackPanel>
+    </Border>
+
+    <Border Style="{StaticResource Card}">
+      <StackPanel>
+        <TextBlock Text="Поведение окна" FontWeight="SemiBold" />
+        <CheckBox Margin="0,10,0,0" Foreground="{StaticResource Text}" IsChecked="{Binding OfferRestorePoint}"
+                  Content="Предлагать точку восстановления Windows перед изменениями" />
+        <CheckBox Margin="0,6,0,0" Foreground="{StaticResource Text}" IsChecked="{Binding CloseToTray}"
+                  Content="Закрывать окно в трей, а не выходить из программы" />
+      </StackPanel>
+    </Border>
+
+    <StackPanel Orientation="Horizontal">
+      <Button Style="{StaticResource PrimaryButton}" Padding="16,9" Content="Сохранить настройки" Command="{Binding SaveCommand}" Margin="0,0,12,0" />
+      <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" MaxWidth="560" Text="{Binding StatusRu}" />
+    </StackPanel>
+  </StackPanel>
+</UserControl>

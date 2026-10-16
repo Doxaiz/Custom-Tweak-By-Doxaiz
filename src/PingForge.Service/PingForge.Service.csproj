@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PingForge.Service</RootNamespace>
+    <AssemblyName>PingForge.Service</AssemblyName>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PingForge.Core\PingForge.Core.csproj" />
+    <ProjectReference Include="..\PingForge.Data\PingForge.Data.csproj" />
+    <ProjectReference Include="..\PingForge.Orchestration\PingForge.Orchestration.csproj" />
+  </ItemGroup>
+
+</Project>

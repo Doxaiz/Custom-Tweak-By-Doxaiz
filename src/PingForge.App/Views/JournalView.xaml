@@ -1,0 +1,32 @@
+<UserControl x:Class="PingForge.App.Views.JournalView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel>
+    <TextBlock Style="{StaticResource Title}" Text="Журнал и возврат" />
+    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,10"
+               Text="Что программа меняла, что подтвердила система и что можно вернуть одной кнопкой." />
+
+    <Border Style="{StaticResource Card}">
+      <StackPanel>
+        <StackPanel Orientation="Horizontal">
+          <Button Style="{StaticResource GhostButton}" Content="Обновить журнал" Command="{Binding RefreshCommand}" Margin="0,0,8,0" />
+          <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" Text="{Binding SummaryRu}" />
+        </StackPanel>
+        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" Text="{Binding StatusRu}" />
+      </StackPanel>
+    </Border>
+
+    <ItemsControl ItemsSource="{Binding Rows}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Border Style="{StaticResource Card}">
+            <StackPanel>
+              <TextBlock Text="{Binding LineRu}" />
+              <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding StatusRu}" />
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

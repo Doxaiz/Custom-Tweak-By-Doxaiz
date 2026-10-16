@@ -1,0 +1,152 @@
+<Application x:Class="PingForge.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+  <Application.Resources>
+    <ResourceDictionary>
+      <!-- Тёмная тема: цвета те же, что в витрине (docs/custom-tweak-by-doxaiz.html), чтобы макет и программа выглядели одинаково. -->
+      <Color x:Key="BgColor">#0B1120</Color>
+      <Color x:Key="PanelColor">#111A2B</Color>
+      <Color x:Key="LineColor">#1E2A42</Color>
+      <Color x:Key="TextColor">#E6EDF7</Color>
+      <Color x:Key="MutedColor">#8FA0BD</Color>
+      <Color x:Key="AccentColor">#4ADE80</Color>
+      <Color x:Key="Accent2Color">#38BDF8</Color>
+
+      <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />
+      <SolidColorBrush x:Key="Panel" Color="{StaticResource PanelColor}" />
+      <SolidColorBrush x:Key="Line" Color="{StaticResource LineColor}" />
+      <SolidColorBrush x:Key="Text" Color="{StaticResource TextColor}" />
+      <SolidColorBrush x:Key="Muted" Color="{StaticResource MutedColor}" />
+      <SolidColorBrush x:Key="Accent" Color="{StaticResource AccentColor}" />
+      <SolidColorBrush x:Key="Accent2" Color="{StaticResource Accent2Color}" />
+
+      <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="{StaticResource AccentColor}" Offset="0" />
+        <GradientStop Color="{StaticResource Accent2Color}" Offset="1" />
+      </LinearGradientBrush>
+
+      <Style TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+      </Style>
+
+      <Style x:Key="Title" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Margin" Value="0,0,0,10" />
+      </Style>
+
+      <Style x:Key="Caption" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource Muted}" />
+        <Setter Property="FontSize" Value="12" />
+      </Style>
+
+      <Style x:Key="Card" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource Panel}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Padding" Value="14" />
+        <Setter Property="Margin" Value="0,0,0,10" />
+      </Style>
+
+      <Style x:Key="PrimaryButton" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource AccentGradient}" />
+        <Setter Property="Foreground" Value="#04101F" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Padding" Value="22,12" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="Button">
+              <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Chrome" Property="Opacity" Value="0.9" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter TargetName="Chrome" Property="Opacity" Value="0.45" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <Style x:Key="GhostButton" TargetType="Button">
+        <Setter Property="Background" Value="#182338" />
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="Button">
+              <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <Style x:Key="NavButton" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource Muted}" />
+        <Setter Property="Padding" Value="12,9" />
+        <Setter Property="Margin" Value="0,0,0,4" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="RadioButton">
+              <Border x:Name="Chrome" Background="Transparent" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                  <Setter TargetName="Chrome" Property="Background" Value="#16223A" />
+                  <Setter Property="Foreground" Value="{StaticResource Text}" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Chrome" Property="Background" Value="#141F33" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Переключатель твика: то самое «красивое» вкл/выкл из требований. -->
+      <Style x:Key="ToggleSwitch" TargetType="CheckBox">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="CheckBox">
+              <Grid Width="44" Height="25">
+                <Border x:Name="Track" Background="#1B2740" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="999" />
+                <Ellipse x:Name="Knob" Width="17" Height="17" Fill="#8FA0BD" HorizontalAlignment="Left" Margin="4,0,0,0" />
+              </Grid>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                  <Setter TargetName="Track" Property="Background" Value="{StaticResource AccentGradient}" />
+                  <Setter TargetName="Track" Property="BorderBrush" Value="Transparent" />
+                  <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+                  <Setter TargetName="Knob" Property="Margin" Value="0,0,4,0" />
+                  <Setter TargetName="Knob" Property="Fill" Value="#04101F" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

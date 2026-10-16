@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custom Tweak By Doxaiz — как выглядит программа</title>
+<style>
+
+:root{
+  --bg:#0a0e17;--panel:#0f1523;--card:#131b2b;--line:#1e2941;--line2:#2a3a58;
+  --text:#e8eefc;--muted:#9fb0cc;--dim:#7b8aa6;--accent:#38bdf8;--accent2:#4ade80;
+  --warn:#fbbf24;--bad:#f87171;--radius:14px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(1200px 600px at 15% -10%,#132038,#0a0e17 60%);color:var(--text);
+  font:14px/1.5 "Segoe UI",Roboto,system-ui,-apple-system,sans-serif;padding:24px}
+a{color:var(--accent);text-decoration:none}
+code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12px;color:#cfe0f5}
+.dim{color:var(--dim)}
+.small{font-size:12.5px}
+.mono{font-family:"Cascadia Mono",Consolas,monospace}
+.grow{flex:1}
+
+.win{max-width:1180px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:18px;
+  overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.bar{display:flex;align-items:center;gap:12px;padding:11px 16px;background:#0c1220;border-bottom:1px solid var(--line)}
+.dots{display:flex;gap:6px}.dots i{width:10px;height:10px;border-radius:50%;background:#22304a;display:block}
+.dots i:first-child{background:#3b4a68}
+.brand{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.name{font-weight:650;font-size:15px}
+
+.chip{display:inline-flex;align-items:center;gap:6px;background:#131c2c;border:1px solid var(--line);
+  border-radius:999px;padding:4px 10px;font-size:12px;color:var(--muted)}
+.chip.tiny{padding:1px 7px;font-size:11px}
+.chip.ok{color:var(--accent2);border-color:#1f4034}
+.chip.live{color:var(--accent2);border-color:#1f4034}
+.chip .dot{width:7px;height:7px;border-radius:50%;background:var(--accent2);display:block}
+.chip.free{color:var(--accent2)}
+
+.body{display:grid;grid-template-columns:186px 1fr;min-height:560px}
+nav.side{display:flex;flex-direction:column;gap:2px;padding:14px 10px;background:#0c1220;border-right:1px solid var(--line)}
+nav.side label{padding:9px 11px;border-radius:10px;color:var(--muted);font-size:13.5px;cursor:pointer;display:block}
+nav.side label:hover{background:#121a2b;color:var(--text)}
+.side-foot{margin-top:auto;padding:12px 10px 4px;font-size:12px;border-top:1px solid var(--line)}
+
+.content{padding:20px 22px 26px;max-width:100%}
+h1{font-size:21px;margin:0 0 14px}
+h2.grp{font-size:14px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+  margin:22px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:baseline}
+h2.grp .count{font-size:12px;color:var(--dim);letter-spacing:0}
+h2.grp.f-ping{border-color:#22506e}h2.grp.f-speed{border-color:#1f4c33}
+h2.grp.f-fps{border-color:#3b2f5e}h2.grp.f-input{border-color:#5a4a1c}
+
+.page{display:none}
+.state{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.state:focus-visible ~ .body{outline:none}
+
+.hero{display:flex;gap:20px;align-items:center;flex-wrap:wrap;background:linear-gradient(150deg,#152036,#101725);
+  border:1px solid var(--line2);border-radius:16px;padding:18px 20px}
+.pb{flex:0 0 auto;border:0;cursor:pointer;font:700 15px/1 inherit;color:#04101f;padding:20px 26px;border-radius:999px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 12px 30px rgba(56,189,248,.25)}
+.hero-text{flex:1 1 320px;min-width:280px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px}
+.stat{background:#0f1725;border:1px solid var(--line);border-radius:12px;padding:9px 11px}
+.stat b{display:block;font-size:17px}
+.stat span{font-size:11.5px;color:var(--dim)}
+.stat.good b{color:var(--accent2)}
+
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin:16px 0 6px}
+.chart{margin:0;background:#0d1420;border:1px solid var(--line);border-radius:14px;padding:10px 12px 6px}
+.chart figcaption{font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.chart svg{width:100%;height:auto;display:block}
+.ax{fill:#6f7f9c;font-size:10px}
+.legend{display:flex;gap:14px;font-size:11.5px;color:var(--dim)}
+.legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+
+.acts{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.acts li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 13px;font-size:13.5px}
+.acts li span{display:block;margin-top:2px}
+
+.inds{display:flex;flex-wrap:wrap;gap:7px}
+.ind{display:inline-flex;gap:6px;align-items:baseline;background:#0f1725;border:1px solid var(--line);
+  border-radius:9px;padding:5px 9px;font-size:12.5px}
+.ind-t{font-weight:600}
+.ind-u{color:var(--dim);font-size:11.5px}
+.row.presets{gap:8px;margin-bottom:6px}
+
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.btn{background:#182338;border:1px solid var(--line2);color:var(--text);border-radius:11px;padding:9px 14px;
+  font:600 13.5px/1.2 inherit;cursor:pointer}
+.btn:hover{border-color:#3b527d}
+.btn.ghost{background:transparent}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#2ea8e6);border-color:transparent;color:#04101f}
+.btn.small{padding:7px 11px;font-size:12.5px;font-weight:500}
+.btn.tiny{padding:4px 9px;font-size:12px;border-radius:8px}
+.btn.big{padding:12px 20px;font-size:14.5px;display:inline-block}
+.seg-title{font-size:12px;color:var(--dim);letter-spacing:.06em;text-transform:uppercase}
+.seg-group{display:flex;gap:6px;flex-wrap:wrap}
+label.seg{display:inline-flex;gap:7px;align-items:center;background:#131c2c;border:1px solid var(--line);
+  border-radius:10px;padding:7px 11px;font-size:12.5px;color:var(--muted);cursor:pointer}
+label.seg:hover{border-color:var(--line2);color:var(--text)}
+label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:11.5px;color:var(--accent)}
+.toolbar{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:10px 12px}
+.search{background:#0d1524;border:1px solid var(--line2);border-radius:10px;color:var(--text);
+  padding:9px 12px;font:13.5px inherit;min-width:220px}
+
+.tw{position:relative;display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--line);
+  border-radius:13px;padding:12px 14px;margin:8px 0;border-left:3px solid #2b3a57}
+.tw.f-ping{border-left-color:#38bdf8}.tw.f-speed{border-left-color:#4ade80}
+.tw.f-fps{border-left-color:#a78bfa}.tw.f-input{border-left-color:#fbbf24}.tw.f-system{border-left-color:#64748b}
+.tw-main{flex:1;min-width:0}
+.tw-head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.tw-title{font-weight:640;font-size:14.5px}
+.tw-sub{margin:3px 0 0;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+.v{font-size:12px;font-weight:650}
+.v-yes{color:var(--accent2)}.v-maybe{color:var(--accent)}.v-care{color:var(--warn)}.v-no{color:var(--bad)}
+.tw-more{margin-top:6px;border-top:1px dashed var(--line);padding-top:6px}
+.tw-more summary{cursor:pointer;color:var(--dim);font-size:12.5px}
+.tw-more p{font-size:13px;color:var(--muted);margin:7px 0 0;overflow-wrap:anywhere}
+.meta{font-size:12px}
+.ok{color:var(--accent2)}
+
+.sw{position:relative;width:44px;height:25px;flex:0 0 44px;margin-top:2px;display:inline-block}
+.sw input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.sw .sl{position:absolute;inset:0;background:#1b2740;border:1px solid var(--line2);border-radius:999px;transition:.15s}
+.sw .sl::before{content:"";position:absolute;width:17px;height:17px;left:4px;top:3px;border-radius:50%;background:#8fa0bd;transition:.15s}
+.sw input:checked + .sl{background:linear-gradient(135deg,var(--accent2),#38bdf8);border-color:transparent}
+.sw input:checked + .sl::before{transform:translateX(19px);background:#04101f}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px;font-size:13px}
+.chip.card{display:flex;flex-direction:column;align-items:flex-start;gap:3px;border-radius:12px;padding:10px 12px}
+.card.prof b{display:block;margin-bottom:3px}
+.card.prof span{display:block;font-size:12px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);
+  padding:6px 8px;border-bottom:1px solid var(--line2)}
+.tbl td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.pick{display:inline-flex;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);
+  border-radius:10px;padding:8px 12px;font-size:13.5px}
+#settings .pick{display:flex;margin:6px 0;background:transparent;border:0;padding:2px 0}
+.tray-wrap{display:grid;grid-template-columns:minmax(220px,260px) 1fr;gap:16px;align-items:start}
+.tray{background:#0d1524;border:1px solid var(--line2);border-radius:13px;padding:11px 13px;font-size:13px}
+.tray b{font-size:12.5px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.tray ul{list-style:none;margin:8px 0 0;padding:0}
+.tray li{padding:6px 2px;border-top:1px solid var(--line)}
+.support{text-align:center;padding:22px}
+.support p{margin:0 0 12px;color:var(--muted)}
+.foot{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between;align-items:center;
+  padding:11px 16px;border-top:1px solid var(--line);background:#0c1220;font-size:12.5px}
+#settings .row{margin-top:14px}
+@media(max-width:900px){.body{grid-template-columns:1fr}nav.side{flex-direction:row;flex-wrap:wrap;border-right:0;
+  border-bottom:1px solid var(--line)}.side-foot{display:none}.tray-wrap{grid-template-columns:1fr}}
+@media(max-width:640px){body{padding:10px}h1{font-size:19px}.tw{flex-direction:row;gap:10px}
+  .bar{flex-wrap:wrap;gap:8px;padding:10px 12px}.grow{display:none}
+  .name{font-size:14px;white-space:nowrap}.chip.dim{margin-left:auto;order:4}.chip.live{order:5}
+  .bar .btn.small{order:6;flex:1 1 100%;text-align:center}}
+
+#nav-optimize:checked ~ .body #page-optimize{display:block}
+#nav-tweaks:checked ~ .body #page-tweaks{display:block}
+#nav-routes:checked ~ .body #page-routes{display:block}
+#nav-journal:checked ~ .body #page-journal{display:block}
+#nav-tray:checked ~ .body #page-tray{display:block}
+#nav-settings:checked ~ .body #page-settings{display:block}
+#nav-support:checked ~ .body #page-support{display:block}
+#nav-optimize:checked ~ .body nav label[for="nav-optimize"]{background:#182338;color:#e8eefc}
+#nav-tweaks:checked ~ .body nav label[for="nav-tweaks"]{background:#182338;color:#e8eefc}
+#nav-routes:checked ~ .body nav label[for="nav-routes"]{background:#182338;color:#e8eefc}
+#nav-journal:checked ~ .body nav label[for="nav-journal"]{background:#182338;color:#e8eefc}
+#nav-tray:checked ~ .body nav label[for="nav-tray"]{background:#182338;color:#e8eefc}
+#nav-settings:checked ~ .body nav label[for="nav-settings"]{background:#182338;color:#e8eefc}
+#nav-support:checked ~ .body nav label[for="nav-support"]{background:#182338;color:#e8eefc}
+#nav-optimize:focus-visible ~ .body nav label[for="nav-optimize"]{outline:2px solid var(--accent);outline-offset:1px}
+#nav-tweaks:focus-visible ~ .body nav label[for="nav-tweaks"]{outline:2px solid var(--accent);outline-offset:1px}
+#nav-routes:focus-visible ~ .body nav label[for="nav-routes"]{outline:2px solid var(--accent);outline-offset:1px}
+#nav-journal:focus-visible ~ .body nav label[for="nav-journal"]{outline:2px solid var(--accent);outline-offset:1px}
+#nav-tray:focus-visible ~ .body nav label[for="nav-tray"]{outline:2px solid var(--accent);outline-offset:1px}
+#nav-settings:focus-visible ~ .body nav label[for="nav-settings"]{outline:2px solid var(--accent);outline-offset:1px}
+#nav-support:focus-visible ~ .body nav label[for="nav-support"]{outline:2px solid var(--accent);outline-offset:1px}
+#ps-low:checked ~ .body .tw:not(.in-low){opacity:.3}
+#ps-speed:checked ~ .body .tw:not(.in-speed){opacity:.3}
+#ps-fps:checked ~ .body .tw:not(.in-fps){opacity:.3}
+#ps-low:checked ~ .body .tw.in-low{box-shadow:0 0 0 1px #2ea8e6 inset}
+#ps-speed:checked ~ .body .tw.in-speed{box-shadow:0 0 0 1px #2ea8e6 inset}
+#ps-fps:checked ~ .body .tw.in-fps{box-shadow:0 0 0 1px #2ea8e6 inset}
+#ps-all:checked ~ .body label[for="ps-all"]{background:#1b2a44;color:var(--text)}
+#ps-low:checked ~ .body label[for="ps-low"]{background:#1b2a44;color:var(--text)}
+#ps-speed:checked ~ .body label[for="ps-speed"]{background:#1b2a44;color:var(--text)}
+#ps-fps:checked ~ .body label[for="ps-fps"]{background:#1b2a44;color:var(--text)}
+#sel-all:checked ~ .body .tw .sl{background:linear-gradient(135deg,var(--accent2),#38bdf8);border-color:transparent}
+#sel-all:checked ~ .body .tw .sl::before{transform:translateX(19px);background:#04101f}
+#sel-none:checked ~ .body .tw .sl{background:#1b2740;border-color:var(--line2)}
+#sel-none:checked ~ .body .tw .sl::before{transform:none;background:#8fa0bd}
+#sel-all:checked ~ .body .tw .sw input,#sel-none:checked ~ .body .tw .sw input{pointer-events:none}
+#sel-rec:checked ~ .body label[for="sel-rec"]{background:#1b2a44;color:var(--text)}
+#sel-all:checked ~ .body label[for="sel-all"]{background:#1b2a44;color:var(--text)}
+#sel-none:checked ~ .body label[for="sel-none"]{background:#1b2a44;color:var(--text)}
+</style>
+</head>
+<body>
+
+<div class="win">
+  <input class="state" type="radio" name="nav" id="nav-optimize" checked><input class="state" type="radio" name="nav" id="nav-tweaks"><input class="state" type="radio" name="nav" id="nav-routes"><input class="state" type="radio" name="nav" id="nav-journal"><input class="state" type="radio" name="nav" id="nav-tray"><input class="state" type="radio" name="nav" id="nav-settings"><input class="state" type="radio" name="nav" id="nav-support">
+  <input class="state" type="radio" name="ps" id="ps-all" checked><input class="state" type="radio" name="ps" id="ps-low"><input class="state" type="radio" name="ps" id="ps-speed"><input class="state" type="radio" name="ps" id="ps-fps">
+  <input class="state" type="radio" name="sel" id="sel-rec" checked><input class="state" type="radio" name="sel" id="sel-all"><input class="state" type="radio" name="sel" id="sel-none">
+
+  <header class="bar">
+    <span class="dots"><i></i><i></i><i></i></span>
+    <span class="brand">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#04101f" stroke-width="2.6" stroke-linecap="round"><path d="M3 17l5-7 4 4 4-8 5 6"/></svg>
+    </span>
+    <span class="name">Custom Tweak By Doxaiz</span>
+    <span class="chip live"><i class="dot"></i>оптимизация работает</span>
+    <span class="grow"></span>
+    <span class="chip dim">Fortnite · сервер 3.4.5.6</span>
+    <a class="btn small" href="https://dalink.to/doxaiz" target="_blank" rel="noopener">Поддержать автора ↗</a>
+  </header>
+
+  <div class="body">
+    <nav class="side">
+      <label for="nav-optimize">Оптимизация</label><label for="nav-tweaks">Твики</label><label for="nav-routes">Маршрут</label><label for="nav-journal">Журнал</label><label for="nav-tray">Трей</label><label for="nav-settings">Настройки</label><label for="nav-support">Автор</label>
+      <div class="side-foot">Custom Tweak By Doxaiz<br><span class="dim">версия 1.0</span></div>
+    </nav>
+
+    <main class="content">
+
+      <section class="page" id="page-optimize">
+        <h1>Оптимизация соединения</h1>
+        <div class="hero">
+          <button class="pb">Оптимизировать соединение</button>
+          <div class="hero-text">
+            <div class="stats"><div class="stat good"><b>78 мс</b><span>пинг сейчас</span></div><div class="stat "><b>−42 мс</b><span>было 120 мс</span></div><div class="stat "><b>2,4 мс</b><span>джиттер</span></div><div class="stat "><b>0,0 %</b><span>потери</span></div><div class="stat "><b>92 Мбит/с</b><span>скорость</span></div><div class="stat "><b>360</b><span>проб за минуту</span></div></div>
+            <p class="dim small">Fortnite · 3.4.5.6:9000 · маршрут для игрового сервера · QoS DSCP 46 · 6 твиков из 47</p>
+          </div>
+        </div>
+
+        <div class="charts">
+          <figure class="chart">
+  <figcaption>Задержка до игрового сервера <span class="dim">· мс</span></figcaption>
+  <svg viewBox="-30 -6 426 144" role="img" aria-label="Задержка до игрового сервера"><line x1="0" y1="0" x2="380" y2="0" stroke="#1d2635" stroke-width="1"/><line x1="0" y1="30" x2="380" y2="30" stroke="#1d2635" stroke-width="1"/><line x1="0" y1="60" x2="380" y2="60" stroke="#1d2635" stroke-width="1"/><line x1="0" y1="90" x2="380" y2="90" stroke="#1d2635" stroke-width="1"/><line x1="0" y1="120" x2="380" y2="120" stroke="#1d2635" stroke-width="1"/><polyline fill="none" stroke="#64748b" stroke-width="2.4" stroke-linejoin="round" points="0.0,24.0 31.7,19.2 63.3,25.6 95.0,15.2 126.7,20.8 158.3,16.8 190.0,5.6 221.7,22.4 253.3,18.4 285.0,24.8 316.7,12.0 348.3,23.2 380.0,20.8"/><polyline fill="none" stroke="#38bdf8" stroke-width="2.4" stroke-linejoin="round" points="0.0,49.6 31.7,56.0 63.3,57.6 95.0,54.4 126.7,56.8 158.3,58.4 190.0,51.2 221.7,56.8 253.3,57.6 285.0,59.2 316.7,55.2 348.3,58.4 380.0,57.6"/>
+    <text x="0" y="136" class="ax">0 с</text>
+    <text x="380" y="136" class="ax" text-anchor="end">60 с</text>
+    <text x="-6" y="10" class="ax" text-anchor="end">150</text>
+  </svg>
+  <div class="legend"><span><i style="background:#64748b"></i>до</span><span><i style="background:#38bdf8"></i>после</span></div>
+</figure>
+          <figure class="chart">
+  <figcaption>Джиттер <span class="dim">· мс</span></figcaption>
+  <svg viewBox="-30 -6 426 144" role="img" aria-label="Джиттер"><line x1="0" y1="0" x2="380" y2="0" stroke="#1d2635" stroke-width="1"/><line x1="0" y1="30" x2="380" y2="30" stroke="#1d2635" stroke-width="1"/><line x1="0" y1="60" x2="380" y2="60" stroke="#1d2635" stroke-width="1"/><line x1="0" y1="90" x2="380" y2="90" stroke="#1d2635" stroke-width="1"/><line x1="0" y1="120" x2="380" y2="120" stroke="#1d2635" stroke-width="1"/><polyline fill="none" stroke="#64748b" stroke-width="2.4" stroke-linejoin="round" points="0.0,22.0 31.7,36.0 63.3,44.0 95.0,18.0 126.7,51.0 158.3,39.0 190.0,48.0 221.7,56.0 253.3,42.0 285.0,59.0 316.7,46.0 348.3,52.0 380.0,58.0"/><polyline fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linejoin="round" points="0.0,96.0 31.7,99.0 63.3,101.0 95.0,94.0 126.7,100.0 158.3,102.0 190.0,98.0 221.7,103.0 253.3,101.0 285.0,99.0 316.7,102.0 348.3,104.0 380.0,102.0"/>
+    <text x="0" y="136" class="ax">0 с</text>
+    <text x="380" y="136" class="ax" text-anchor="end">60 с</text>
+    <text x="-6" y="10" class="ax" text-anchor="end">12</text>
+  </svg>
+  <div class="legend"><span><i style="background:#64748b"></i>до</span><span><i style="background:#4ade80"></i>после</span></div>
+</figure>
+        </div>
+        <p class="dim small">Окно 60 секунд · 360 проб · замеры ICMP и TCP одновременно.</p>
+
+        <h2 class="grp">Что сделала программа</h2>
+        <ul class="acts"><li><b>Маршрут для игрового сервера</b><span class="dim">Маршрут добавляется только для адреса 3.4.5.6 и снимается сразу после остановки.</span></li><li><b>Приоритет пакетов игры (DSCP 46)</b><span class="dim">Политика QoS помечает пакеты процесса FortniteClient-Win64-Shipping как «сетевое управление».</span></li></ul>
+
+        <h2 class="grp">Показатели, которые всегда на графике <span class="count">11</span></h2>
+        <div class="inds"><div class="ind"><span class="ind-t">Скорость приёма</span><span class="ind-u">Мбит/с</span></div><div class="ind"><span class="ind-t">Скорость отдачи</span><span class="ind-u">Мбит/с</span></div><div class="ind"><span class="ind-t">Задержка: минимум</span><span class="ind-u">мс</span></div><div class="ind"><span class="ind-t">Задержка: средняя</span><span class="ind-u">мс</span></div><div class="ind"><span class="ind-t">Задержка: 95-й процентиль</span><span class="ind-u">мс</span></div><div class="ind"><span class="ind-t">Джиттер (MAD)</span><span class="ind-u">мс</span></div><div class="ind"><span class="ind-t">Потери пакетов</span><span class="ind-u">%</span></div><div class="ind"><span class="ind-t">Повторы TCP</span><span class="ind-u">на 1000 пакетов</span></div><div class="ind"><span class="ind-t">Задержка под нагрузкой</span><span class="ind-u">мс</span></div><div class="ind"><span class="ind-t">Время ответа DNS</span><span class="ind-u">мс</span></div><div class="ind"><span class="ind-t">MTU пути</span><span class="ind-u">байт</span></div></div>
+
+        <div class="row">
+          <button class="btn ghost">Остановить и вернуть как было</button>
+          <span class="dim small">Изменения снимаются сразу после остановки.</span>
+        </div>
+      </section>
+
+      <section class="page" id="page-tweaks">
+        <h1>Твики</h1>
+        <div class="row toolbar">
+          <span class="seg-title">Пресет</span>
+          <div class="seg-group"><label class="seg" for="ps-all">Всё<span class="count">47</span></label><label class="seg" for="ps-low">Низкий пинг<span class="count">19</span></label><label class="seg" for="ps-speed">Скорость<span class="count">5</span></label><label class="seg" for="ps-fps">Кадры<span class="count">23</span></label></div>
+          <span class="chip">состав подсвечивается</span>
+        </div>
+        <div class="row toolbar">
+          <span class="seg-title">Выбор</span>
+          <div class="seg-group"><label class="seg" for="sel-rec">только рекомендуемое</label><label class="seg" for="sel-all">включить все</label><label class="seg" for="sel-none">отключить все</label></div>
+          <span class="chip">по умолчанию включено 23 из 47</span>
+        </div>
+        <h2 class="grp f-ping">Пинг и сеть <span class="count">12</span></h2>
+<article class="tw f-ping in-low">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Частота подтверждений TCP (TcpAckFrequency)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Частота подтверждений TCP (TcpAckFrequency)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг</span>
+    </div>
+    <p class="tw-sub">Заставляет стек подтверждать каждый второй принятый сегмент вместо ожидания таймера задержанных подтверждений.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Стоит применять для игр: уменьшает задержку подтверждений и убирает микрорывки при обмене мелкими пакетами. Побочный эффект — чуть больше служебного трафика.</p>
+      <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>1</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{adapter}\TcpAckFrequency</code> · По умолчанию параметр отсутствует (Windows использует таймер задержанных подтверждений).</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-ping in-low">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Отключение алгоритма Нейгла на интерфейсе (TCPNoDelay)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключение алгоритма Нейгла на интерфейсе (TCPNoDelay)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг</span>
+    </div>
+    <p class="tw-sub">Запрещает стеку копить мелкие отправки перед отправкой: пакет уходит сразу, а не через таймер.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Стоит применять для игр и голосовой связи: убирает задержку «склеивания» мелких пакетов. Для скачивания файлов и торрентов это значение не нужно.</p>
+      <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>1</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{adapter}\TCPNoDelay</code> · По умолчанию параметр отсутствует.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-ping in-low in-speed">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Снятие троттлинга сети (NetworkThrottlingIndex)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Снятие троттлинга сети (NetworkThrottlingIndex)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, скорость</span>
+    </div>
+    <p class="tw-sub">Снимает ограничение, из-за которого планировщик мультимедиа обрабатывает не более 10 пакетов за прерывание.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Стоит применять для игр с голосовым чатом и стримингом: убирает микрозадержки при пакетной обработке. Побочный эффект — немного выше нагрузка на процессор при приёме.</p>
+      <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>4294967295</code></p>
+      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\NetworkThrottlingIndex</code> · По умолчанию значение равно 10.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-ping in-low">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Отключить Energy-Efficient Ethernet">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить Energy-Efficient Ethernet</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг</span>
+    </div>
+    <p class="tw-sub">Отключает энергосберегающий режим PHY, который добавляет задержку при переходе в активное состояние.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Стоит применять для игр на проводном подключении: EEE экономит ватты, но добавляет задержку на первом пакете.</p>
+      <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>Disabled</code></p>
+      <p class="meta dim"><code>NIC∥Energy-Efficient Ethernet</code> · Драйвер обычно оставляет EEE включённым.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-ping ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить объединение прерываний">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить объединение прерываний</span>
+      <span class="v v-maybe">по желанию</span>
+      
+    </div>
+    <p class="tw-sub">Каждый пакет обрабатывается сразу, без ожидания накопления пакетов драйвером.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Может снизить задержку, но заметно поднимает нагрузку на процессор. Ставьте только если процессор не загружен и вы готовы к росту CPU при большом трафике.</p>
+      <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность лучше</span> · записываем: <code>Disabled</code></p>
+      <p class="meta dim"><code>NIC∥Interrupt Moderation</code> · По умолчанию объединение прерываний включено.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-ping in-low">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Оптимальный MTU интерфейса">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Оптимальный MTU интерфейса</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг</span>
+    </div>
+    <p class="tw-sub">Подбирает MTU пробами с запретом фрагментации и записывает найденное значение для сетевого подключения.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Стоит применять, если провайдер использует PPPoE или туннель: при завышенном MTU часть пакетов дробится или гибнет, что выглядит как «пинг скачет» и обрывы в матче. Значение вычисляется замерами до игрового сервера, а не берётся из интернета.</p>
+      <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: подберут замеры</p>
+      <p class="meta dim"><code>netsh int ipv4 subinterface∥mtu</code> · MTU задаёт провайдер; программа лишь приводит интерфейс в соответствие с реально…</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-ping ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Приоритет пакетов на сетевой карте (802.1p/VLAN)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Приоритет пакетов на сетевой карте (802.1p/VLAN)</span>
+      <span class="v v-maybe">по желанию</span>
+      
+    </div>
+    <p class="tw-sub">Включает поддержку приоритета пакетов драйвером карты: помеченные пакеты игры уходят без общей очереди.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Работает только если ваш роутер уважает приоритет (DSCP/802.1p) — иначе выигрыша не будет. Драйверы по-разному называют это свойство, поэтому значение подставляется с проверкой поддержки.</p>
+      <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>Packet Priority &amp; VLAN Enabled</code></p>
+      <p class="meta dim"><code>NIC∥Packet Priority &amp; VLAN</code> · Часть драйверов по умолчанию держит свойство включённым, часть — выключенным.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-ping in-low">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Таймер задержанных подтверждений (TcpDelAckTicks)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Таймер задержанных подтверждений (TcpDelAckTicks)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг</span>
+    </div>
+    <p class="tw-sub">Убирает паузу ожидания перед подтверждением полученных данных: подтверждение уходит сразу.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Работает в паре с частотой подтверждений: пока подтверждение ждёт таймер, отправитель не увеличивает окно. Для игр с мелкими пакетами это лишние миллисекунды на ровном месте.</p>
+      <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>0</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{adapter}\TcpDelAckTicks</code> · По умолчанию параметр отсутствует, таймер работает по стандарту (2 тика).</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-ping in-low">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить объединение сегментов приёма (RSC)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить объединение сегментов приёма (RSC)</span>
+      <span class="v v-maybe">по желанию</span>
+      <span class="chip tiny">пресет: низкий пинг</span>
+    </div>
+    <p class="tw-sub">Запрещает сетевой карте склеивать несколько входящих сегментов в один перед передачей системе.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Склейка экономит процессор, но добавляет задержку до момента обработки: для игр с редкими мелкими пакетами это заметнее, чем экономия. На загрузке больших файлов при этом теряется немного скорости.</p>
+      <p class="meta"><span class="ok">пинг лучше</span> · <span class="ok">скорость лучше</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>disabled</code></p>
+      <p class="meta dim"><code>netsh int tcp global∥rsc</code> · На большинстве карт по умолчанию включено.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-ping ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить режим энергосбережения карты">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить режим энергосбережения карты</span>
+      <span class="v v-maybe">по желанию</span>
+      
+    </div>
+    <p class="tw-sub">Запрещает сетевой карте уходить в экономию между пакетами.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>В экономии карта может «просыпаться» с задержкой: заметно на редком игровом трафике и в лобби. Цена — на ноутбуке карта потребляет чуть больше от батареи.</p>
+      <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>Disabled</code></p>
+      <p class="meta dim"><code>NIC∥Power Saving Mode</code> · Зависит от драйвера: у Realtek включено чаще, у Intel — реже.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-ping ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить Green Ethernet">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить Green Ethernet</span>
+      <span class="v v-maybe">по желанию</span>
+      
+    </div>
+    <p class="tw-sub">Отключает снижение мощности передатчика на коротком кабеле — самый частый источник «плавающего» пинга.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Экономия электричества даёт рост задержки на несколько миллисекунд, который пользователь принимает за проблемы провайдера. Это одна из самых полезных для игр правок в драйвере карты.</p>
+      <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>Disabled</code></p>
+      <p class="meta dim"><code>NIC∥Green Ethernet</code> · Часто включено по умолчанию на картах Realtek/Atheros.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-ping ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Короткий кэш неудачных DNS-ответов (MaxNegativeCacheTtl)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Короткий кэш неудачных DNS-ответов (MaxNegativeCacheTtl)</span>
+      <span class="v v-maybe">по желанию</span>
+      
+    </div>
+    <p class="tw-sub">Сокращает время, в течение которого Windows помнит неудачный ответ DNS-сервера.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Если сервер игры сменил адрес, а система помнит старый отказ, вход в лобби «залипает» до перезагрузки. Пяти секунд достаточно, чтобы переспросить DNS и не мешать нормальной работе.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>5</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\MaxNegativeCacheTtl</code> · По умолчанию 5 секунд — параметр чаще всего не задан.</p>
+    </details>
+  </div>
+</article>
+<h2 class="grp f-speed">Скорость <span class="count">7</span></h2>
+<article class="tw f-speed in-speed">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Буферы приёма по максимуму драйвера">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Буферы приёма по максимуму драйвера</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: скорость</span>
+    </div>
+    <p class="tw-sub">Ставит максимально допустимый драйвером размер буфера приёма.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Помогает на гигабитных тарифах и при пиковых всплесках трафика в больших замесах: пакеты не теряются на переполнении буфера. Значение выбирает не программа, а сам драйвер — программа берёт максимум из его списка.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость больше</span> ·
+        <span class="ok">стабильность больше</span> · записываем: подберут замеры</p>
+      <p class="meta dim"><code>NIC∥Receive Buffers</code> · По умолчанию 512 (зависит от драйвера).</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-speed in-speed">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Буферы передачи по максимуму драйвера">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Буферы передачи по максимуму драйвера</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: скорость</span>
+    </div>
+    <p class="tw-sub">Ставит максимально допустимый драйвером размер буфера передачи.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Полезно при стриминге и большой отдаче. Значение берётся из списка драйвера, а не выдумывается.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость больше</span> ·
+        <span class="ok">стабильность больше</span> · записываем: подберут замеры</p>
+      <p class="meta dim"><code>NIC∥Transmit Buffers</code> · По умолчанию 128 (зависит от драйвера).</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-speed in-speed">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Включить RSS (масштабирование приёма)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Включить RSS (масштабирование приёма)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: скорость</span>
+    </div>
+    <p class="tw-sub">Распределяет обработку входящего трафика между ядрами процессора.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Стоит применять на многоядерном процессоре: один поток перестаёт быть узким местом при высокой скорости. На задержку в матче почти не влияет, поэтому это твик «для скорости», а не «для пинга».</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость больше</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>enabled</code></p>
+      <p class="meta dim"><code>netsh int tcp global∥rss</code> · Обычно включено по умолчанию.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-speed in-speed">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Вернуть автонастройку окна TCP в обычный режим">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Вернуть автонастройку окна TCP в обычный режим</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: скорость</span>
+    </div>
+    <p class="tw-sub">Возвращает автоматический подбор размера окна приёма вместо урезанного режима.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Полезно, если раньше ставили «ограниченный» режим по чужому совету: на современном интернете это чаще режет скорость. Для игр значение нейтрально, для загрузок — плюс.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость больше</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>normal</code></p>
+      <p class="meta dim"><code>netsh int tcp global∥autotuninglevel</code> · По умолчанию «normal».</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-speed ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Самые быстрые DNS-серверы">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Самые быстрые DNS-серверы</span>
+      <span class="v v-maybe">по желанию</span>
+      
+    </div>
+    <p class="tw-sub">Ставит DNS-серверы, которые быстрее всех ответили в честном бенчмарке с проверкой на подмену ответов.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Влияет на поиск матча, вход в лобби и загрузку списка серверов, а НЕ на пинг внутри матча. Если раньше адреса приходили от роутера или провайдера, откат вернёт автоматическое получение.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость больше</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: подберут замеры</p>
+      <p class="meta dim"><code>netsh int ipv4 dnsservers∥static</code> · Адреса подбираются бенчмарком; программа не навязывает «модные» публичные DNS.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-speed ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить Gigabit Lite">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить Gigabit Lite</span>
+      <span class="v v-maybe">по желанию</span>
+      
+    </div>
+    <p class="tw-sub">Убирает «облегчённый» режим гигабита, при котором карта снижает запас по мощности канала.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Полезно, если скорость упирается в карту, а не в тариф. На коротком кабеле разницы в скорости обычно нет, но и вреда от отключения нет.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость больше</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>Disabled</code></p>
+      <p class="meta dim"><code>NIC∥Gigabit Lite</code> · Встречается у Realtek: по умолчанию обычно включено.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-speed ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Увеличить кадр до 9 КБ (Jumbo Frames, не советуем)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Увеличить кадр до 9 КБ (Jumbo Frames, не советуем)</span>
+      <span class="v v-no">не советуем</span>
+      
+    </div>
+    <p class="tw-sub">Разрешает карте отправлять большие кадры (обычно 9014 байт вместо 1500).</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Помогает только внутри локальной сети, где все устройства поддерживают тот же размер. В интернете кадр всё равно разобьётся, а потери и фрагментация при ошибке вырастут: игровой трафик наоборот станет рваным.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость лучше</span> ·
+        <span class="ok">стабильность лучше</span> · записываем: <code>9014 Bytes</code></p>
+      <p class="meta dim"><code>NIC∥Jumbo Packet</code> · По умолчанию 1514 байт.</p>
+    </details>
+  </div>
+</article>
+<h2 class="grp f-fps">ФПС и кадры <span class="count">13</span></h2>
+<article class="tw f-fps in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Отзывчивость системы для игр (SystemResponsiveness)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отзывчивость системы для игр (SystemResponsiveness)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Доля процессорного времени, которую планировщик мультимедиа оставляет фоновым задачам.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Стоит применять для игр: меньше времени отдаётся фоновым задачам, игровой поток реже ждёт процессор. Если параллельно идёт захват видео или рендер, значения ниже 10 могут дать микрофризы.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>10</code></p>
+      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\SystemResponsiveness</code> · По умолчанию 20.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Категория планирования для игр (Scheduling Category)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Категория планирования для игр (Scheduling Category)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Помечает игры как высокоприоритетную задачу мультимедиа (MMCSS).</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Стоит применять для игр: Windows иначе распределяет кванты времени для игрового процесса.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>High</code></p>
+      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games\Scheduling Category</code> · По умолчанию «Medium».</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Приоритет игровой задачи (Priority)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Приоритет игровой задачи (Priority)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Базовый приоритет потока для задачи MMCSS «Games».</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Стоит применять для игр: игровой поток реже вытесняется фоновыми задачами. Держите значения 6, а не 8: слишком высокий приоритет приводит к фризам, когда игровой поток не отдаёт процессор системе ввода.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>6</code></p>
+      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games\Priority</code> · По умолчанию 2.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Приоритет операций с файлами (SFIO Priority)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Приоритет операций с файлами (SFIO Priority)</span>
+      <span class="v v-maybe">по желанию</span>
+      <span class="chip tiny">пресет: кадры</span>
+    </div>
+    <p class="tw-sub">Приоритет фоновых файловых операций игрового процесса.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Может помочь при подгрузке текстур на медленном диске. На сетевую задержку не влияет.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>High</code></p>
+      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games\SFIO Priority</code> · По умолчанию «Normal».</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Схема питания «Высокая производительность»">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Схема питания «Высокая производительность»</span>
+      <span class="v v-maybe">по желанию</span>
+      <span class="chip tiny">пресет: кадры</span>
+    </div>
+    <p class="tw-sub">Переключает активную схему питания на «Высокую производительность».</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Схема не даёт процессору уходить в глубокие состояния энергосбережения: отклик и ровность кадра выше, особенно на ноутбуках. Цена — температура, шум вентиляторов и расход от батареи.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\ActivePowerScheme</code> · По умолчанию Windows использует «Сбалансированную» схему.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить троттлинг фоновых процессов (PowerThrottlingOff)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить троттлинг фоновых процессов (PowerThrottlingOff)</span>
+      <span class="v v-maybe">по желанию</span>
+      <span class="chip tiny">пресет: кадры</span>
+    </div>
+    <p class="tw-sub">Запрещает Windows снижать частоту процессов, которые система считает фоновыми.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Помогает, когда игра и её лончер считаются «фоном» и получают меньше ресурсов. Цена — выше расход энергии; на ноутбуке от батареи будет греться сильнее.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>1</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling\PowerThrottlingOff</code> · По умолчанию троттлинг включён.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Кванты планировщика для игр (Win32PrioritySeparation=38)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Кванты планировщика для игр (Win32PrioritySeparation=38)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Задаёт 38 — режим, при котором активное окно получает длинные кванты времени, а фоновые задачи — короткие.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Классическое значение для игр: кадры ровнее, фоновые обновления и индексация меньше мешают. Не путать с «приоритетом реального времени»: этот параметр не даёт играм обгонять системные потоки.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>38</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl\Win32PrioritySeparation</code> · По умолчанию 2 (Windows сама выбирает пропорцию).</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Аппаратное планирование GPU (HAGS)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Аппаратное планирование GPU (HAGS)</span>
+      <span class="v v-maybe">по желанию</span>
+      <span class="chip tiny">пресет: кадры</span>
+    </div>
+    <p class="tw-sub">Передаёт управление очередями видеокарты драйверу и железу вместо планировщика Windows.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>На части систем снижает задержку вывода кадра и уменьшает статтеры; на части — не даёт ничего, а иногда ухудшает работу старых драйверов. Поэтому «по желанию» и с обязательной перезагрузкой.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>2</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\HwSchMode</code> · По умолчанию Windows 10 — выключено, Windows 11 — включено.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Отключить оптимизации полноэкранного режима">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить оптимизации полноэкранного режима</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: кадры</span>
+    </div>
+    <p class="tw-sub">Заставляет игры использовать настоящее монопольное полное окно вместо псевдо-полноэкранного.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Псевдо-полноэкранный режим удобен для alt-tab, но добавляет проход через композитор: это лишний кадр задержки и источник микрофризов. Монопольный режим отдаёт кадр напрямую в вывод.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>2</code></p>
+      <p class="meta dim"><code>HKCU\System\GameConfigStore\GameDVR_FSEBehaviorMode</code> · По умолчанию псевдо-полноэкранный режим включён.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Включить игровой режим Windows">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Включить игровой режим Windows</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: кадры</span>
+    </div>
+    <p class="tw-sub">Включает автоматический игровой режим: Windows приостанавливает часть фоновых задач во время игры.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Работает в связке с планировщиком: обновления, индексация и телеметрия получают меньше времени. Не заменяет остальные твики, но вреда не несёт.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>1</code></p>
+      <p class="meta dim"><code>HKCU\SOFTWARE\Microsoft\GameBar\AutoGameModeEnabled</code> · По умолчанию включено в Windows 10/11.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить эффекты прозрачности">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить эффекты прозрачности</span>
+      <span class="v v-maybe">по желанию</span>
+      <span class="chip tiny">пресет: кадры</span>
+    </div>
+    <p class="tw-sub">Убирает размытие фона в меню и панелях Windows.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Сам по себе эффект косметический, но на слабых видеокартах размытие тратит видеопамять и время GPU в моменты, когда игра отдаёт кадр через композитор. Выигрыш невелик, вреда нет.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>0</code></p>
+      <p class="meta dim"><code>HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize\EnableTransparency</code> · По умолчанию включено.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить Prefetch (не советуем)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить Prefetch (не советуем)</span>
+      <span class="v v-no">не советуем</span>
+      
+    </div>
+    <p class="tw-sub">Запрещает Windows заранее читать файлы часто запускаемых программ.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Этот совет ходит по гайдам «ускорения Windows», но на современных накопителях он только вредит: игра и её карты грузятся дольше, подгрузки тексту в открытом мире чаще.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость лучше</span> ·
+        <span class="ok">стабильность лучше</span> · записываем: <code>0</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\PrefetchParameters\EnablePrefetcher</code> · По умолчанию включено (значение 3 — и приложения, и загрузка системы).</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-fps ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить SysMain/Superfetch (не советуем)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить SysMain/Superfetch (не советуем)</span>
+      <span class="v v-no">не советуем</span>
+      
+    </div>
+    <p class="tw-sub">Выключает службу обслуживания памяти, которая подгружает нужное заранее.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Вместе с Prefetch это любимый совет в подборках «отключи службы — станет быстрее». На практике страдает загрузка локаций и открытый мир, а выигрыш если и есть, то только на очень медленном жёстком диске в паре с малым объёмом памяти.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость лучше</span> ·
+        <span class="ok">стабильность лучше</span> · записываем: <code>0</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\PrefetchParameters\EnableSuperfetch</code> · По умолчанию включено.</p>
+    </details>
+  </div>
+</article>
+<h2 class="grp f-input">Задержка ввода <span class="count">10</span></h2>
+<article class="tw f-input in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Ускорение мыши (MouseSpeed)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Ускорение мыши (MouseSpeed)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Выключает системное ускорение указателя: движение мыши начинает 1:1 совпадать с движением руки.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Для игр это критично: с ускорением привыкание к прицелу невозможно, а ощущение «мышь живёт своей жизнью» — это и есть акселерация. Относится к настройке «Повышение точности указателя».</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>0</code></p>
+      <p class="meta dim"><code>HKCU\Control Panel\Mouse\MouseSpeed</code> · По умолчанию Windows включает ускорение (MouseSpeed = 1).</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-input in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Порог ускорения мыши #1 (MouseThreshold1)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Порог ускорения мыши #1 (MouseThreshold1)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Обнуляет первый порог ускорения: до него указатель движется линейно, без «разгона».</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Вместе с MouseSpeed и вторым порогом полностью убирает нелинейность прицела — её замечают все, кто играет в шутеры.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>0</code></p>
+      <p class="meta dim"><code>HKCU\Control Panel\Mouse\MouseThreshold1</code> · По умолчанию порог равен 6 условным единицам.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-input in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Порог ускорения мыши #2 (MouseThreshold2)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Порог ускорения мыши #2 (MouseThreshold2)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Обнуляет второй порог ускорения: выше него Windows раньше добавляла ещё больше скорости указателю.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Третий и последний параметр акселерации. Пока он не равен нулю, «Повышение точности указателя» остаётся включённым, даже если первый порог обнулён.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>0</code></p>
+      <p class="meta dim"><code>HKCU\Control Panel\Mouse\MouseThreshold2</code> · По умолчанию порог равен 10 условным единицам.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-input in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Нейтральная скорость указателя 1:1 (6/11)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Нейтральная скорость указателя 1:1 (6/11)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Ставит системную скорость указателя в нейтральное положение: Windows не домножает движение мыши.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Любое значение кроме нейтрального — это системное масштабирование поверх чувствительности в игре. Нейтральное положение принято за стандарт в киберспорте.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>10</code></p>
+      <p class="meta dim"><code>HKCU\Control Panel\Mouse\MouseSensitivity</code> · По умолчанию Windows ставит 10 (нейтральное положение на шкале 1–20).</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-input in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Отключить FilterKeys (задержка клавиатуры)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить FilterKeys (задержка клавиатуры)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Выключает «фильтр ввода» Windows: система перестаёт игнорировать короткие и повторные нажатия.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Если фильтр включён, часть нажатий пропадает, а срабатывания приходят с задержкой — для игр это худший вариант. Обычно он выключен, но включается сам после случайного удержания правого Shift.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>126</code></p>
+      <p class="meta dim"><code>HKCU\Control Panel\Accessibility\Keyboard Response\Flags</code> · Значение по умолчанию — включённый фильтр (Flags = 126 для выключенного состояния).</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-input in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Минимальная задержка повтора клавиш">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Минимальная задержка повтора клавиш</span>
+      <span class="v v-maybe">по желанию</span>
+      <span class="chip tiny">пресет: кадры</span>
+    </div>
+    <p class="tw-sub">Убирает паузу перед автоповтором клавиши.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>На игровой отклик не влияет: это поведение автоповтора при удержании. Полезно, если вы используете клавиатуру для макросов или быстрого набора в чате матча.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>0</code></p>
+      <p class="meta dim"><code>HKCU\Control Panel\Keyboard\KeyboardDelay</code> · По умолчанию Windows ставит среднюю задержку (1).</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-input in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Отключить Game DVR (запись в фоне)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить Game DVR (запись в фоне)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Выключает фоновую запись игр Xbox Game DVR, которая отбирает кадры и добавляет задержку отрисовки.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Фоновая запись конкурирует с игрой за GPU: кадры приходят с опозданием, инпут ощущается «тяжёлым». Сама Xbox Game Bar при этом не удаляется — её можно включить обратно в любой момент.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>0</code></p>
+      <p class="meta dim"><code>HKCU\System\GameConfigStore\GameDVR_Enabled</code> · По умолчанию фоновая запись включена в Windows 10/11.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-input in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Отключить запись клипов (AppCaptureEnabled)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить запись клипов (AppCaptureEnabled)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Выключает захват игровых клипов сочетанием клавиш Win+Alt+R — второй параметр той же фоновой записи.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Пока этот параметр включён, Windows держит в памяти буфер последних секунд игры: это заметно на слабых видеокартах и в моменты резких поворотов камеры.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>0</code></p>
+      <p class="meta dim"><code>HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR\AppCaptureEnabled</code> · По умолчанию захват включён.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-input in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Мгновенные меню (MenuShowDelay)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Мгновенные меню (MenuShowDelay)</span>
+      <span class="v v-maybe">по желанию</span>
+      <span class="chip tiny">пресет: кадры</span>
+    </div>
+    <p class="tw-sub">Убирает задержку перед раскрытием меню проводника и системных меню.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Играм это не нужно, но задержка меню — это тоже задержка между нажатием и реакцией, и её замечают как «система тормозит». Значение 0 убирает паузу полностью.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>0</code></p>
+      <p class="meta dim"><code>HKCU\Control Panel\Desktop\MenuShowDelay</code> · По умолчанию 400 мс.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-input in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Минимальная задержка наведения (MouseHoverTime)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Минимальная задержка наведения (MouseHoverTime)</span>
+      <span class="v v-maybe">по желанию</span>
+      <span class="chip tiny">пресет: кадры</span>
+    </div>
+    <p class="tw-sub">Сокращает время, которое Windows ждёт наведения курсора перед показом подсказки.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Полезно в интерфейсах и лаунчерах: 10 мс вместо 400 мс. На саму игру не влияет, на «ощущение системы» — да.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>10</code></p>
+      <p class="meta dim"><code>HKCU\Control Panel\Mouse\MouseHoverTime</code> · По умолчанию 400 мс.</p>
+    </details>
+  </div>
+</article>
+<h2 class="grp f-system">Система <span class="count">5</span></h2>
+<article class="tw f-system ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Начальное значение RTT (InitialRtt)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Начальное значение RTT (InitialRtt)</span>
+      <span class="v v-care">осторожно</span>
+      
+    </div>
+    <p class="tw-sub">Задаёт оценку круговой задержки до первого измерения. Влияет на стартовый таймаут и скорость разгона окна.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Применять не рекомендую без конкретной проблемы: на современной Windows значение влияет слабо, а занижение приводит к лишним повторным передачам на дальних серверах.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость лучше</span> ·
+        <span class="ok">стабильность лучше</span> · записываем: <code>300</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{adapter}\InitialRtt</code> · По умолчанию 3000 мс.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-system in-low in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Повторы SYN при подключении (SynRetransmissions)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Повторы SYN при подключении (SynRetransmissions)</span>
+      <span class="v v-maybe">по желанию</span>
+      <span class="chip tiny">пресет: низкий пинг, кадры</span>
+    </div>
+    <p class="tw-sub">Сколько раз повторять запрос на подключение, прежде чем сообщить об ошибке.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Полезно для игр: при обрыве сессии система быстрее отдаёт ошибку, и клиент раньше начинает переподключение вместо долгого ожидания. На пинг внутри матча не влияет.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>2</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{adapter}\SynRetransmissions</code> · По умолчанию Windows использует 2 попытки; значение 1 заметно ускоряет отказ</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-system in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить управление потоком (Flow Control)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить управление потоком (Flow Control)</span>
+      <span class="v v-maybe">по желанию</span>
+      <span class="chip tiny">пресет: кадры</span>
+    </div>
+    <p class="tw-sub">Запрещает сетевой карте отправлять паузы партнёру при заполнении буфера.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Иногда убирает «залипания» на домашних роутерах, которые неправильно обрабатывают кадры паузы. На коммутаторах провайдера отключение пауз может увеличивать потери — меняйте осознанно.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость лучше</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>Disabled</code></p>
+      <p class="meta dim"><code>NIC∥Flow Control</code> · По умолчанию «Rx &amp; Tx Enabled».</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-system ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить ECN (уведомление о перегрузке)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить ECN (уведомление о перегрузке)</span>
+      <span class="v v-care">осторожно</span>
+      
+    </div>
+    <p class="tw-sub">Запрещает стек помечать исходящие пакеты флагом явного уведомления о перегрузке (ECN).</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Применять не рекомендую по умолчанию: часть домашних роутеров и провайдерских путей некорректно обрабатывает ECN и теряет такие пакеты. Отключение помогает как лечение конкретной проблемы, а не как «оптимизация вообще».</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>disabled</code></p>
+      <p class="meta dim"><code>netsh int tcp global∥ecncapability</code> · В новых версиях Windows ECN включён по умолчанию.</p>
+    </details>
+  </div>
+</article>
+<article class="tw f-system ">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" aria-label="Включить: Отключить NetBIOS поверх TCP/IP">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Отключить NetBIOS поверх TCP/IP</span>
+      <span class="v v-care">осторожно</span>
+      
+    </div>
+    <p class="tw-sub">Прекращает широковещательные рассылки NetBIOS от этого адаптера.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Шум NetBIOS ничего не даёт современной игре, но занимает эфир в домашней сети — заметнее всего по Wi-Fi. Цена: перестанут находиться компьютеры и сетевые папки по «сетевым именам» (ресурсы по IP работают).</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="ok">стабильность больше</span> · записываем: <code>2</code></p>
+      <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces\Tcpip_{adapter}\NetbiosOptions</code> · По умолчанию NetBIOS разрешён DHCP-сервером провайдера или роутера.</p>
+    </details>
+  </div>
+</article>
+        <p class="dim small">Перед применением — снапшот и точка восстановления. Твик никогда не пишется молча.</p>
+      </section>
+
+      <section class="page" id="page-routes">
+        <h1>Маршрут до игры</h1>
+        <div class="row">
+          <label class="pick"><input type="radio" name="mode" checked><span>Автоматически по замерам</span></label>
+          <label class="pick"><input type="radio" name="mode"><span>Вручную</span></label>
+          <span class="chip">время теста: 60 с</span>
+          <span class="chip ok">выигрыш подтверждён: 42 мс</span>
+        </div>
+
+        <h2 class="grp">Игры <span class="count">22</span></h2>
+        <table class="tbl">
+          <thead><tr><th>Игра</th><th>Процесс</th><th>Регионы</th><th>Порты</th></tr></thead>
+          <tbody><tr><td>Fortnite <span class='chip tiny'>free</span></td><td class="dim mono">FortniteClient-Win64-Shipping.exe</td><td class="dim">Европа, Северная Америка…</td><td class="dim">по факту соединения</td></tr>
+<tr><td>Counter-Strike 2 <span class='chip tiny'>free</span></td><td class="dim mono">cs2.exe</td><td class="dim">Европа (запад/восток), Азия, Южная Америка</td><td class="dim">UDP 27015…27050 (игровой трафик)</td></tr>
+<tr><td>Dota 2 <span class='chip tiny'>free</span></td><td class="dim mono">dota2.exe</td><td class="dim">Европа (запад/восток), Стокгольм, Азия, США</td><td class="dim">UDP 27015…27050; UDP 3478, 4379…4380</td></tr>
+<tr><td>VALORANT <span class='chip tiny'>free</span></td><td class="dim mono">valorant-win64-shipping.exe</td><td class="dim">Франкфурт, Стокгольм, Варшава, Лондон</td><td class="dim">по факту соединения</td></tr>
+<tr><td>League of Legends <span class='chip tiny'>free</span></td><td class="dim mono">league of legends.exe</td><td class="dim">EUW (Западная Европа), EUNE (Северная и…</td><td class="dim">по факту соединения</td></tr>
+<tr><td>Apex Legends <span class='chip tiny'>free</span></td><td class="dim mono">r5apex.exe</td><td class="dim">Франкфурт, Амстердам, Лондон, США, Азия</td><td class="dim">по факту соединения</td></tr>
+<tr><td>PUBG: Battlegrounds</td><td class="dim mono">tslgame.exe</td><td class="dim">Европа, Азиатский (Корея/Япония)</td><td class="dim">по факту соединения</td></tr>
+<tr><td>Rust</td><td class="dim mono">rustclient.exe</td><td class="dim">Европа, США, Азия, Океания</td><td class="dim">UDP 28015…28017 (серверы сообщества)</td></tr>
+<tr><td>Rocket League <span class='chip tiny'>free</span></td><td class="dim mono">rocketleague.exe</td><td class="dim">Европа, США (восток/запад), Азия</td><td class="dim">по факту соединения</td></tr>
+<tr><td>Warframe <span class='chip tiny'>free</span></td><td class="dim mono">warframe.x64.exe</td><td class="dim">Европа, Северная Америка, Азия, Океания</td><td class="dim">по факту соединения</td></tr>
+<tr><td>Destiny 2 <span class='chip tiny'>free</span></td><td class="dim mono">destiny2.exe</td><td class="dim">Европа, США, Азия</td><td class="dim">по факту соединения</td></tr>
+<tr><td>Overwatch 2 <span class='chip tiny'>free</span></td><td class="dim mono">overwatch.exe</td><td class="dim">Европа, США, Азия, Бразилия</td><td class="dim">по факту соединения</td></tr>
+<tr><td>GTA Online</td><td class="dim mono">gta5.exe</td><td class="dim">Сессия создаётся у одного из игроков —…</td><td class="dim">UDP 6672, 61455…61457 (описаны Rockstar)</td></tr>
+<tr><td>FiveM (GTA V) <span class='chip tiny'>free</span></td><td class="dim mono">fivem_gtaprocess.exe</td><td class="dim">Сервер выбирает игрок — это отдельный проект…</td><td class="dim">по факту соединения</td></tr>
+<tr><td>Roblox <span class='chip tiny'>free</span></td><td class="dim mono">robloxplayerbeta.exe</td><td class="dim">Автоматический выбор ближайшего дата-центра</td><td class="dim">UDP 49152…65535 (описаны Roblox)</td></tr>
+<tr><td>Call of Duty: Warzone <span class='chip tiny'>free</span></td><td class="dim mono">cod.exe</td><td class="dim">Европа, США, Азия, Ближний Восток</td><td class="dim">UDP 3074, 3075, 3478…3479 (описаны…</td></tr>
+<tr><td>The Finals <span class='chip tiny'>free</span></td><td class="dim mono">discovery.exe</td><td class="dim">Европа, США, Азия, Южная Америка</td><td class="dim">по факту соединения</td></tr>
+<tr><td>Marvel Rivals <span class='chip tiny'>free</span></td><td class="dim mono">marvel-win64-shipping.exe</td><td class="dim">Европа, США, Азия</td><td class="dim">по факту соединения</td></tr>
+<tr><td>Rainbow Six Siege</td><td class="dim mono">rainbowsix.exe</td><td class="dim">EU West/East (Франкфурт, Амстердам, Париж)</td><td class="dim">по факту соединения</td></tr>
+<tr><td>Escape from Tarkov</td><td class="dim mono">escapefromtarkov.exe</td><td class="dim">Москва/Санкт-Петербург (РФ-сегмент), Европа</td><td class="dim">по факту соединения</td></tr>
+<tr><td>Minecraft (Java) <span class='chip tiny'>free</span></td><td class="dim mono">javaw.exe</td><td class="dim">Зависит от выбранного вами сервера</td><td class="dim">TCP 25565, UDP 19132 (Bedrock)</td></tr>
+<tr><td>Dead by Daylight</td><td class="dim mono">deadbydaylight-win64-shipping.exe</td><td class="dim">Европа, США, Азия</td><td class="dim">по факту соединения</td></tr></tbody>
+        </table>
+
+        <h2 class="grp">Бесплатные публичные DNS <span class="count">5</span></h2>
+        <div class="cards"><div class="chip card"><b>Cloudflare</b><span class="mono">1.1.1.1</span><span class="dim">Обычно самый быстрый у российских провайдеров</span></div><div class="chip card"><b>Yandex DNS</b><span class="mono">77.88.8.8</span><span class="dim">Отечественный резолвер: короткий путь и зеркала…</span></div><div class="chip card"><b>Google Public DNS</b><span class="mono">8.8.8.8</span><span class="dim">Стабильный, но путь до него длиннее</span></div><div class="chip card"><b>Quad9</b><span class="mono">9.9.9.9</span><span class="dim">С фильтрацией вредоносных доменов</span></div><div class="chip card"><b>AdGuard DNS</b><span class="mono">94.140.14.14</span><span class="dim">С блокировкой рекламы: меньше лишних запросов…</span></div></div>
+
+        <h2 class="grp">Способы сократить путь <span class="count">8</span></h2>
+        <table class="tbl">
+          <thead><tr><th>Способ</th><th>Цена</th><th>Безопасность</th></tr></thead>
+          <tbody><tr><td>Прямой путь</td><td><span class='chip tiny free'>0 ₽</span></td><td class="dim">Безопасно. Ничего не устанавливается и не перехватывается.</td></tr>
+<tr><td>IPv6, если провайдер его раздаёт</td><td><span class='chip tiny free'>0 ₽</span></td><td class="dim">Безопасно. Проверяется замером: программа сначала измеряет…</td></tr>
+<tr><td>Кабель вместо Wi-Fi</td><td><span class='chip tiny free'>0 ₽</span></td><td class="dim">Безопасно.</td></tr>
+<tr><td>Настройки домашнего роутера</td><td><span class='chip tiny free'>0 ₽</span></td><td class="dim">Безопасно, но меняет настройки вашего роутера — делайте по…</td></tr>
+<tr><td>Второй канал</td><td>Отдельный тариф провайдеру</td><td class="dim">Безопасно. Приложение не переключает каналы молча: только…</td></tr>
+<tr><td>Свой релей на VPS</td><td>Аренда VPS</td><td class="dim">Безопасно с точки зрения анти-читов (пакеты не меняются)</td></tr>
+<tr><td>Публичный игровой VPN</td><td>Обычно подписка</td><td class="dim">Осторожно: чужой трафик идёт через третью сторону</td></tr>
+<tr><td>«Бесплатные ускорители» из поиска</td><td>«Бесплатно»</td><td class="dim">Не советуем: за бесплатностью обычно стоит сбор данных.</td></tr></tbody>
+        </table>
+        <p class="dim small">Бесплатных и безопасных способов — четыре. Настройки роутера программа не меняет: показывает, что сделать руками.</p>
+      </section>
+
+      <section class="page" id="page-journal">
+        <h1>Журнал и откат</h1>
+        <div class="row">
+          <button class="btn primary">Вернуть всё как было (6)</button>
+          <span class="chip ok">снапшот есть</span>
+          <span class="chip">точка восстановления создана</span>
+        </div>
+        <table class="tbl">
+          <thead><tr><th>Время</th><th>Что изменено</th><th>Действие</th></tr></thead>
+          <tbody>
+            <tr><td class="dim">14:02:11</td><td>Маршрут для 3.4.5.6 · QoS DSCP 46</td><td><button class="btn tiny ghost">отменить</button></td></tr>
+            <tr><td class="dim">14:02:14</td><td>TCP: подтверждения, ускоренные подтверждения, начальный RTT</td><td><button class="btn tiny ghost">отменить</button></td></tr>
+            <tr><td class="dim">14:02:20</td><td>Карта: энергосбережение, Green Ethernet, буферы приёма</td><td><button class="btn tiny ghost">отменить</button></td></tr>
+            <tr><td class="dim">14:02:26</td><td>План питания «Высокая производительность»</td><td><button class="btn tiny ghost">отменить</button></td></tr>
+          </tbody>
+        </table>
+        <p class="dim small">История хранится локально. Значения возвращаются ровно те, что были до применения.</p>
+      </section>
+
+      <section class="page" id="page-tray">
+        <h1>Трей и ресурсы</h1>
+        <div class="tray-wrap">
+          <div class="tray">
+            <b>Custom Tweak By Doxaiz</b>
+            <ul><li>Остановить оптимизацию</li><li>Вернуть как было (2)</li><li>Показать окно</li><li>Настройки…</li><li>Выход</li></ul>
+          </div>
+          <div class="cards"><div class="card prof"><b>экономно</b><span class="dim">6 с · 120 проб/мин</span><span class="dim">пауза на батарее · пауза, если игра свёрнута</span></div><div class="card prof"><b>обычный</b><span class="dim">2 с · 360 проб/мин</span><span class="dim">пауза на батарее · пауза, если игра свёрнута</span></div><div class="card prof"><b>максимум реакции</b><span class="dim">1 с · 720 проб/мин</span><span class="dim">пауза на батарее · пауза, если игра свёрнута</span></div></div>
+        </div>
+        <p class="dim small">Закрытие окна оптимизацию не выключает. Выход из трея — снимает изменения и останавливает замеры.</p>
+      </section>
+
+      <section class="page" id="page-settings">
+        <h1>Настройки</h1>
+        <div class="card">
+          <label class="pick"><input type="checkbox" checked><span>Пауза на батарее</span></label>
+          <label class="pick"><input type="checkbox" checked><span>Пауза, когда игра свёрнута</span></label>
+          <label class="pick"><input type="checkbox" checked><span>Останавливать через 5 минут после выхода из игры</span></label>
+          <label class="pick"><input type="checkbox" checked><span>Спрашивать точку восстановления перед применением</span></label>
+          <label class="pick"><input type="checkbox" disabled><span class="dim">Телеметрия — недоступна: данные никуда не отправляются</span></label>
+        </div>
+        <div class="row">
+          <button class="btn">Сохранить профиль в файл…</button>
+          <button class="btn ghost">Загрузить профиль…</button>
+        </div>
+      </section>
+
+      <section class="page" id="page-support">
+        <h1>Поддержать автора</h1>
+        <div class="card support">
+          <p>Программа бесплатная, без телеметрии и подписок.</p>
+          <a class="btn primary big" href="https://dalink.to/doxaiz" target="_blank" rel="noopener">Поддержать автора ↗</a>
+          <p class="dim small">https://dalink.to/doxaiz</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer class="foot">
+    <span>Custom Tweak By Doxaiz</span>
+    <span class="dim">Визуальный макет интерфейса. Данные — из каталога проекта: 47 твиков, 22 игр, 5 DNS, 3 профиля.</span>
+  </footer>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PingForge.Network</RootNamespace>
+    <AssemblyName>PingForge.Network</AssemblyName>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PingForge.Core\PingForge.Core.csproj" />
+    <!-- Контракты действий оптимизации объявлены в Orchestration: сетевой слой их реализует. -->
+    <ProjectReference Include="..\PingForge.Orchestration\PingForge.Orchestration.csproj" />
+  </ItemGroup>
+
+</Project>

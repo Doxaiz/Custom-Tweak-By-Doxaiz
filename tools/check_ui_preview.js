@@ -1,0 +1,308 @@
+/*
+ Проверка макета интерфейса: переходы по меню, оглавление, переходы «назад/далее» и чтение без скриптов.
+ Запуск (нужен jsdom):
+     npm install jsdom            # или NODE_PATH=/путь/к/node_modules
+     node tools/check_ui_preview.js docs/pingforge-ui-preview.html
+ Скрипт падает с кодом 1, если хоть одна проверка не прошла.
+*/
+const fs = require('fs');
+const path = require('path');
+const { JSDOM } = require('jsdom');
+
+const FILE = process.argv[2] || 'docs/pingforge-ui-preview.html';
+const html = fs.readFileSync(FILE, 'utf8');
+
+const problems = [];
+const ok = [];
+const check = (name, cond, extra = '') => (cond ? ok : problems).push(name + (extra ? ' — ' + extra : ''));
+
+const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://preview.local/' });
+const errs = [];
+dom.window.addEventListener('error', e => errs.push(String(e.message || e)));
+const { window } = dom;
+window.addEventListener('unhandledrejection', e => errs.push('promise: ' + e.reason));
+
+setTimeout(async () => {
+  const d = window.document;
+  const visible = () => [...d.querySelectorAll('section.tab')].filter(s => s.classList.contains('active')).map(s => s.id);
+  const menu = [...d.querySelectorAll('nav.side-nav a[data-group]')];
+  const ids = [...d.querySelectorAll('section.tab')].map(s => s.id);
+
+  // ── клики по меню: страница не должна перезагружаться, а раздел — открываться ────────────────
+  check('пунктов меню 8: работа, результат, настройка и правда', menu.length === 8, `нашли ${menu.length}`);
+  menu.forEach(a => {
+    a.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    const shown = visible();
+    check(`клик «${a.dataset.group}» показывает раздел`, shown.length > 0, shown.join(','));
+  });
+  check('после клика в адресе есть якорь', /^#/.test(window.location.hash), window.location.hash);
+  const chip = d.getElementById('whereAmI');
+  check('чип «открыт раздел» заполнен', !!chip && chip.textContent.trim().length > 0);
+  check('ошибок JS после кликов по меню нет', errs.length === 0, errs.join(' | '));
+
+  // ── оглавление и переходы: обычные ссылки с якорем ──────────────────────────────────────────
+  const tiles = [...d.querySelectorAll('a.toc-tile')];
+  check('плиток в оглавлении 6', tiles.length === 6, `нашли ${tiles.length}`);
+  check('ссылки оглавления ведут в существующие разделы',
+    tiles.every(t => ids.includes(t.getAttribute('href').slice(1))));
+
+  const navs = [...d.querySelectorAll('.secnav')];
+  check('переходы есть во всех 9 частях', navs.length === 9, `нашли ${navs.length}`);
+  check('в первой части «далее» ведёт во вторую', navs[0].innerHTML.includes('href="#apply"'));
+  check('в последней части стоит «это последний раздел»', !!navs[navs.length - 1].querySelector('span.end'));
+  check('в каждой части есть ссылка на оглавление', navs.every(n => !!n.querySelector('a[href="#top"]')));
+
+  // hashchange приходит асинхронно — как в браузере
+  const wait = () => new Promise(r => setTimeout(r, 30));
+  window.location.hash = '#routing';
+  await wait();
+  check('переход по якорю из оглавления открывает нужный раздел', visible().includes('routing'), visible().join(','));
+  window.location.hash = '#overview';
+  await wait();
+  check('возврат на первый раздел работает', visible().join() === 'overview', visible().join());
+
+  // ── меню: группы, значки, подписи ──────────────────────────────────────────────────────────
+  check('групп в меню 3: работа, что получилось, настройка и правда',
+    d.querySelectorAll('.navgroup').length === 3, `${d.querySelectorAll('.navgroup').length}`);
+  check('значков у пунктов 8', d.querySelectorAll('nav.side-nav .navbadge').length === 8,
+    `${d.querySelectorAll('nav.side-nav .navbadge').length}`);
+  check('у каждого пункта есть номер, подпись и значок',
+    menu.every(a => a.querySelector('.stepnum') && a.querySelector('.steptext b')
+      && a.querySelector('.steptext span') && a.querySelector('.navbadge')));
+  check('текущий раздел помечен aria-current ровно один',
+    menu.filter(a => a.getAttribute('aria-current') === 'true').length === 1);
+
+  // ── содержимое, которое обязано остаться на месте ──────────────────────────────────────────
+  const TWEAKS = 47; // столько твиков в каталоге проекта на момент рендера
+  const cards = [...d.querySelectorAll('#tweaks .tweak')];
+  check(`карточек твиков ${TWEAKS}`, cards.length === TWEAKS, `${cards.length}`);
+  check('таблиц значений у карточек столько же, сколько карточек',
+    d.querySelectorAll('#tweaks .tweak .t-block table').length === TWEAKS,
+    `${d.querySelectorAll('#tweaks .tweak .t-block table').length}`);
+  check('строк «что применить» по три на карточку', d.querySelectorAll('#tweaks .valset .pick').length === TWEAKS * 3,
+    `${d.querySelectorAll('#tweaks .valset .pick').length}`);
+  check('карточек «пинг» 12, «скорость» 7, «кадры» 13, «ввод» 10, «система» 5',
+    ['Ping:12', 'Speed:7', 'Fps:13', 'Input:10', 'System:5'].every(pair => {
+      const [focus, expected] = pair.split(':');
+      return cards.filter(c => c.dataset.focus === focus).length === Number(expected);
+    }),
+    [...new Set(cards.map(c => c.dataset.focus))].join(','));
+
+  // ── карточки: ползунки вместо старых details-строк ────────────────────────────────────────
+  const toggles = [...d.querySelectorAll('#tweaks .t-toggle')];
+  check('ползунков включения столько же, сколько карточек', toggles.length === TWEAKS, `${toggles.length}`);
+  check('по умолчанию включено только рекомендованное (23)', toggles.filter(t => t.checked).length === 23,
+    `${toggles.filter(t => t.checked).length}`);
+  check('у каждой карточки ровно один вердикт «стоит включать или нет»',
+    cards.every(c => c.querySelectorAll('.verdict').length === 1),
+    cards.filter(c => c.querySelectorAll('.verdict').length !== 1).map(c => c.dataset.code).join(','));
+  check('в каждой карточке не меньше шести блоков подробностей',
+    cards.every(c => c.querySelectorAll('.t-block').length >= 6),
+    `${Math.min(...cards.map(c => c.querySelectorAll('.t-block').length))}`);
+  check('блоки подробностей не оформлены тегом section (иначе ломается счёт частей)',
+    d.querySelectorAll('#tweaks .tweak section').length === 0);
+  check('длинный текст переносится, а не вылезает за рамку',
+    /overflow-wrap:anywhere/.test(html) && /word-break:break-word/.test(html));
+  check('метки карточки переносятся по строкам, а не растягивают шапку',
+    /t-badges\{display:flex;flex-wrap:wrap/.test(html));
+
+  // ── подкатегории и массовый выбор ─────────────────────────────────────────────────────────
+  const focusLinks = [...d.querySelectorAll('.focusbar a')];
+  check('плиток подкатегорий 5: пинг, скорость, фпс, ввод, система', focusLinks.length === 5, `${focusLinks.length}`);
+  check('каждая плитка подкатегории ведёт на существующий заголовок',
+    focusLinks.every(a => !!d.querySelector(a.getAttribute('href'))));
+  check('заголовки подкатегорий пронумерованы якорями focus-*',
+    d.querySelectorAll('#tweaks [id^="focus-"]').length === 5,
+    `${d.querySelectorAll('#tweaks [id^="focus-"]').length}`);
+
+  const pickCounter = d.getElementById('pickCount');
+  check('кнопка «только рекомендуемое» оставляет 23 включённых', (() => {
+    d.getElementById('pickRecommended').click();
+    return toggles.filter(t => t.checked).length === 23;
+  })(), `${toggles.filter(t => t.checked).length}`);
+  check('кнопка «включить все» включает все твики', (() => {
+    d.getElementById('pickAll').click();
+    return toggles.every(t => t.checked);
+  })());
+  check('кнопка «отключить все» снимает все ползунки', (() => {
+    d.getElementById('pickNone').click();
+    return toggles.every(t => !t.checked);
+  })());
+  check('счётчик выбора обновляется после массовых кнопок',
+    pickCounter && pickCounter.textContent.includes('0 из ' + TWEAKS), pickCounter && pickCounter.textContent);
+  check('карточки помечаются включёнными', (() => {
+    toggles[0].checked = true;
+    toggles[0].dispatchEvent(new d.defaultView.Event('change'));
+    return toggles[0].closest('.tweak').classList.contains('on');
+  })());
+
+  // ── пресеты: составы обязаны быть разными (отдельное требование) ───────────────────────────
+  const presetCounts = [...d.querySelectorAll('.presetcard .cnt')].map(e => parseInt(e.textContent, 10));
+  check('в блоке пресетов показаны четыре состава', presetCounts.length === 4, presetCounts.join('/'));
+  check('составы пресетов разные: пинг 19, скорость 5, кадры 23', (() => {
+    const [low, fast, fps] = presetCounts;
+    return low === 19 && fast === 5 && fps === 23 && new Set([low, fast, fps]).size === 3;
+  })(), presetCounts.join('/'));
+
+  check('кнопка сохранения конфига лежит внутри «Настроек»',
+    !!d.querySelector('#settings .btn'));
+  check('выбор времени теста маршрута на месте', d.querySelectorAll('#routing input[name=routeTime]').length > 0);
+  check('калькулятор маршрутов считает: чип заполняется', (() => {
+    const btn = d.getElementById('btnPickRoute');
+    if (!btn) return false;
+    btn.click();
+    return (d.getElementById('routeChip').textContent || '').trim().length > 0;
+  })());
+
+  // ── чтение без скриптов ────────────────────────────────────────────────────────────────────
+  const d2 = new JSDOM(html).window.document;
+  const shownWithoutJs = [...d2.querySelectorAll('section.tab')].filter(s => !s.hasAttribute('hidden')).length;
+  check('без скриптов видно все 9 частей', shownWithoutJs === 9, `${shownWithoutJs}`);
+  check('оглавление есть и без скриптов', d2.querySelectorAll('a.toc-tile').length === 6);
+  check('переходы есть и без скриптов', d2.querySelectorAll('.secnav').length === 9);
+  check('блоков «простыми словами» 8', d2.querySelectorAll('.simple').length === 8,
+    `${d2.querySelectorAll('.simple').length}`);
+  check('шагов «как пользоваться» 3', d2.querySelectorAll('.three .step').length === 3);
+  check('терминов в словаре 6', d2.querySelectorAll('.glossary dt').length === 6);
+  check('кнопок конфига в боковой колонке нет', d2.querySelectorAll('.side-tip .btn').length === 0);
+
+  // ── готовность: веса сходятся к 100 ────────────────────────────────────────────────────────
+  const weights = [...d2.querySelectorAll('#progress tbody tr')].map(tr =>
+    parseInt(tr.children[1].textContent, 10));
+  const weightSum = weights.reduce((a, b) => a + b, 0);
+  check('сумма весов в таблице готовности ровно 100', weightSum === 100, `${weightSum}`);
+
+
+  // ── название, поддержка автора, справочник маршрутов, график, экономный режим ───────────────
+  check('в шапке новое название: Custom Tweak By Doxaiz',
+    /Custom Tweak By Doxaiz/.test(d.querySelector('.logo').textContent), d.querySelector('.logo').textContent.trim());
+  check('название стоит и в заголовке страницы', /Custom Tweak By Doxaiz/.test(d.title), d.title);
+  const support = [...d.querySelectorAll('a[href="https://dalink.to/doxaiz"]')];
+  check('кнопки «Поддержать автора» ведут только на dalink.to/doxaiz (не меньше трёх мест)',
+    support.length >= 3 && support.length === [...d.querySelectorAll('a.btn')].filter(a => /Поддержать автора/.test(a.textContent)).length,
+    `${support.length}`);
+  check('ссылка поддержки открывается в новой вкладке и без передачи источника',
+    support.every(a => a.getAttribute('target') === '_blank' && /noopener/.test(a.getAttribute('rel') || '')));
+
+  const routeTables = [...d.querySelectorAll('#routing table')];
+  check('справочник маршрутов: три таблицы (игры, DNS, способы)', routeTables.length >= 3, `${routeTables.length}`);
+  check('в справочнике 22 игры', (() => {
+    const first = routeTables.find(t => /Игра/.test(t.querySelector('thead').textContent));
+    return first && first.querySelectorAll('tbody tr').length === 22;
+  })(), 'строк: ' + (routeTables[0] ? routeTables[0].querySelectorAll('tbody tr').length : 0));
+  check('в справочнике 5 бесплатных DNS', (() => {
+    const t = routeTables.find(x => /Резолвер/.test(x.querySelector('thead').textContent));
+    return t && t.querySelectorAll('tbody tr').length === 5;
+  })());
+  check('в справочнике 8 способов сократить путь', (() => {
+    const t = routeTables.find(x => /Способ/.test(x.querySelector('thead').textContent));
+    return t && t.querySelectorAll('tbody tr').length === 8;
+  })());
+  check('сказано, что бесплатных и безопасных способов четыре (а не «пять», как было ошибочно)',
+    /бесплатных и безопасных способов — 4/i.test(d.getElementById('routing').textContent) &&
+    !/способов — пять/i.test(d.getElementById('routing').textContent));
+  check('второй канал честно помечен платным: не в списке бесплатных',
+    (() => {
+      const t = [...d.querySelectorAll('#routing table')].find(x => /Способ/.test(x.querySelector('thead').textContent));
+      if (!t) return false;
+      const row = [...t.querySelectorAll('tbody tr')].find(r => /Второй канал/.test(r.textContent));
+      return !!row && !/бесплатный способ/.test(row.textContent);
+    })());
+  check('у бесплатных способов стоит метка «бесплатный способ»',
+    (() => {
+      const t = [...d.querySelectorAll('#routing table')].find(x => /Способ/.test(x.querySelector('thead').textContent));
+      if (!t) return false;
+      return [...t.querySelectorAll('tbody tr')].filter(r => /бесплатный способ/.test(r.textContent)).length === 4;
+    })());
+
+  const charts = [...d.querySelectorAll('#diagnostics .chart')];
+  check('панелей графика сети 4', charts.length === 4, `${charts.length}`);
+  check('в каждой панели есть нарисованный ряд данных',
+    charts.every(c => c.querySelector('polyline, rect')), charts.map(c => c.querySelector('polyline, rect') ? 'да' : 'нет').join(','));
+  check('под каждой панелью подписаны «было» и «стало»',
+    charts.every(c => /было/.test(c.textContent) && /стало/.test(c.textContent)));
+  check('в графике подписаны единицы измерения',
+    ['Мбит/с', 'мс', '%'].every(u => d.getElementById('diagnostics').textContent.includes(u)));
+  check('таблица «было / стало» показывает не меньше восьми показателей', (() => {
+    const t = [...d.querySelectorAll('#diagnostics table')].find(x => /Показатель/.test(x.querySelector('thead').textContent));
+    return t && t.querySelectorAll('tbody tr').length >= 8;
+  })());
+  check('график честно помечен как демонстрационный пример',
+    /демонстрационные|пример макета/i.test(d.getElementById('diagnostics').textContent));
+  check('таблица обязательных показателей пришла из кода (11 строк)', (() => {
+    const t = [...d.querySelectorAll('#diagnostics table')].find(x => /Почему он в обязательном списке/.test(x.textContent));
+    return t && t.querySelectorAll('tbody tr').length === 11;
+  })(), (() => {
+    const t = [...d.querySelectorAll('#diagnostics table')].find(x => /Почему он в обязательном списке/.test(x.textContent));
+    return t ? `${t.querySelectorAll('tbody tr').length}` : 'таблицы нет';
+  })());
+  check('в графике подписано окно наблюдения и число проб',
+    /окно наблюдения/i.test(d.getElementById('diagnostics').textContent) &&
+    /точек в окне/i.test(d.getElementById('diagnostics').textContent));
+  check('правило «нет измерения — нет нуля» написано и в графике',
+    /нет измерения — нет нуля/i.test(d.getElementById('diagnostics').textContent));
+
+  check('профилей потребления три: экономный, обычный, максимум', (() => {
+    const t = [...d.querySelectorAll('#settings table')].find(x => /Профиль потребления/.test(x.querySelector('thead').textContent));
+    return t && t.querySelectorAll('tbody tr').length === 3 &&
+      /экономно/i.test(t.textContent) && /обычн/i.test(t.textContent) && /максим|производительн/i.test(t.textContent);
+  })());
+  check('пауза на батарее и при свёрнутой игре подписаны в таблице профилей',
+    /Пауза на батарее/.test(d.getElementById('settings').textContent) &&
+    /свёрнута/i.test(d.getElementById('settings').textContent));
+  const trayCards = [...d.querySelectorAll('#settings .card')].filter(c => /^Трей:/.test((c.querySelector('h4') || {}).textContent || ''));
+  check('меню трея показаны тремя состояниями', trayCards.length === 3, `${trayCards.length}`);
+  check('в меню трея есть пункт возврата изменений', /Вернуть как было/.test(d.getElementById('settings').textContent));
+  check('подсказка трея не пишет «0 мс», когда замеров не было',
+    /Пинга нет — замеров пока не было/.test(d.getElementById('settings').textContent));
+
+  check('строк в таблице готовности 16', d2.querySelectorAll('#progress tbody tr').length === 16,
+    `${d2.querySelectorAll('#progress tbody tr').length}`);
+
+
+  // ── меню и оформление: понятность для новичка ──────────────────────────────────────────────
+  check('в боковой колонке есть карточка «Что в этой версии»', !!d.querySelector('.side-card.whatsnew'));
+  check('в карточке «Что в этой версии» семь пунктов-новинок',
+    d.querySelectorAll('.side-card.whatsnew li').length === 7,
+    `${d.querySelectorAll('.side-card.whatsnew li').length}`);
+  check('у каждого пункта меню есть номер, название, пояснение и значок',
+    menu.every(a => a.querySelector('.stepnum') && (a.querySelector('.steptext b') || {}).textContent &&
+      a.querySelector('.steptext span') && a.querySelector('.navbadge')));
+  check('мини-оглавлений внутри разделов три и они раскрываются без скриптов',
+    d.querySelectorAll('.toc-mini > summary').length === 3,
+    `${d.querySelectorAll('.toc-mini > summary').length}`);
+  check('ссылки мини-оглавлений ведут в существующие места',
+    [...d.querySelectorAll('.toc-mini-links a')].every(a => !!d.querySelector(a.getAttribute('href'))),
+    [...d.querySelectorAll('.toc-mini-links a')].filter(a => !d.querySelector(a.getAttribute('href'))).map(a => a.getAttribute('href')).join(','));
+  check('подкатегории твиков помечены цветом (пять цветов слева)',
+    ['Ping', 'Speed', 'Fps', 'Input', 'System'].every(f => new RegExp('tweak\\[data-focus="' + f + '"]').test(html)));
+
+
+  // ── вердикты «стоит включать или нет» приходят из каталога, а не нарисованы в макете ────────
+  check('в легенде карточек четыре вердикта из каталога', (() => {
+    const box = [...d.querySelectorAll('#tweaks .legendbox')].find(b => b.querySelector('.verdict'));
+    return !!box && box.querySelectorAll('.verdict').length === 4;
+  })(), `${[...d.querySelectorAll('#tweaks .legendbox')].filter(b => b.querySelector('.verdict')).length} легенд с вердиктами`);
+  check('плашки каталога в карточках не дублируются вместе с вердиктами',
+    !/Рекомендую для игр/.test(d.getElementById('tweaks').textContent.split('Как читать карточку')[1] || ''));
+  check('подписи вердиктов совпадают с формулировками кода (TweakVerdict)',
+    ['включать: да', 'по желанию', 'осторожно', 'не советуем']
+      .every(v => d.getElementById('tweaks').textContent.includes(v)));
+  check('под ползунком написано состояние по умолчанию для каждого твика',
+    cards.every(c => /по умолчанию|включён в план по умолчанию/.test(c.querySelector('.t-state').textContent)),
+    cards.filter(c => !/по умолчанию|включён в план/.test(c.querySelector('.t-state').textContent)).map(c => c.dataset.code).join(','));
+  check('«не советуем» выключены по умолчанию и объяснены внутри карточки',
+    cards.filter(c => c.dataset.badge === 'NotRecommended').every(c => {
+      const box = c.querySelector('.t-toggle');
+      return box && !box.checked && /не советуем/i.test(c.querySelector('.t-state').textContent);
+    }));
+  check('в карточках есть блок «Зачем для игры и чего это стоит» с пометкой стоит ли включать',
+    cards.every(c => /Зачем для игры/.test(c.textContent)));
+
+  console.log(`Файл: ${path.resolve(FILE)} (${(html.length / 1024).toFixed(0)} КБ)`);
+  console.log('порядок разделов:', ids.join(' → '));
+  console.log(`=== пройдено ${ok.length}, проблем ${problems.length} ===`);
+  problems.forEach(p => console.log('  ✗ ' + p));
+  if (problems.length === 0) console.log('  все проверки пройдены');
+  process.exit(problems.length === 0 ? 0 : 1);
+}, 250);

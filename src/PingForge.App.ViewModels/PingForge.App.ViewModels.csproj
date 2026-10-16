@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PingForge.App.ViewModels</RootNamespace>
+    <AssemblyName>PingForge.App.ViewModels</AssemblyName>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Интерфейс не зависит от WPF: его модели представления проверяются тестами на любой машине.
+         Слой Windows (окно, значки, канал) — отдельный проект поверх этого. -->
+    <ProjectReference Include="..\PingForge.Core\PingForge.Core.csproj" />
+    <ProjectReference Include="..\PingForge.Orchestration\PingForge.Orchestration.csproj" />
+    <ProjectReference Include="..\PingForge.Service\PingForge.Service.csproj" />
+    <!-- Каталог твиков читается напрямую: описание и вердикты — те же, что применяет служба. -->
+    <ProjectReference Include="..\PingForge.Tweaks\PingForge.Tweaks.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>PingForge.Orchestration</AssemblyName>
+    <RootNamespace>PingForge.Orchestration</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PingForge.Core\PingForge.Core.csproj" />
+    <ProjectReference Include="..\PingForge.Data\PingForge.Data.csproj" />
+  </ItemGroup>
+
+</Project>

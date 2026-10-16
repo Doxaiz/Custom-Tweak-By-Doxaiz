@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PingForge.Network.Windows</RootNamespace>
+    <AssemblyName>PingForge.Network.Windows</AssemblyName>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Позволяет проверять типовую сборку этого проекта и на сборочном сервере без Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PingForge.Core\PingForge.Core.csproj" />
+    <ProjectReference Include="..\PingForge.Network\PingForge.Network.csproj" />
+    <ProjectReference Include="..\PingForge.Orchestration\PingForge.Orchestration.csproj" />
+    <!-- Переиспользуем уже написанные Windows-порты: реестр и запуск утилит. -->
+    <ProjectReference Include="..\PingForge.Tweaks.Windows\PingForge.Tweaks.Windows.csproj" />
+  </ItemGroup>
+
+</Project>

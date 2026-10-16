@@ -1,0 +1,85 @@
+<UserControl x:Class="PingForge.App.Views.OptimizeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel>
+    <TextBlock Style="{StaticResource Title}" Text="Оптимизация соединения" />
+
+    <Border Style="{StaticResource Card}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,20,0">
+          <Button Style="{StaticResource PrimaryButton}"
+                  Content="{Binding ButtonTextRu}"
+                  Command="{Binding OptimizeCommand}"
+                  MinWidth="260" />
+          <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0"
+                     Text="Одна кнопка: замер «до», поиск игры, выбор пути. Повторное нажатие возвращает всё как было." />
+        </StackPanel>
+
+        <UniformGrid Grid.Column="1" Columns="4" Rows="1">
+          <Border Style="{StaticResource Card}" Margin="0,0,8,0">
+            <StackPanel>
+              <TextBlock Text="{Binding CurrentRttMs, StringFormat={}{0:0.#} мс, TargetNullValue=не измерено}"
+                         FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+              <TextBlock Style="{StaticResource Caption}" Text="пинг сейчас" />
+            </StackPanel>
+          </Border>
+          <Border Style="{StaticResource Card}" Margin="0,0,8,0">
+            <StackPanel>
+              <TextBlock Text="{Binding ImprovementMs, StringFormat=−{0:0.#} мс, TargetNullValue=—}"
+                         FontSize="20" FontWeight="SemiBold" />
+              <TextBlock Style="{StaticResource Caption}" Text="стало лучше" />
+            </StackPanel>
+          </Border>
+          <Border Style="{StaticResource Card}" Margin="0,0,8,0">
+            <StackPanel>
+              <TextBlock Text="{Binding BaselineRttMs, StringFormat=было {0:0.#} мс, TargetNullValue=было —}"
+                         FontSize="15" FontWeight="SemiBold" />
+              <TextBlock Style="{StaticResource Caption}" Text="до оптимизации" />
+            </StackPanel>
+          </Border>
+          <Border Style="{StaticResource Card}" Margin="0">
+            <StackPanel>
+              <TextBlock Text="{Binding QualityRu}" FontSize="15" FontWeight="SemiBold" />
+              <TextBlock Style="{StaticResource Caption}" Text="оценка качества" />
+            </StackPanel>
+          </Border>
+        </UniformGrid>
+      </Grid>
+    </Border>
+
+    <Border Style="{StaticResource Card}">
+      <StackPanel>
+        <TextBlock Text="{Binding RttLineRu}" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding StatusRu}" />
+      </StackPanel>
+    </Border>
+
+    <TextBlock Style="{StaticResource Title}" Text="Что сделала программа" FontSize="16" Margin="0,6,0,8" />
+    <Border Style="{StaticResource Card}">
+      <StackPanel>
+        <TextBlock Text="Маршрут для игрового сервера" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}"
+                   Text="Маршрут добавляется только для адреса игрового сервера и снимается сразу после остановки. Это не глобальный VPN: остальной трафик идёт как обычно." />
+
+        <TextBlock Text="Приоритет пакетов игры (DSCP 46)" FontWeight="SemiBold" Margin="0,12,0,0" />
+        <TextBlock Style="{StaticResource Caption}"
+                   Text="Политика QoS помечает пакеты процесса игры как «сетевое управление»: роутеры и провайдеры обрабатывают такие пакеты в первую очередь." />
+
+        <TextBlock Text="Твики под ваш случай" FontWeight="SemiBold" Margin="0,12,0,0" />
+        <TextBlock Style="{StaticResource Caption}"
+                   Text="Из 47 твиков применяются только те, что подходят вашей сети. Остальное не трогается, а что именно изменилось — видно в разделе «Журнал»." />
+      </StackPanel>
+    </Border>
+
+    <StackPanel Orientation="Horizontal">
+      <Button Style="{StaticResource GhostButton}" Content="Обновить состояние" Command="{Binding RefreshStatusCommand}" Margin="0,0,8,0" />
+      <Button Style="{StaticResource GhostButton}" Content="Починить сеть" Command="{Binding RepairNetworkCommand}"
+              ToolTip="Снимает только свои остатки после аварии: маршруты, политики QoS и незакрытые операции" />
+    </StackPanel>
+  </StackPanel>
+</UserControl>

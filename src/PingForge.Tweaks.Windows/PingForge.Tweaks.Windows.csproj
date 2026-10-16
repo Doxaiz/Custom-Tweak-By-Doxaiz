@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PingForge.Tweaks.Windows</RootNamespace>
+    <AssemblyName>PingForge.Tweaks.Windows</AssemblyName>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Позволяет проверять типовую сборку этого проекта и на сборочном сервере без Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PingForge.Core\PingForge.Core.csproj" />
+    <ProjectReference Include="..\PingForge.Tweaks\PingForge.Tweaks.csproj" />
+  </ItemGroup>
+
+</Project>

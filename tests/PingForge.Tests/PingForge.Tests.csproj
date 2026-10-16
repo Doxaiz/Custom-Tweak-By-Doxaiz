@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>PingForge.Tests</AssemblyName>
+    <RootNamespace>PingForge.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PingForge.Core\PingForge.Core.csproj" />
+    <ProjectReference Include="..\..\src\PingForge.Data\PingForge.Data.csproj" />
+    <ProjectReference Include="..\..\src\PingForge.Probing\PingForge.Probing.csproj" />
+    <ProjectReference Include="..\..\src\PingForge.Analysis\PingForge.Analysis.csproj" />
+    <ProjectReference Include="..\..\src\PingForge.Routing\PingForge.Routing.csproj" />
+    <ProjectReference Include="..\..\src\PingForge.Tweaks\PingForge.Tweaks.csproj" />
+    <ProjectReference Include="..\..\src\PingForge.Orchestration\PingForge.Orchestration.csproj" />
+    <ProjectReference Include="..\..\src\PingForge.Network\PingForge.Network.csproj" />
+    <ProjectReference Include="..\..\src\PingForge.Service\PingForge.Service.csproj" />
+    <ProjectReference Include="..\..\src\PingForge.App.ViewModels\PingForge.App.ViewModels.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+</Project>
