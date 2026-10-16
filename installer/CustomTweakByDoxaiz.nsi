@@ -14,7 +14,8 @@
 ;  не создаёт маршрутов, не собирает телеметрию. В реестр он пишет ровно две вещи: свою запись в списке
 ;  установленных программ и путь установки — чтобы «Удалить» и переустановка работали.
 ;
-;  Сборка:  makensis -INPUTCHARSET UTF8 -DVERSION=0.2.0 -DSOURCE_DIR=..\dist\portable installer\CustomTweakByDoxaiz.nsi
+;  Сборка:  makensis -INPUTCHARSET UTF8 -DVERSION=0.2.0 "-DSOURCE_DIR=<полный путь>\dist\portable" "-DOUT_DIR=<полный путь>\dist" installer\CustomTweakByDoxaiz.nsi
+;  Пути makensis ищет от папки скрипта, поэтому в сборке передаются полные — иначе он смотрит в installer\.
 ;  Обычная сборка на Windows (в GitHub Actions) и на Linux (для проверки синтаксиса) — одна и та же.
 ; ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -143,8 +144,8 @@ Section "Программа (обязательно)" SEC_APP
   WriteRegStr HKLM "${REG_UNINSTALL}" "URLInfoAbout" "${WEBSITE}"
   WriteRegStr HKLM "${REG_UNINSTALL}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKLM "${REG_UNINSTALL}" "DisplayIcon" "$INSTDIR\${APP_EXE}"
-  WriteRegStr HKLM "${REG_UNINSTALL}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-  WriteRegStr HKLM "${REG_UNINSTALL}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
+  WriteRegStr HKLM "${REG_UNINSTALL}" "UninstallString" "$\"$INSTDIR\Uninstall.exe$\""
+  WriteRegStr HKLM "${REG_UNINSTALL}" "QuietUninstallString" "$\"$INSTDIR\Uninstall.exe$\" /S"
   WriteRegDWORD HKLM "${REG_UNINSTALL}" "NoModify" 1
   WriteRegDWORD HKLM "${REG_UNINSTALL}" "NoRepair" 1
 
