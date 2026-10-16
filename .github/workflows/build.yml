@@ -147,6 +147,64 @@ jobs:
 
           Write-Host 'Окно, разделы, трей и каталог собираются на живой Windows.'
 
+      - name: Программа — снимок живого окна на Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = 'dist\portable\CustomTweakByDoxaiz.exe'
+          $log = Join-Path $env:LOCALAPPDATA 'CustomTweakByDoxaiz\app-start.log'
+          Remove-Item $log -ErrorAction SilentlyContinue
+
+          Write-Host '── Запускаю программу как человек: двойной щелчок, без ключей'
+          $app = Start-Process $exe -PassThru
+
+          $deadline = (Get-Date).AddSeconds(90)
+          $handle = 0
+          while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            $app.Refresh()
+            if ($app.HasExited) {
+              if (Test-Path $log) { Get-Content $log | ForEach-Object { Write-Host "   $_" } }
+              throw "Программа завершилась сама, код $($app.ExitCode) — окна нет"
+            }
+
+            $handle = $app.MainWindowHandle
+            if ($handle -ne 0) { break }
+          }
+
+          if ($handle -eq 0) {
+            if (Test-Path $log) { Get-Content $log | ForEach-Object { Write-Host "   $_" } }
+            throw 'Окно не появилось за 90 секунд'
+          }
+
+          Write-Host "  [есть] окно открылось: «$($app.MainWindowTitle)»"
+          if ($app.MainWindowTitle -notlike '*Custom Tweak By Doxaiz*') {
+            throw "В заголовке окна не название программы: «$($app.MainWindowTitle)»"
+          }
+
+          # Дать окну дорисоваться, иначе снимок будет пустым.
+          Start-Sleep -Seconds 3
+
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $shot = Join-Path (Get-Location) 'dist\app-window.png'
+          $bitmap.Save($shot, [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose(); $bitmap.Dispose()
+          Write-Host "  [есть] снимок экрана: $shot"
+
+          if (Test-Path $log) {
+            Copy-Item $log 'dist\app-start.log' -Force
+            Get-Content $log | Select-Object -Last 8 | ForEach-Object { Write-Host "   $_" }
+          }
+
+          # Самопроверка на живом процессе: та же сборка, но без показа окна.
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          Write-Host 'Окно показывается, программа закрыта. Снимок уйдёт в артефакты сборки.'
+
       - name: Установщик — собрать (NSIS)
         run: |
           $ErrorActionPreference = 'Stop'
@@ -288,6 +346,9 @@ jobs:
             dist/*.exe
             dist/*.zip
             dist/SHA256SUMS.txt
+            dist/app-window.png
+            dist/app-start.log
+            dist/install-service.log
           if-no-files-found: error
 
       - name: Релиз (только на тег)
