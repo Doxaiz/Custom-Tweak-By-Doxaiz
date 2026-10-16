@@ -23,10 +23,28 @@ public partial class MainWindow : Window
         DataContext = new ShellViewModel(app);
 
         Closing += (_, e) => _app.OnWindowClosing(e);
+
+        // Первый пункт меню отмечен прямо в разметке (IsChecked="True"), поэтому событие
+        // «выбран раздел» приходит ещё во время разбора XAML — когда страниц (Page*) ещё нет.
+        // Именно на этом окно падало с NullReferenceException: на Linux это не видно, а на
+        // Windows процесс умирал молча, без окна и без единого слова. Применяем раздел после
+        // загрузки окна, а до тех пор обработчик просто ничего не делает.
+        Loaded += (_, _) => ApplySection();
     }
 
-    private void NavChanged(object sender, RoutedEventArgs e)
+    private void NavChanged(object sender, RoutedEventArgs e) => ApplySection();
+
+    /// <summary>
+    /// Показать выбранный раздел. Вызывается и обработчиком меню, и после загрузки окна:
+    /// одна и та же логика, один и тот же результат — независимо от того, что произошло раньше.
+    /// </summary>
+    private void ApplySection()
     {
+        if (!IsSectionReady())
+        {
+            return;   // разбор разметки ещё идёт — применим на Loaded
+        }
+
         PageOptimize.Visibility = NavOptimize.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageTweaks.Visibility = NavTweaks.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageJournal.Visibility = NavJournal.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
@@ -39,6 +57,13 @@ public partial class MainWindow : Window
             _ = _app.Journal.RefreshAsync();
         }
     }
+
+    /// <summary>Готовы ли поля окна. Недосозданные поля — не ошибка: значит разметка ещё разбирается.</summary>
+    private bool IsSectionReady() =>
+        PageOptimize is not null && PageTweaks is not null && PageJournal is not null &&
+        PageSettings is not null && PageAbout is not null &&
+        NavOptimize is not null && NavTweaks is not null && NavJournal is not null &&
+        NavSettings is not null && NavAbout is not null;
 
     private void SupportClick(object sender, RoutedEventArgs e)
     {
