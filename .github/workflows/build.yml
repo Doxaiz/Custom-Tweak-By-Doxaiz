@@ -186,14 +186,34 @@ jobs:
           Start-Sleep -Seconds 3
 
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-          $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class PfWin {
+            [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+          }
+'@
+
+          [PfWin]::SetForegroundWindow($handle) | Out-Null
+          Start-Sleep -Milliseconds 800
+
+          # Снимок — только окно программы, а не весь рабочий стол: это картинка продукта,
+          # и в ней не должно быть чужих окон сборочной машины.
+          $rect = New-Object PfWin+RECT
+          [PfWin]::GetWindowRect($handle, [ref]$rect) | Out-Null
+          $width = $rect.Right - $rect.Left
+          $height = $rect.Bottom - $rect.Top
+          Write-Host "  окно: ${width}×${height} в точке $($rect.Left),$($rect.Top)"
+
+          $bitmap = New-Object System.Drawing.Bitmap $width, $height
           $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
           $shot = Join-Path (Get-Location) 'dist\app-window.png'
           $bitmap.Save($shot, [System.Drawing.Imaging.ImageFormat]::Png)
           $graphics.Dispose(); $bitmap.Dispose()
-          Write-Host "  [есть] снимок экрана: $shot"
+          Write-Host "  [есть] снимок окна: $shot"
 
           if (Test-Path $log) {
             Copy-Item $log 'dist\app-start.log' -Force

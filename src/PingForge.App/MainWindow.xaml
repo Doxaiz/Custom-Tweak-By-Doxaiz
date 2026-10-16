@@ -76,11 +76,11 @@
 
       <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="20,18">
         <Grid>
-          <views:OptimizeView x:Name="PageOptimize" DataContext="{Binding Main}" />
+          <views:OptimizeView x:Name="PageOptimize" DataContext="{Binding MainScreen}" />
           <views:TweaksView x:Name="PageTweaks" Visibility="Collapsed" DataContext="{Binding Tweaks}" />
           <views:JournalView x:Name="PageJournal" Visibility="Collapsed" DataContext="{Binding Journal}" />
           <views:SettingsView x:Name="PageSettings" Visibility="Collapsed" DataContext="{Binding Settings}" />
-          <views:AboutView x:Name="PageAbout" Visibility="Collapsed" DataContext="{Binding Main}" />
+          <views:AboutView x:Name="PageAbout" Visibility="Collapsed" DataContext="{Binding MainScreen}" />
         </Grid>
       </ScrollViewer>
     </Grid>

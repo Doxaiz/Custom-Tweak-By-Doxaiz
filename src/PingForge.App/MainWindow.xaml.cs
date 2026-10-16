@@ -29,7 +29,51 @@ public partial class MainWindow : Window
         // Именно на этом окно падало с NullReferenceException: на Linux это не видно, а на
         // Windows процесс умирал молча, без окна и без единого слова. Применяем раздел после
         // загрузки окна, а до тех пор обработчик просто ничего не делает.
-        Loaded += (_, _) => ApplySection();
+        Loaded += (_, _) =>
+        {
+            FitToScreen();
+            ApplySection();
+        };
+    }
+
+    /// <summary>
+    /// Окно не должно быть больше экрана: на 1024×768 (и на многих ноутбуках 1366×768) окно
+    /// 1180×820 вылезало за края — часть разделов и кнопок оказывалась вне видимой области.
+    /// Само по себе это не мешает работать, но выглядит как «программа сломана».
+    /// </summary>
+    private void FitToScreen()
+    {
+        Rect work = SystemParameters.WorkArea;
+
+        if (Width > work.Width)
+        {
+            Width = Math.Max(MinWidth, work.Width - 16);
+        }
+
+        if (Height > work.Height)
+        {
+            Height = Math.Max(MinHeight, work.Height - 16);
+        }
+
+        if (Left < work.Left)
+        {
+            Left = work.Left;
+        }
+
+        if (Top < work.Top)
+        {
+            Top = work.Top;
+        }
+
+        if (Left + Width > work.Right)
+        {
+            Left = Math.Max(work.Left, work.Right - Width);
+        }
+
+        if (Top + Height > work.Bottom)
+        {
+            Top = Math.Max(work.Top, work.Bottom - Height);
+        }
     }
 
     private void NavChanged(object sender, RoutedEventArgs e) => ApplySection();
@@ -57,6 +101,12 @@ public partial class MainWindow : Window
             _ = _app.Journal.RefreshAsync();
         }
     }
+
+    /// <summary>
+    /// Все разделы окна — для самопроверки: ей нужно показать и проверить каждый, даже свёрнутый.
+    /// </summary>
+    internal IReadOnlyList<UIElement> SectionsForCheck =>
+        [PageOptimize, PageTweaks, PageJournal, PageSettings, PageAbout];
 
     /// <summary>Готовы ли поля окна. Недосозданные поля — не ошибка: значит разметка ещё разбирается.</summary>
     private bool IsSectionReady() =>

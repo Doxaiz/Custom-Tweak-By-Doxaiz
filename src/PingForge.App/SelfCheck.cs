@@ -51,6 +51,7 @@ internal static class SelfCheck
 
         int windowCode = CheckWindow(app, problems);
 
+        CheckBindings(app, problems);
         CheckTray(app, problems);
         CheckService(problems);
 
@@ -139,6 +140,10 @@ internal static class SelfCheck
             root.Arrange(new Rect(size));
             root.UpdateLayout();
 
+            // Свёрнутые разделы в визуальном дереве не участвуют, а проверить надо все:
+            // показываем их на время проверки и пересчитываем раскладку.
+            ShowAllSections(window);
+
             int elements = CountElements(root);
             string[] sections = [nameof(OptimizeView), nameof(TweaksView), nameof(JournalView), nameof(SettingsView), nameof(AboutView)];
             var found = new List<string>();
@@ -177,6 +182,87 @@ internal static class SelfCheck
             StartupLog.Problem("Окно не построилось", ex);
             problems.Add($"окно: {ex.GetType().Name}: {ex.Message}");
             return WindowFailed;
+        }
+    }
+
+    /// <summary>
+    /// Привязки страниц. Отдельная проверка, потому что именно здесь была настоящая ошибка, которую
+    /// видно только глазами: страница «Оптимизация» получала данные не из того свойства модели
+    /// ({Binding Main} вместо {Binding MainScreen}), и все её значения оставались пустыми —
+    /// большая кнопка без надписи, карточки без чисел. Окно при этом строилось «успешно».
+    ///
+    /// Проверяем то, что видит человек: у главной кнопки есть надпись, а на странице есть числа из
+    /// каталога и настроек. Пустая надпись = отказ.
+    /// </summary>
+    private static void CheckBindings(App app, List<string> problems)
+    {
+        MainWindow? window = app.Shell;
+        if (window?.Content is not FrameworkElement root)
+        {
+            return;   // окна нет — об этом уже сказано выше, второй раз не ругаемся
+        }
+
+        string[] expected =
+        [
+            "Оптимизировать соединение",                     // надпись на большой кнопке (состояние «покой»)
+            app.MainScreen.ButtonTextRu,                      // или то, что она говорит сейчас
+            $"Твиков в каталоге: {app.Tweaks.Rows.Count}",    // шапка окна
+        ];
+
+        var texts = new List<string>();
+        CollectButtonTexts(root, texts);
+        CollectTextBlockTexts(root, texts);
+        string all = string.Join("\n", texts);
+
+        var missing = expected.Where(text => !all.Contains(text, StringComparison.Ordinal)).ToArray();
+        if (missing.Length > 0)
+        {
+            problems.Add($"в окне нет надписей из привязок: {string.Join("; ", missing)} — страница потеряла данные");
+            StartupLog.Warn($"Привязки: НЕ найдены надписи — {string.Join("; ", missing)}");
+            return;
+        }
+
+        StartupLog.Note($"Привязки: страницы получили данные (проверено {expected.Length} надписи)");
+    }
+
+    private static void ShowAllSections(MainWindow window)
+    {
+        foreach (UIElement section in window.SectionsForCheck)
+        {
+            section.Visibility = Visibility.Visible;
+        }
+
+        if (window.Content is FrameworkElement root)
+        {
+            root.UpdateLayout();
+        }
+    }
+
+    private static void CollectButtonTexts(DependencyObject node, List<string> texts)
+    {
+        if (node is Button { Content: string content } && content.Length > 0)
+        {
+            texts.Add(content);
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            CollectButtonTexts(VisualTreeHelper.GetChild(node, i), texts);
+        }
+    }
+
+    private static void CollectTextBlockTexts(DependencyObject node, List<string> texts)
+    {
+        if (node is TextBlock { Text: { Length: > 0 } text })
+        {
+            texts.Add(text);
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            CollectTextBlockTexts(VisualTreeHelper.GetChild(node, i), texts);
         }
     }
 
