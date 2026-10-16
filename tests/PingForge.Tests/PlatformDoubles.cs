@@ -221,6 +221,9 @@ public sealed class FakeNetshEmulator : ICommandPort
     public string? GetTcpGlobal(string canonicalLabel) =>
         _tcpGlobal.TryGetValue(canonicalLabel, out string? value) ? value : null;
 
+    /// <summary>Задать глобальный параметр TCP так, как его показала бы живая утилита (метка — как в netsh).</summary>
+    public void SeedTcpGlobal(string label, string value) => _tcpGlobal[label] = value;
+
     public Task<CommandResult> RunAsync(string fileName, IReadOnlyList<string> arguments, CancellationToken ct = default)
     {
         _invocations.Add($"{fileName} {string.Join(' ', arguments)}");

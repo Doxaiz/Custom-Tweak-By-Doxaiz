@@ -282,6 +282,7 @@ public class ServiceProtocolTests
         Assert.False(EngineCommandCatalog.Get(EngineCommandKind.JournalTail).NeedsElevation);
         Assert.False(EngineCommandCatalog.Get(EngineCommandKind.RealtimeStop).NeedsElevation);
         Assert.False(EngineCommandCatalog.Get(EngineCommandKind.PerfProfile).NeedsElevation);
+        Assert.False(EngineCommandCatalog.Get(EngineCommandKind.ReadSystemState).NeedsElevation);
 
         Assert.True(EngineCommandCatalog.Get(EngineCommandKind.ApplyPreset).NeedsElevation);
         Assert.True(EngineCommandCatalog.Get(EngineCommandKind.ApplyTweaks).NeedsElevation);

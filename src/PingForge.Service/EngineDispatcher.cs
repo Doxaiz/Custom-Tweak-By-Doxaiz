@@ -79,6 +79,8 @@ public sealed class EngineDispatcher
 
                 EngineCommandKind.PerfProfile => await SetPerfProfileAsync(args, ct).ConfigureAwait(false),
 
+                EngineCommandKind.ReadSystemState => await _operations.ReadSystemStateAsync(ct).ConfigureAwait(false),
+
                 _ => EngineOperationResult.Failure($"Команда «{descriptor.WireName}» объявлена, но не подключена."),
             };
 

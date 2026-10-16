@@ -129,6 +129,17 @@ public static class EngineCommandCatalog
             RequiredArgs: ["profile"],
             OptionalArgs: [],
             ExampleRu: """{"id":"11","command":"perf-profile","args":{"profile":"economy"}}"""),
+
+        new(
+            EngineCommandKind.ReadSystemState,
+            "system-state",
+            "Прочитать состояние системы",
+            "Показывает, что сейчас настроено в Windows и сети: версия, права, активный адаптер, скорость, " +
+            "MTU, DNS, состояние сетевых настроек. Ничего не меняет — только чтение.",
+            NeedsElevation: false,
+            RequiredArgs: [],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"12","command":"system-state"}"""),
     ];
 
     /// <summary>Все команды в порядке объявления — он же порядок вывода в интерфейсе.</summary>

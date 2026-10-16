@@ -43,4 +43,7 @@ public interface IEngineOperations
 
     /// <summary>Сменить профиль потребления ресурсов.</summary>
     Task<EngineOperationResult> SetPerfProfileAsync(PerfProfile profile, CancellationToken ct = default);
+
+    /// <summary>Прочитать текущее состояние Windows и сети: что настроено сейчас, до всяких изменений.</summary>
+    Task<EngineOperationResult> ReadSystemStateAsync(CancellationToken ct = default);
 }

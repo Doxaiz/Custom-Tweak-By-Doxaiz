@@ -392,6 +392,66 @@ public sealed class ServiceEngineTests : IDisposable
 
     // ── вспомогательное ─────────────────────────────────────────────────────────────────────────
 
+    // ── чтение состояния системы ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Чтение_состояния_пересказывает_прочитанное_и_отдаёт_его_как_есть()
+    {
+        var reader = new FakeSystemStateReader();
+        LiveEngineOperations ops = Build(stateReader: reader);
+
+        EngineOperationResult result = await ops.ReadSystemStateAsync();
+
+        Assert.True(result.Ok);
+        Assert.Equal(1, reader.CallCount);
+        Assert.Contains("Windows 11 Pro 26100", result.MessageRu);
+        Assert.Contains("права администратора есть", result.MessageRu);
+        Assert.Contains("Ethernet", result.MessageRu);
+        Assert.Contains("1000 Мбит/с", result.MessageRu);
+        Assert.Contains("MTU 1500", result.MessageRu);
+        Assert.Contains("Прочитано всё", result.MessageRu);
+        Assert.Contains("\"windowsEditionAndBuild\":\"Windows 11 Pro 26100\"", result.DataJson);
+        Assert.Contains("\"tcpAutoTuningLevel\":\"normal\"", result.DataJson);
+        Assert.Contains("\"adapterDisplayName\":\"Ethernet\"", result.DataJson);
+    }
+
+    [Fact]
+    public async Task Чтение_состояния_не_подменяет_неизвестное_нулями()
+    {
+        var reader = new FakeSystemStateReader
+        {
+            Reading = new FakeSystemStateReader().Reading with
+            {
+                ActiveAdapter = null,
+                LinkSpeedMbps = null,
+                CurrentMtuBytes = null,
+                IsNagleDisabledOnActiveNic = null,
+                CongestionProvider = null,
+                UnresolvedFields = ["Скорость активного адаптера"],
+            },
+        };
+
+        EngineOperationResult result = await Build(stateReader: reader).ReadSystemStateAsync();
+
+        Assert.True(result.Ok);
+        Assert.Contains("активный адаптер не определён", result.MessageRu);
+        Assert.Contains("MTU не прочитан", result.MessageRu);
+        Assert.Contains("Не прочитано полей: 1", result.MessageRu);
+        Assert.DoesNotContain("linkSpeedMbps", result.DataJson);
+        Assert.DoesNotContain("currentMtuBytes", result.DataJson);
+        Assert.Contains("Скорость активного адаптера", result.DataJson);
+    }
+
+    [Fact]
+    public async Task Чтение_состояния_без_читателя_честно_отказывает_а_не_молчит()
+    {
+        EngineOperationResult result = await Build().ReadSystemStateAsync();
+
+        Assert.False(result.Ok);
+        Assert.Contains("не подключено", result.MessageRu);
+        Assert.Null(result.DataJson);
+    }
+
     private LiveEngineOperations Build(
         ITweakCatalog? catalog = null,
         ISnapshotService? snapshots = null,
@@ -400,7 +460,8 @@ public sealed class ServiceEngineTests : IDisposable
         RealtimeOptimizer? realtime = null,
         Func<PerfProfile>? readProfile = null,
         Action<PerfProfile>? applyProfile = null,
-        bool isElevationAvailable = true) =>
+        bool isElevationAvailable = true,
+        ISystemStateReader? stateReader = null) =>
         new(
             catalog ?? new CatalogDouble(Tweak("A"), Tweak("B")),
             snapshots ?? new SnapshotDouble(),
@@ -409,7 +470,8 @@ public sealed class ServiceEngineTests : IDisposable
             journal,
             realtime,
             readProfile,
-            applyProfile);
+            applyProfile,
+            stateReader: stateReader);
 
     private static SystemSnapshot Snapshot(string id, DateTime createdUtc) =>
         new(id, createdUtc, "тестовый снапшот", TweakProfilePreset.LowLatencyGaming, false, "hash", false, null, []);

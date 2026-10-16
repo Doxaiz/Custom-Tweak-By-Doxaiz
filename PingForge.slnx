@@ -12,6 +12,7 @@
   <Project Path="src/PingForge.Service.Host/PingForge.Service.Host.csproj" />
   <Project Path="src/PingForge.App.ViewModels/PingForge.App.ViewModels.csproj" />
   <Project Path="src/PingForge.App/PingForge.App.csproj" />
+  <Project Path="src/PingForge.SystemState/PingForge.SystemState.csproj" />
   <Project Path="src/PingForge.Network/PingForge.Network.csproj" />
   <Project Path="src/PingForge.Network.Windows/PingForge.Network.Windows.csproj" />
   <Project Path="tools/PingForge.CatalogDump/PingForge.CatalogDump.csproj" />

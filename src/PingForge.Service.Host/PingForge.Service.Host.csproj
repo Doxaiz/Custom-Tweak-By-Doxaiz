@@ -15,6 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PingForge.SystemState\PingForge.SystemState.csproj" />
     <ProjectReference Include="..\PingForge.Service\PingForge.Service.csproj" />
     <ProjectReference Include="..\PingForge.Service.Windows\PingForge.Service.Windows.csproj" />
     <ProjectReference Include="..\PingForge.Data\PingForge.Data.csproj" />

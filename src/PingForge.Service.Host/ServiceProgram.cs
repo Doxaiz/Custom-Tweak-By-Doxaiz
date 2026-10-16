@@ -5,6 +5,7 @@ using PingForge.Data.Repositories;
 using PingForge.Orchestration;
 using PingForge.Service;
 using PingForge.Service.Protocol;
+using PingForge.SystemState;
 using PingForge.Service.Windows;
 using PingForge.Tweaks;
 using PingForge.Tweaks.Windows;
@@ -82,6 +83,11 @@ public static class ServiceProgram
         var restorePoints = new WindowsRestorePointService(platform.Command);
         TweakCatalog catalog = new(platform.ToCatalogPorts());
 
+        // Чтение состояния — теми же портами и тем же каталогом, что применяет изменения: состояние
+        // не может разойтись с тем, что программа пишет в снапшот.
+        var systemState = new SystemStateReader(
+            catalog, platform.Registry, platform.Command, platform.NicProperties, platform.ActiveAdapter);
+
         var database = new SqliteDatabaseInitializer(Path.Combine(DataDirectory, "pingforge.db"));
         await database.EnsureInitializedAsync(ct).ConfigureAwait(false);
 
@@ -100,7 +106,8 @@ public static class ServiceProgram
             snapshotService,
             coordinator,
             isElevationAvailable: true,
-            journal);
+            journal: journal,
+            stateReader: systemState);
 
         var dispatcher = new EngineDispatcher(operations);
         var server = new EnginePipeServer(dispatcher, Log);

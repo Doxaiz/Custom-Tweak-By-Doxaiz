@@ -12,6 +12,7 @@
     <ProjectReference Include="..\..\src\PingForge.Core\PingForge.Core.csproj" />
     <ProjectReference Include="..\..\src\PingForge.Data\PingForge.Data.csproj" />
     <ProjectReference Include="..\..\src\PingForge.Probing\PingForge.Probing.csproj" />
+    <ProjectReference Include="..\..\src\PingForge.SystemState\PingForge.SystemState.csproj" />
     <ProjectReference Include="..\..\src\PingForge.Analysis\PingForge.Analysis.csproj" />
     <ProjectReference Include="..\..\src\PingForge.Routing\PingForge.Routing.csproj" />
     <ProjectReference Include="..\..\src\PingForge.Tweaks\PingForge.Tweaks.csproj" />

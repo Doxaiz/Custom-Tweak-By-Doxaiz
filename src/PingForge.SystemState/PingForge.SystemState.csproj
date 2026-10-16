@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PingForge.SystemState</RootNamespace>
+    <AssemblyName>PingForge.SystemState</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PingForge.Core\PingForge.Core.csproj" />
+    <ProjectReference Include="..\PingForge.Tweaks\PingForge.Tweaks.csproj" />
+  </ItemGroup>
+
+</Project>

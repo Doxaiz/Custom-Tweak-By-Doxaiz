@@ -53,6 +53,20 @@ public class ServiceDispatcherTests
         Assert.Equal(EngineDispatcher.DefaultJournalLimit, ops.LastJournalLimit);
     }
 
+    [Fact]
+    public async Task Чтение_состояния_доступно_без_прав_и_ничего_не_меняет()
+    {
+        var ops = new FakeEngineOperations { IsElevationAvailable = false };
+
+        EngineResponse response = await Dispatcher(ops)
+            .HandleJsonAsync("""{"id":"12","command":"system-state"}""");
+
+        Assert.True(response.Ok);
+        Assert.True(ops.ReadSystemStateCalled);
+        Assert.Contains("26100", response.MessageRu);
+        Assert.Contains("tcpAutoTuningLevel", response.DataJson);
+    }
+
     // ── права ───────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -388,6 +402,16 @@ public class ServiceDispatcherTests
         {
             LastProfile = profile;
             return Task.FromResult(EngineOperationResult.Success($"Профиль потребления: {EngineNames.ProfileWireName(profile)}."));
+        }
+
+        public bool ReadSystemStateCalled { get; private set; }
+
+        public Task<EngineOperationResult> ReadSystemStateAsync(CancellationToken ct = default)
+        {
+            ReadSystemStateCalled = true;
+            return Task.FromResult(EngineOperationResult.Success(
+                "Windows 11 Pro 26100. права администратора есть.",
+                """{"tcpAutoTuningLevel":"normal"}"""));
         }
     }
 }

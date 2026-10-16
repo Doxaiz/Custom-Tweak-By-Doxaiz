@@ -29,6 +29,7 @@ public sealed class LiveEngineOperations : IEngineOperations
     private readonly Action<PerfProfile>? _applyProfile;
     private readonly string _productName;
     private readonly string _appVersion;
+    private readonly ISystemStateReader? _stateReader;
 
     public LiveEngineOperations(
         ITweakCatalog catalog,
@@ -40,7 +41,8 @@ public sealed class LiveEngineOperations : IEngineOperations
         Func<PerfProfile>? readProfile = null,
         Action<PerfProfile>? applyProfile = null,
         string productName = "Custom Tweak By Doxaiz",
-        string appVersion = "0.1.0")
+        string appVersion = "0.1.0",
+        ISystemStateReader? stateReader = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
@@ -51,6 +53,7 @@ public sealed class LiveEngineOperations : IEngineOperations
         _applyProfile = applyProfile;
         _productName = productName;
         _appVersion = appVersion;
+        _stateReader = stateReader;
         IsElevationAvailable = isElevationAvailable;
     }
 
@@ -453,6 +456,64 @@ public sealed class LiveEngineOperations : IEngineOperations
         _ => "не запущена",
     };
 
+    public async Task<EngineOperationResult> ReadSystemStateAsync(CancellationToken ct = default)
+    {
+        if (_stateReader is null)
+        {
+            return EngineOperationResult.Failure(
+                "Служба не умеет читать состояние системы: в этой сборке чтение не подключено. " +
+                "Это наша недоработка, а не ваша ошибка — остальные команды работают как обычно.");
+        }
+
+        SystemStateReading reading = await _stateReader.ReadAsync(ct).ConfigureAwait(false);
+
+        string adapterText = reading.ActiveAdapter is null
+            ? "активный адаптер не определён"
+            : $"активный адаптер «{reading.ActiveAdapter.DisplayName}»" +
+              (reading.LinkSpeedMbps is null
+                  ? ", скорость соединения не прочитана"
+                  : $", {reading.LinkSpeedMbps} Мбит/с");
+
+        string mtuText = reading.CurrentMtuBytes is null ? "MTU не прочитан" : $"MTU {reading.CurrentMtuBytes} байт";
+
+        string rightsText = reading.IsRunningAsAdministrator
+            ? "права администратора есть"
+            : "прав администратора нет";
+
+        string unresolvedText = reading.UnresolvedFields.Count == 0
+            ? "Прочитано всё, что запрашивали."
+            : $"Не прочитано полей: {reading.UnresolvedFields.Count} — они остались неизвестными, " +
+              "а не выдуманными: интерфейс покажет их серым с причиной.";
+
+        string message = $"{reading.WindowsEditionAndBuild}. {rightsText}; {adapterText}; {mtuText}. {unresolvedText}";
+
+        string data = Encode(new SystemStateData(
+            reading.WindowsEditionAndBuild,
+            reading.IsRunningAsAdministrator,
+            reading.ActiveAdapter?.InterfaceGuid,
+            reading.ActiveAdapter?.DisplayName,
+            reading.ActiveAdapter?.IsUp,
+            reading.LinkSpeedMbps,
+            reading.CurrentMtuBytes,
+            reading.PowerSchemeGuid,
+            reading.PowerSchemeName,
+            reading.TcpAutoTuningLevel,
+            reading.CongestionProvider,
+            reading.IsRssEnabled,
+            reading.IsRscEnabled,
+            reading.IsEcnEnabled,
+            reading.IsNagleDisabledOnActiveNic,
+            reading.IsGameModeEnabled,
+            reading.IsDeliveryOptimizationP2pEnabled,
+            reading.IsSystemRestoreEnabledOnSystemDrive,
+            reading.IsTimerResolutionRaised,
+            reading.ConfiguredDnsServers,
+            reading.AttachedNdisFilters,
+            reading.UnresolvedFields));
+
+        return EngineOperationResult.Success(message, data);
+    }
+
     private static string FormatMs(double? value) => value is null ? "не измерено" : $"{value.Value:0.#} мс";
 
     private static string Encode<T>(T payload) => JsonSerializer.Serialize(payload, EngineJson.Options);
@@ -537,4 +598,32 @@ public sealed class LiveEngineOperations : IEngineOperations
         IReadOnlyList<string> AppliedActionTitles);
 
     private sealed record ProfileData(string ProfileWire, string ProfileRu, int MeasurementsPerMinute);
+
+    /// <summary>
+    /// Состояние системы для интерфейса: поля повторяют <c>SystemStateReading</c> один в один, включая null
+    /// у всего неизвестного. Интерфейс обязан показывать null серым («не прочитано»), а не нулём.
+    /// </summary>
+    private sealed record SystemStateData(
+        string WindowsEditionAndBuild,
+        bool IsRunningAsAdministrator,
+        string? AdapterInterfaceGuid,
+        string? AdapterDisplayName,
+        bool? AdapterIsUp,
+        int? LinkSpeedMbps,
+        int? CurrentMtuBytes,
+        string? PowerSchemeGuid,
+        string? PowerSchemeName,
+        string? TcpAutoTuningLevel,
+        string? CongestionProvider,
+        bool? IsRssEnabled,
+        bool? IsRscEnabled,
+        bool? IsEcnEnabled,
+        bool? IsNagleDisabledOnActiveNic,
+        bool? IsGameModeEnabled,
+        bool? IsDeliveryOptimizationP2pEnabled,
+        bool? IsSystemRestoreEnabledOnSystemDrive,
+        bool? IsTimerResolutionRaised,
+        IReadOnlyList<string> ConfiguredDnsServers,
+        IReadOnlyList<string> AttachedNdisFilters,
+        IReadOnlyList<string> UnresolvedFields);
 }
