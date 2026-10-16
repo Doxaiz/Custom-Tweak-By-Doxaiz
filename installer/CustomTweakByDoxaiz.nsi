@@ -99,6 +99,11 @@ Function .onInit
   ; Учёт 64-разрядного реестра: SetRegView допустим только внутри функции или секции.
   SetRegView 64
 
+  ; По умолчанию NSIS кладёт ярлыки в меню вошедшего пользователя. Программа ставится
+  ; в Program Files и записана в HKLM — значит и ярлыки должны быть общими для всех,
+  ; иначе у второго пользователя на машине ярлыка просто не окажется.
+  SetShellVarContext all
+
   ${IfNot} ${RunningX64}
     ; В тихом режиме окошко показывать некому — там просто отказ, без зависшего вопроса.
     ${IfNot} ${Silent}
@@ -204,6 +209,7 @@ SectionEnd
 ; ── удаление ────────────────────────────────────────────────────────────────────────────────────────
 Function un.onInit
   SetRegView 64
+  SetShellVarContext all   ; снимаем ярлыки там же, где ставили: у общих
 
   IfSilent un_init_quiet
   MessageBox MB_OKCANCEL|MB_ICONQUESTION \
@@ -216,6 +222,7 @@ FunctionEnd
 
 Section "Uninstall"
   SetRegView 64
+  SetShellVarContext all
 
   DetailPrint "Закрываю программу…"
   nsExec::ExecToLog 'taskkill /IM "${APP_EXE}" /F'
