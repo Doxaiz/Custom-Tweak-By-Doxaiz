@@ -85,14 +85,14 @@ jobs:
         run: >
           dotnet publish src/PingForge.App/PingForge.App.csproj -c Release -r win-x64
           --self-contained true -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false
           -o dist/portable --nologo
 
       - name: Служба — автономная сборка
         run: >
           dotnet publish src/PingForge.Service.Host/PingForge.Service.Host.csproj -c Release -r win-x64
           --self-contained true -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false
           -o dist/portable --nologo
 
       - name: Убрать отладочные файлы и добавить скрипты установки
@@ -110,6 +110,42 @@ jobs:
           Compress-Archive -Path dist/portable/* -DestinationPath dist/CustomTweakByDoxaiz-portable-win-x64.zip -Force
           Get-ChildItem dist -File | Select-Object Name, Length
         shell: pwsh
+
+      - name: Программа — живая проверка на Windows (окно, разделы, трей)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:LOCALAPPDATA 'CustomTweakByDoxaiz\app-start.log'
+
+          function Check-App([string]$title, [string]$exe) {
+            Write-Host "── $title"
+            Write-Host "   файл: $exe"
+
+            if (-not (Test-Path $exe)) { throw "Нет файла: $exe" }
+
+            # Свежий журнал: иначе можно прочитать вчерашний и обрадоваться зря.
+            Remove-Item $log -ErrorAction SilentlyContinue
+
+            $watch = [Diagnostics.Stopwatch]::StartNew()
+            $process = Start-Process $exe -ArgumentList '--self-check' -Wait -PassThru
+            $watch.Stop()
+            Write-Host "   код возврата: $($process.ExitCode), время: $([math]::Round($watch.Elapsed.TotalSeconds, 1)) с"
+
+            if (-not (Test-Path $log)) {
+              throw "Журнала нет ($log): программа не дошла даже до записи журнала — значит её не пускает система (SmartScreen, антивирус или карантин)."
+            }
+
+            Get-Content $log | ForEach-Object { Write-Host "   $_" }
+
+            if ($process.ExitCode -ne 0) {
+              throw "$title: самопроверка вернула код $($process.ExitCode). Подробности выше."
+            }
+          }
+
+          Check-App 'Одиночный .exe (то, что скачивают люди)' 'dist\portable\CustomTweakByDoxaiz.exe'
+          Check-App 'Компактная сборка' 'dist\compact\CustomTweakByDoxaiz.exe'
+
+          Write-Host 'Окно, разделы, трей и каталог собираются на живой Windows.'
 
       - name: Установщик — собрать (NSIS)
         run: |
@@ -197,6 +233,19 @@ jobs:
           if (-not (Test-Path $smoke)) { throw "Не нашёл утилиту проверки: $smoke" }
           & $smoke
           if ($LASTEXITCODE -ne 0) { throw "Живая проверка службы вернула код $LASTEXITCODE" }
+
+          Write-Host '── Программа на месте: окно, разделы, трей и разговор со службой'
+          $appLog = Join-Path $env:LOCALAPPDATA 'CustomTweakByDoxaiz\app-start.log'
+          Remove-Item $appLog -ErrorAction SilentlyContinue
+          $app = Start-Process (Join-Path $installDir 'CustomTweakByDoxaiz.exe') -ArgumentList '--self-check' -Wait -PassThru
+          Write-Host "  код возврата программы: $($app.ExitCode)"
+          if (-not (Test-Path $appLog)) { throw "Установленная программа не оставила журнал: $appLog" }
+          Get-Content $appLog | ForEach-Object { Write-Host "  $_" }
+          if ($app.ExitCode -ne 0) { throw "Самопроверка установленной программы вернула код $($app.ExitCode)" }
+          if (-not (Select-String -Path $appLog -SimpleMatch 'СЛУЖБА: отвечает' -Quiet)) {
+            throw 'Программа не увидела службу: в журнале нет строки «СЛУЖБА: отвечает»'
+          }
+          Write-Host '  [есть] программа видит службу — тем же каналом, что и окно'
 
           Write-Host '── Тихое удаление'
           $remove = Start-Process (Join-Path $installDir 'Uninstall.exe') -ArgumentList '/S' -Wait -PassThru
