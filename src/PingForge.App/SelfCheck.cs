@@ -52,8 +52,19 @@ internal static class SelfCheck
         int windowCode = CheckWindow(app, problems);
 
         CheckBindings(app, problems);
+        CheckLayout(app, problems);
         CheckTray(app, problems);
         CheckService(problems);
+
+        // Если окно построилось, но раскладка или привязки плохи — это тот же отказ, что и «окно не собралось»:
+        // пользователь видит не работающую программу.
+        if (windowCode == Ok && problems.Any(problem => problem.Contains("сжаты", StringComparison.Ordinal)
+            || problem.Contains("нет карточки", StringComparison.Ordinal)
+            || problem.Contains("потеряла данные", StringComparison.Ordinal)
+            || problem.Contains("нет надписей", StringComparison.Ordinal)))
+        {
+            windowCode = WindowFailed;
+        }
 
         return Finish(problems, windowCode);
     }
@@ -236,6 +247,56 @@ internal static class SelfCheck
         {
             root.UpdateLayout();
         }
+    }
+
+    /// <summary>
+    /// Раскладка: карточки показателей не должны быть сжаты. Это тоже настоящий дефект со снимка
+    /// окна — цифры «пинг сейчас», «стало лучше», «до оптимизации» и «оценка качества» сжимались
+    /// в узкие полосы у правого края, потому что колонку с кнопкой растянула подпись под ней.
+    ///
+    /// Проверяется ширина, а не «есть элемент»: элемент был, а прочитать его было нельзя.
+    /// </summary>
+    private static void CheckLayout(App app, List<string> problems)
+    {
+        if (app.Shell?.Content is not FrameworkElement)
+        {
+            return;
+        }
+
+        object? page = app.Shell.SectionsForCheck.FirstOrDefault(section => section.GetType().Name == "OptimizeView");
+        if (page is not FrameworkElement view)
+        {
+            problems.Add("страница «Оптимизация» не найдена — проверять раскладку не на чем");
+            return;
+        }
+
+        const double MinCardWidth = 110;
+        string[] cards = ["StatPing", "StatBetter", "StatBefore", "StatQuality"];
+        var squeezed = new List<string>();
+
+        foreach (string name in cards)
+        {
+            if (view.FindName(name) is not FrameworkElement card)
+            {
+                problems.Add($"в окне нет карточки показателя «{name}»");
+                continue;
+            }
+
+            System.Diagnostics.Debug.WriteLine($"{name}: {card.ActualWidth}×{card.ActualHeight}");
+            if (card.ActualWidth + 0.5 < MinCardWidth)
+            {
+                squeezed.Add($"{name} — {Math.Round(card.ActualWidth)} точек");
+            }
+        }
+
+        if (squeezed.Count > 0)
+        {
+            problems.Add($"карточки показателей сжаты: {string.Join("; ", squeezed)}");
+            StartupLog.Warn($"Раскладка: карточки показателей сжаты — {string.Join("; ", squeezed)}");
+            return;
+        }
+
+        StartupLog.Note($"Раскладка: карточки показателей не сжаты (проверено {cards.Length} штук)");
     }
 
     private static void CollectButtonTexts(DependencyObject node, List<string> texts)
