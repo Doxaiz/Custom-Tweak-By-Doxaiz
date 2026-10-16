@@ -36,6 +36,16 @@ jobs:
       - name: Получить код
         uses: actions/checkout@v7
 
+      - name: Узнать версию изделия
+        id: version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+          if (-not $version) { throw 'Не нашёл версию в Directory.Build.props' }
+          Write-Host "Версия изделия: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
       - name: Поставить .NET 10
         uses: actions/setup-dotnet@v6
         with:
@@ -239,17 +249,17 @@ jobs:
           body: |
             ## Что скачивать
 
-            **`CustomTweakByDoxaiz-Setup-0.2.0.exe` — установщик, обычный случай.** Один файл: двойной щелчок,
+            **`CustomTweakByDoxaiz-Setup-${{ steps.version.outputs.version }}.exe` — установщик, обычный случай.** Один файл: двойной щелчок,
             «Далее», готово. Он сам положит программу в «C:\Program Files\Custom Tweak By Doxaiz», зарегистрирует
             и запустит службу, создаст ярлыки и появится в «Программах и компонентах». Ничего доустанавливать
             не нужно. При удалении служба снимается, а журнал и снапшоты остаются — их можно удалить отдельным
             вопросом, но молча ничего не пропадает.
 
-            **`CustomTweakByDoxaiz-0.2.0.exe` — та же программа одним файлом, без установки.** Просто запустить.
+            **`CustomTweakByDoxaiz-${{ steps.version.outputs.version }}.exe` — та же программа одним файлом, без установки.** Просто запустить.
             Службу придётся поставить отдельно (второй .exe ниже и скрипт `install-service.ps1`), иначе программе
             будет нечем менять настройки: менять систему может только служба с правами администратора.
 
-            **`CustomTweakByDoxaiz.Service-0.2.0.exe`** — служба отдельным файлом. Положить рядом с программой
+            **`CustomTweakByDoxaiz.Service-${{ steps.version.outputs.version }}.exe`** — служба отдельным файлом. Положить рядом с программой
             и вызвать `install-service.ps1` от имени администратора.
 
             **`CustomTweakByDoxaiz-portable-win-x64.zip`** — автономная сборка архивом: .NET не нужен,
