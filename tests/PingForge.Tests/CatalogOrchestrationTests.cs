@@ -27,7 +27,7 @@ public sealed class CatalogOrchestrationTests : IDisposable
 
     public CatalogOrchestrationTests()
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"pf_catalog_{Guid.NewGuid():N}.db");
+        _dbPath = TempDatabaseFile.Create("pf_catalog");
         _database = new SqliteDatabaseInitializer(_dbPath);
         _database.EnsureInitializedAsync().GetAwaiter().GetResult();
         _snapshots = new SnapshotRepository(_database);
@@ -184,19 +184,5 @@ public sealed class CatalogOrchestrationTests : IDisposable
         Assert.Empty(await page.GetAuditFindingsAsync());
     }
 
-    public void Dispose()
-    {
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try
-        {
-            if (File.Exists(_dbPath))
-            {
-                File.Delete(_dbPath);
-            }
-        }
-        catch (IOException)
-        {
-            // Файл может быть занят пулом — для теста не критично.
-        }
-    }
+    public void Dispose() => TempDatabaseFile.Delete(_dbPath);
 }

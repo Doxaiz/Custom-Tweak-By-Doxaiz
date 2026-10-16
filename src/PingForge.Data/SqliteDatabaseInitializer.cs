@@ -54,6 +54,17 @@ public sealed class SqliteDatabaseInitializer
         }.ToString();
     }
 
+    /// <summary>
+    /// Отпускает файлы базы: закрывает пул соединений.
+    /// </summary>
+    /// <remarks>
+    /// Пул держит дескрипторы файлов даже после того, как соединение закрыто. Пока они живы, Windows
+    /// не даёт ни удалить файл базы, ни переименовать, ни заменить его — Linux таких ограничений не
+    /// накладывает, поэтому ошибка видна только на Windows. Вызывать перед удалением, копированием,
+    /// заменой или архивацией файла базы.
+    /// </remarks>
+    public static void ClearFileHandles() => SqliteConnection.ClearAllPools();
+
     public async Task<SqliteConnection> OpenAsync(CancellationToken ct = default)
     {
         var connection = new SqliteConnection(ConnectionString);

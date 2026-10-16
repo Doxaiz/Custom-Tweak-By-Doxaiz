@@ -20,18 +20,12 @@ public sealed class ServiceEngineTests : IDisposable
 
     public ServiceEngineTests()
     {
-        _databasePath = Path.Combine(Path.GetTempPath(), $"pf_service_{Guid.NewGuid():N}.db");
+        _databasePath = TempDatabaseFile.Create("pf_service");
         _database = new SqliteDatabaseInitializer(_databasePath);
         _database.EnsureInitializedAsync().GetAwaiter().GetResult();
     }
 
-    public void Dispose()
-    {
-        if (File.Exists(_databasePath))
-        {
-            File.Delete(_databasePath);
-        }
-    }
+    public void Dispose() => TempDatabaseFile.Delete(_databasePath);
 
     private static FakeTweak Tweak(string code) => new(code);
 

@@ -22,7 +22,7 @@ public sealed class OrchestrationTests : IDisposable
 
     public OrchestrationTests()
     {
-        _databasePath = Path.Combine(Path.GetTempPath(), $"pf_test_{Guid.NewGuid():N}.db");
+        _databasePath = TempDatabaseFile.Create("pf_test");
         _database = new SqliteDatabaseInitializer(_databasePath);
         _database.EnsureInitializedAsync().GetAwaiter().GetResult();
         _snapshots = new SnapshotRepository(_database);
@@ -404,19 +404,5 @@ public sealed class OrchestrationTests : IDisposable
         Assert.Equal(1, await _journal.CountModificationLogEntriesAsync());
     }
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        try
-        {
-            if (File.Exists(_databasePath))
-            {
-                File.Delete(_databasePath);
-            }
-        }
-        catch (IOException)
-        {
-            // Файл может быть занят пулом соединений — для теста это не критично.
-        }
-    }
+    public void Dispose() => TempDatabaseFile.Delete(_databasePath);
 }
