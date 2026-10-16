@@ -53,6 +53,7 @@ internal static class SelfCheck
 
         CheckBindings(app, problems);
         CheckLayout(app, problems);
+        CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
         CheckService(problems);
 
@@ -61,7 +62,8 @@ internal static class SelfCheck
         if (windowCode == Ok && problems.Any(problem => problem.Contains("сжаты", StringComparison.Ordinal)
             || problem.Contains("нет карточки", StringComparison.Ordinal)
             || problem.Contains("потеряла данные", StringComparison.Ordinal)
-            || problem.Contains("нет надписей", StringComparison.Ordinal)))
+            || problem.Contains("нет надписей", StringComparison.Ordinal)
+            || problem.Contains("не переносятся", StringComparison.Ordinal)))
         {
             windowCode = WindowFailed;
         }
@@ -297,6 +299,48 @@ internal static class SelfCheck
         }
 
         StartupLog.Note($"Раскладка: карточки показателей не сжаты (проверено {cards.Length} штук)");
+    }
+
+    /// <summary>
+    /// Абзацы должны переноситься по строкам. Это ещё одна ошибка со снимка окна: длинные
+    /// пояснения рисовались одной строкой и обрезались по правому краю, потому что именованный
+    /// стиль (Caption, Title) отменял неявный стиль с TextWrapping=Wrap.
+    ///
+    /// Проверяются именно длинные надписи: короткие («пинг сейчас») переносить не нужно.
+    /// </summary>
+    private static void CheckParagraphWrapping(App app, List<string> problems)
+    {
+        if (app.Shell?.Content is not DependencyObject root)
+        {
+            return;
+        }
+
+        var broken = new List<string>();
+        CollectUnwrappedLongText(root, broken);
+
+        if (broken.Count == 0)
+        {
+            StartupLog.Note("Перенос строк: длинные пояснения переносятся");
+            return;
+        }
+
+        problems.Add($"длинные надписи не переносятся по строкам (обрезаются): {string.Join(" | ", broken.Take(3))}");
+        StartupLog.Warn($"Перенос строк: не переносятся — {string.Join(" | ", broken.Take(3))}");
+    }
+
+    private static void CollectUnwrappedLongText(DependencyObject node, List<string> broken)
+    {
+        if (node is System.Windows.Controls.TextBlock { Text: { Length: > 60 } text } block
+            && block.TextWrapping == TextWrapping.NoWrap)
+        {
+            broken.Add(text[..Math.Min(48, text.Length)] + "…");
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            CollectUnwrappedLongText(VisualTreeHelper.GetChild(node, i), broken);
+        }
     }
 
     private static void CollectButtonTexts(DependencyObject node, List<string> texts)

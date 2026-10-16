@@ -32,7 +32,11 @@
         <Setter Property="TextWrapping" Value="Wrap" />
       </Style>
 
+      <!-- Внимание: именованный стиль ОТМЕНЯЕТ неявный, поэтому перенос строк надо
+           задавать в каждом стиле отдельно. Без этого абзацы рисуются одной строкой
+           и обрезаются по краю — именно так и было видно на снимке окна. -->
       <Style x:Key="Title" TargetType="TextBlock">
+        <Setter Property="TextWrapping" Value="Wrap" />
         <Setter Property="Foreground" Value="{StaticResource Text}" />
         <Setter Property="FontSize" Value="20" />
         <Setter Property="FontWeight" Value="SemiBold" />
@@ -42,6 +46,7 @@
       <Style x:Key="Caption" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource Muted}" />
         <Setter Property="FontSize" Value="12" />
+        <Setter Property="TextWrapping" Value="Wrap" />
       </Style>
 
       <Style x:Key="Card" TargetType="Border">
