@@ -186,15 +186,17 @@ jobs:
           Start-Sleep -Seconds 3
 
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          Add-Type -TypeDefinition @'
-          using System;
-          using System.Runtime.InteropServices;
-          public static class PfWin {
-            [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
-            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
-            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-          }
-'@
+
+          # Типы Win32 — массивом строк: here-string в PowerShell требует закрывающую метку
+          # с начала строки, а это несовместимо с отступами YAML.
+          $pfWin = 'using System;',
+                   'using System.Runtime.InteropServices;',
+                   'public static class PfWin {',
+                   '  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }',
+                   '  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);',
+                   '  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);',
+                   '}'
+          Add-Type -TypeDefinition ($pfWin -join [Environment]::NewLine)
 
           [PfWin]::SetForegroundWindow($handle) | Out-Null
           Start-Sleep -Milliseconds 800
