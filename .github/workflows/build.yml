@@ -1,0 +1,121 @@
+name: Сборка, тесты и готовые .exe
+
+# Что делает этот сценарий:
+#   1) собирает решение и прогоняет все 450 тестов;
+#   2) выгружает каталог твиков, перерисовывает обе витрины и гоняет четыре чекера интерфейса;
+#   3) собирает .exe в двух видах и прикладывает их к сборке;
+#   4) на теге вида v0.1.0 — создаёт релиз с этими файлами.
+#
+# Запускается на каждый push и вручную из вкладки Actions.
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Сборка и проверки
+    runs-on: windows-latest
+
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Поставить .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Сборка
+        run: dotnet build PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --nologo
+
+      - name: Тесты
+        run: dotnet test PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --no-build --nologo
+
+      # Витрины собираются из того же каталога, что применяет служба: если данные каталога разойдутся
+      # с разметкой витрины, проверки упадут прямо здесь.
+      - name: Данные каталога
+        run: dotnet run --project tools/PingForge.CatalogDump -c Release --artifacts-path "${{ runner.temp }}/art" -- docs/catalog.json
+
+      - name: Витрины — перерисовать
+        run: |
+          python tools/render_ui_preview.py docs/catalog.json docs/pingforge-ui-preview.html
+          python tools/render_app_site.py docs/catalog.json docs/custom-tweak-by-doxaiz.html
+        shell: pwsh
+
+      - name: Витрины — проверки
+        run: |
+          npm install jsdom --no-save --silent
+          node tools/check_ui_preview.js docs/pingforge-ui-preview.html
+          node tools/check_app_site.js docs/custom-tweak-by-doxaiz.html
+        shell: pwsh
+
+      - name: Программа — компактная сборка (нужен .NET 10)
+        run: dotnet publish src/PingForge.App/PingForge.App.csproj -c Release -r win-x64 --self-contained false -o dist/compact --nologo
+
+      - name: Служба — компактная сборка
+        run: dotnet publish src/PingForge.Service.Host/PingForge.Service.Host.csproj -c Release -r win-x64 --self-contained false -o dist/compact --nologo
+
+      - name: Программа — автономная сборка (без установки .NET)
+        run: >
+          dotnet publish src/PingForge.App/PingForge.App.csproj -c Release -r win-x64
+          --self-contained true -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -o dist/portable --nologo
+
+      - name: Служба — автономная сборка
+        run: >
+          dotnet publish src/PingForge.Service.Host/PingForge.Service.Host.csproj -c Release -r win-x64
+          --self-contained true -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -o dist/portable --nologo
+
+      - name: Убрать отладочные файлы и добавить скрипты установки
+        run: |
+          Get-ChildItem dist -Recurse -Include *.pdb,*.xml | Remove-Item -Force
+          foreach ($folder in @('dist/compact', 'dist/portable')) {
+            Copy-Item scripts/*.ps1 $folder -Force
+            Copy-Item docs/УСТАНОВКА.md $folder -Force
+          }
+        shell: pwsh
+
+      - name: Упаковать
+        run: |
+          Compress-Archive -Path dist/compact/* -DestinationPath dist/CustomTweakByDoxaiz-compact-win-x64.zip -Force
+          Compress-Archive -Path dist/portable/* -DestinationPath dist/CustomTweakByDoxaiz-portable-win-x64.zip -Force
+          Get-ChildItem dist -File | Select-Object Name, Length
+        shell: pwsh
+
+      - name: Приложить к сборке
+        uses: actions/upload-artifact@v4
+        with:
+          name: CustomTweakByDoxaiz-win-x64
+          path: |
+            dist/CustomTweakByDoxaiz-compact-win-x64.zip
+            dist/CustomTweakByDoxaiz-portable-win-x64.zip
+          if-no-files-found: error
+
+      - name: Релиз (только на тег)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Custom Tweak By Doxaiz ${{ github.ref_name }}
+          body: |
+            Готовые файлы программы и службы.
+
+            **CustomTweakByDoxaiz-portable-win-x64.zip** — автономная сборка: .NET устанавливать не нужно,
+            распаковали и запустили. Первый запуск чуть дольше обычного.
+
+            **CustomTweakByDoxaiz-compact-win-x64.zip** — компактная сборка: нужен
+            [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (он же понадобится службе).
+
+            Как установить службу — в файле `УСТАНОВКА.md` внутри архива.
+          files: |
+            dist/CustomTweakByDoxaiz-compact-win-x64.zip
+            dist/CustomTweakByDoxaiz-portable-win-x64.zip
