@@ -14,7 +14,7 @@
 
 | Файл | Что это | Размер |
 |---|---|---:|
-| [**`CustomTweakByDoxaiz-Setup-0.2.1.exe`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/download/v0.2.1/CustomTweakByDoxaiz-Setup-0.2.1.exe) | **установщик** — обычный случай: ставит программу в `Program Files`, регистрирует и запускает службу, делает ярлыки, появляется в «Программах и компонентах» | 96,6 МБ |
+| [**`CustomTweakByDoxaiz-Setup-0.2.1.exe`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/download/v0.2.1/CustomTweakByDoxaiz-Setup-0.2.1.exe) | **установщик** — обычный случай: ставит программу в `Program Files`, регистрирует и запускает службу, делает ярлыки, появляется в «Программах и компонентах» | 71 МБ |
 | [**`CustomTweakByDoxaiz-0.2.1.exe`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/download/v0.2.1/CustomTweakByDoxaiz-0.2.1.exe) | **готовая программа одним файлом** — скачал и запустил, ставить ничего не нужно | 168 МБ |
 | [**`CustomTweakByDoxaiz.Service-0.2.1.exe`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/download/v0.2.1/CustomTweakByDoxaiz.Service-0.2.1.exe) | **служба отдельным файлом** — без неё программе нечем менять настройки Windows | 73 МБ |
 | [**все файлы релиза `v0.2.1`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/latest) | ещё два архива (автономный и компактный) и `SHA256SUMS.txt` — контрольные суммы | — |

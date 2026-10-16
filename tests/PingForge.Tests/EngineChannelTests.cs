@@ -207,7 +207,19 @@ public class EngineChannelTests
 
         Task server = ServeOnceAsync(pipeName, async stream =>
         {
-            await ReadRequestAsync(stream);
+            // Настоящая гонка: клиент истекает по таймауту и обрывает запись посреди кадра,
+            // поэтому чтение на этой стороне иногда падает «кадр оборван». Это ожидаемое
+            // поведение проверяемого сценария («служба молчит»), а не сбой сервера-двойника —
+            // иначе проверка падала бы примерно раз на десять прогонов.
+            try
+            {
+                await ReadRequestAsync(stream);
+            }
+            catch (PingForge.Service.Protocol.EngineProtocolViolationException)
+            {
+                return;
+            }
+
             await Task.Delay(TimeSpan.FromMilliseconds(1500));   // «служба занята»: ответа нет
         });
 
