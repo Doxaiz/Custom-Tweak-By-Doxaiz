@@ -20,39 +20,6 @@ public class EngineChannelTests
 {
     private static string NewPipeName() => "pingforge-test-" + Guid.NewGuid().ToString("N");
 
-    /// <summary>
-    /// Сервер-двойник на <paramref name="connections"/> обменов. Клиент открывает новое соединение
-    /// на каждый запрос, поэтому следующий экземпляр канала поднимается заранее — иначе между
-    /// «ответил и закрыл» и «снова слушаю» клиент попадает в щёлку и получает отказ, которого в бою нет.
-    /// </summary>
-    private static async Task ServeAsync(
-        string pipeName,
-        int connections,
-        Func<int, Stream, Task> onConnection,
-        CancellationToken ct = default)
-    {
-        NamedPipeServerStream? pending = NewServer(pipeName, connections);
-
-        for (var index = 0; index < connections; index++)
-        {
-            NamedPipeServerStream current = pending!;
-            using var patience = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            patience.CancelAfter(TimeSpan.FromSeconds(10));
-
-            await current.WaitForConnectionAsync(patience.Token);
-
-            pending = index + 1 < connections ? NewServer(pipeName, connections) : null;
-            try
-            {
-                await onConnection(index, current);
-            }
-            finally
-            {
-                current.Dispose();
-            }
-        }
-    }
-
     private static NamedPipeServerStream NewServer(string pipeName, int instances) =>
         new(pipeName, PipeDirection.InOut, instances, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
 
@@ -71,28 +38,6 @@ public class EngineChannelTests
         await onConnection(server);
     }
 
-    /// <summary>
-    /// Один сервер на <paramref name="connections"/> обменов подряд: после ответа он не закрывается,
-    /// а отключает клиента и ждёт следующего. Так клиент, который открывает новое соединение на каждый
-    /// запрос, попадает не на «только что удалённый адрес», а на живой слушатель.
-    /// </summary>
-    private static async Task ServeManyAsync(string pipeName, int connections, Func<int, Stream, Task> onConnection)
-    {
-        using var patience = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-
-        await using var server = NewServer(pipeName, 1);
-        for (var index = 0; index < connections; index++)
-        {
-            await server.WaitForConnectionAsync(patience.Token);
-            await onConnection(index, server);
-
-            if (index + 1 < connections)
-            {
-                server.Disconnect();   // на Windows это штатный способ принять следующее соединение
-            }
-        }
-    }
-
     private static Task<string?> ReadRequestAsync(Stream stream, CancellationToken ct = default) =>
         EngineFrameCodec.ReadAsync(stream, ct);
 
@@ -107,7 +52,7 @@ public class EngineChannelTests
         string pipeName = NewPipeName();
         string? seen = null;
 
-        Task server = ServeAsync(pipeName, 1, async (_, stream) =>
+        Task server = ServeOnceAsync(pipeName, async stream =>
         {
             seen = await ReadRequestAsync(stream);
             await ReplyAsync(stream, "ui-1", "Служба жива.");
@@ -131,7 +76,7 @@ public class EngineChannelTests
     {
         string pipeName = NewPipeName();
 
-        Task server = ServeAsync(pipeName, 1, async (_, stream) =>
+        Task server = ServeOnceAsync(pipeName, async stream =>
         {
             await ReadRequestAsync(stream);
             await ReplyAsync(stream, "ui-999", "Ответ от прошлого запроса.");
@@ -155,7 +100,7 @@ public class EngineChannelTests
         // Такое окно обязано показать человеку, а не превращать в «служба недоступна».
         string pipeName = NewPipeName();
 
-        Task server = ServeAsync(pipeName, 1, async (_, stream) =>
+        Task server = ServeOnceAsync(pipeName, async stream =>
         {
             await ReadRequestAsync(stream);
             await EngineFrameCodec.WriteAsync(
@@ -181,7 +126,7 @@ public class EngineChannelTests
     {
         string pipeName = NewPipeName();
 
-        Task server = ServeAsync(pipeName, 1, async (_, stream) =>
+        Task server = ServeOnceAsync(pipeName, async stream =>
         {
             await ReadRequestAsync(stream);
             // Ничего не отвечаем и закрываем канал: служба остановилась во время работы.
@@ -203,7 +148,7 @@ public class EngineChannelTests
     {
         string pipeName = NewPipeName();
 
-        Task server = ServeAsync(pipeName, 1, async (_, stream) =>
+        Task server = ServeOnceAsync(pipeName, async stream =>
         {
             await ReadRequestAsync(stream);
 
@@ -234,7 +179,7 @@ public class EngineChannelTests
     {
         string pipeName = NewPipeName();
 
-        Task server = ServeAsync(pipeName, 1, async (_, stream) =>
+        Task server = ServeOnceAsync(pipeName, async stream =>
         {
             await ReadRequestAsync(stream);
 
@@ -260,7 +205,7 @@ public class EngineChannelTests
     {
         string pipeName = NewPipeName();
 
-        Task server = ServeAsync(pipeName, 1, async (_, stream) =>
+        Task server = ServeOnceAsync(pipeName, async stream =>
         {
             await ReadRequestAsync(stream);
             await Task.Delay(TimeSpan.FromMilliseconds(1500));   // «служба занята»: ответа нет
@@ -297,76 +242,43 @@ public class EngineChannelTests
     [Fact]
     public async Task Пинг_запоминает_версию_протокола_а_другие_команды_её_не_выдумывают()
     {
-        string pipeName = NewPipeName();
+        // Запоминание версии — это решение клиента, а не свойство канала: проверяем его на двойнике,
+        // потому что настоящий канал открывается на один обмен, и «второй запрос» в бою — это второе
+        // соединение. Транспорт при этом проверен выше, на живых соединениях.
+        var channel = new FakeEngineChannel(request => request.Command switch
+        {
+            EngineCommandKind.Ping => EngineResponse.Success(
+                request.Id, "Служба жива.", $$"""{"protocolVersion":{{EngineProtocol.Version}}}"""),
+            _ => EngineResponse.Success(request.Id, "Готово.", """{"tweakCount":47}"""),
+        });
 
-        using var channel = new NamedPipeEngineChannel(pipeName, TimeSpan.FromSeconds(10));
         var client = new EngineClient(channel);
 
         Assert.Null(client.ProtocolVersion);
-
-        Task server = ServeManyAsync(pipeName, 2, (index, stream) => index == 0
-            ? ReplyAsync(stream, "ui-1", "Служба жива.", $$"""{"protocolVersion":{{EngineProtocol.Version}}}""")
-            : ReplyAsync(stream, "ui-2", "Готово.", """{"tweakCount":47}"""));
-
         await client.PingAsync();
         Assert.Equal(EngineProtocol.Version, client.ProtocolVersion);
 
         await client.SendAsync(EngineCommandKind.Capabilities);
-        await server;
-
         Assert.Equal(EngineProtocol.Version, client.ProtocolVersion);   // осталось прежним, а не сбросилось
     }
 
     [Fact]
     public async Task Номера_запросов_идут_подряд_и_видны_снаружи()
     {
-        string pipeName = NewPipeName();
-        var ids = new List<string>();
-
-        using var channel = new NamedPipeEngineChannel(pipeName, TimeSpan.FromSeconds(10));
+        var channel = new FakeEngineChannel(request => EngineResponse.Success(request.Id, "Ок."));
         var client = new EngineClient(channel);
 
-        EngineCommandKind[] commands =
-        [
-            EngineCommandKind.Ping,
-            EngineCommandKind.Status,
-            EngineCommandKind.ReadSystemState,
-        ];
+        await client.SendAsync(EngineCommandKind.Ping);
+        await client.SendAsync(EngineCommandKind.Status);
+        await client.SendAsync(EngineCommandKind.ReadSystemState);
 
-        Task server = ServeManyAsync(pipeName, commands.Length, async (_, stream) =>
-        {
-            string? request = await ReadRequestAsync(stream);
-            Assert.True(EngineJson.TryDecodeRequest(request!, out EngineRequest? decoded, out string errorRu), errorRu);
-
-            ids.Add(decoded!.Id);
-            await ReplyAsync(stream, decoded.Id, "Ок.");
-        });
-
-        try
-        {
-            foreach (EngineCommandKind command in commands)
-            {
-                await client.SendAsync(command);
-            }
-        }
-        catch (Exception clientError)
-        {
-            // Диагностика на время отладки: если упал сервер-двойник, это важнее ошибки клиента.
-            try
-            {
-                await server;
-            }
-            catch (Exception serverError)
-            {
-                throw new InvalidOperationException($"сервер-двойник упал: {serverError}", clientError);
-            }
-
-            throw;
-        }
-
-        await server;
-
-        Assert.Equal(new[] { "ui-1", "ui-2", "ui-3" }, ids);
+        Assert.Equal(new[] { "ui-1", "ui-2", "ui-3" }, channel.Requests.Select(request => request.Id));
         Assert.Equal("ui-3", client.LastRequestId);
+
+        // И команды уходят теми именами, которые знает служба: это ловило настоящую ошибку.
+        Assert.Equal(
+            new[] { "ping", "status", "system-state" },
+            channel.Requests.Select(request => EngineCommandCatalog.Get(request.Command).WireName));
     }
+
 }
