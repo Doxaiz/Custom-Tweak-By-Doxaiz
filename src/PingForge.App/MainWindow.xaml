@@ -74,7 +74,7 @@
         </DockPanel>
       </Border>
 
-      <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="20,18">
+      <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="20,18">
         <Grid>
           <views:OptimizeView x:Name="PageOptimize" DataContext="{Binding MainScreen}" />
           <views:TweaksView x:Name="PageTweaks" Visibility="Collapsed" DataContext="{Binding Tweaks}" />
