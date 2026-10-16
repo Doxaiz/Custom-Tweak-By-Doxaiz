@@ -11,7 +11,7 @@ namespace PingForge.EngineSmoke;
 ///
 /// Что именно проверяется:
 ///   1) служба отвечает на «проверить связь» и называет ту же версию протокола;
-///   2) список команд совпадает с тем, что знает эта сборка (разные сборки — честный отказ);
+///   2) список команд и версия протокола совпадают с тем, что знает эта сборка (разные сборки — честный отказ);
 ///   3) «состояние» отдаётся без ошибки;
 ///   4) чтение состояния системы возвращает разборчивый JSON, и в нём действительно что-то прочитано,
 ///      а не одни пустые поля: пустота — это «не прочитано», и её видно счётчиком;
@@ -55,12 +55,12 @@ internal static class Program
 
             Console.WriteLine($"      Версия протокола, названная службой: {client.ProtocolVersion?.ToString() ?? "не названа"}");
 
-            // 2. Список команд должен совпадать с тем, что знает эта сборка.
+            // 2. Список команд должен совпадать с тем, что знает эта сборка. Сверяем не «сколько»,
+            // а какие именно: счётчик совпадёт и тогда, когда одну команду переименовали, а другую потеряли.
             string capabilities = await client.GetCapabilitiesAsync();
-            int expectedCommands = EngineCommandCatalog.All.Count;
-            bool commandCountMatches = capabilities.Contains($"Команд: {expectedCommands}", StringComparison.Ordinal);
-            Console.WriteLine($"[2/5] Список команд: {(commandCountMatches ? $"совпадает, команд {expectedCommands}" : "РАСХОДИТСЯ с этой сборкой")}");
-            if (!commandCountMatches)
+            (bool commandsMatch, string commandsNote) = CompareCommands(capabilities);
+            Console.WriteLine($"[2/5] Список команд: {commandsNote}");
+            if (!commandsMatch)
             {
                 Console.WriteLine("      Служба и утилита собраны из разных версий — это отказ версий, а не мелочь.");
                 Console.WriteLine(Indent(capabilities));
@@ -112,6 +112,84 @@ internal static class Program
             Console.WriteLine($"Служба недоступна: {ex.Message}");
             Console.WriteLine("Проверьте, что служба PingForge установлена и запущена: Get-Service PingForge");
             return 1;
+        }
+    }
+
+    /// <summary>
+    /// Сверить список команд службы с таблицей этой сборки: версия протокола, имена команд по порядку
+    /// и то, какие из них требуют прав администратора. Названия и пояснения не сверяем — это тексты,
+    /// их можно улучшать, не меняя протокол.
+    /// </summary>
+    private static (bool Matches, string Note) CompareCommands(string capabilitiesJson)
+    {
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(capabilitiesJson);
+        }
+        catch (JsonException ex)
+        {
+            return (false, $"ответ не разбирается как JSON: {ex.Message}");
+        }
+
+        using (document)
+        {
+            JsonElement root = document.RootElement;
+
+            if (root.TryGetProperty("protocolVersion", out JsonElement version)
+                && version.ValueKind == JsonValueKind.Number
+                && version.GetInt32() != EngineProtocol.Version)
+            {
+                return (false, $"версия протокола у службы {version.GetInt32()}, у этой сборки {EngineProtocol.Version}");
+            }
+
+            if (!root.TryGetProperty("commands", out JsonElement commands) || commands.ValueKind != JsonValueKind.Array)
+            {
+                return (false, "в ответе нет списка команд");
+            }
+
+            var fromService = new List<(string Wire, bool Elevated)>();
+            foreach (JsonElement item in commands.EnumerateArray())
+            {
+                string wire = item.TryGetProperty("wire", out JsonElement wireValue) && wireValue.ValueKind == JsonValueKind.String
+                    ? wireValue.GetString() ?? string.Empty
+                    : string.Empty;
+                bool elevated = item.TryGetProperty("needsElevation", out JsonElement elevatedValue)
+                    && elevatedValue.ValueKind == JsonValueKind.True;
+                fromService.Add((wire, elevated));
+            }
+
+            string[] expected = EngineCommandCatalog.All.Select(item => item.WireName).ToArray();
+            string[] actual = fromService.Select(item => item.Wire).ToArray();
+
+            string[] missing = expected.Except(actual, StringComparer.Ordinal).ToArray();
+            string[] extra = actual.Except(expected, StringComparer.Ordinal).ToArray();
+            if (missing.Length > 0 || extra.Length > 0)
+            {
+                string note = $"РАСХОДИТСЯ: служба знает {actual.Length} команд, эта сборка — {expected.Length}";
+                if (missing.Length > 0)
+                {
+                    note += $"; служба не знает: {string.Join(", ", missing)}";
+                }
+
+                if (extra.Length > 0)
+                {
+                    note += $"; лишние у службы: {string.Join(", ", extra)}";
+                }
+
+                return (false, note);
+            }
+
+            string[] rightsMismatch = EngineCommandCatalog.All
+                .Where(item => item.NeedsElevation != fromService.First(pair => pair.Wire == item.WireName).Elevated)
+                .Select(item => item.WireName)
+                .ToArray();
+            if (rightsMismatch.Length > 0)
+            {
+                return (false, $"права администратора расходятся у: {string.Join(", ", rightsMismatch)}");
+            }
+
+            return (true, $"совпадает: {actual.Length} команд, из них {fromService.Count(pair => pair.Elevated)} требуют прав администратора");
         }
     }
 
