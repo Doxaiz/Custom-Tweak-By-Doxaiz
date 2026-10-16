@@ -548,3 +548,9 @@ node tools/check_ui_preview.js docs/pingforge-ui-preview.html
    будут реагировать на службу с драйвером.
 
 Что осознанно вырезано из первой версии: дублирование пакетов (FEC) и многопутевая передача.
+
+---
+
+## Лицензия
+
+MIT — см. [LICENSE](LICENSE). Copyright (c) 2026 Doxaiz.
