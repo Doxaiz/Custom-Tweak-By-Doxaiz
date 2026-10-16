@@ -13,7 +13,7 @@ public sealed class EngineUnavailableException : Exception
 
 /// <summary>
 /// Канал связи со службой с точки зрения интерфейса. В бою это именованный канал
-/// (<c>NamedPipeEngineChannel</c> в слое Windows), в тестах — двойник, который отвечает заранее.
+/// (<see cref="NamedPipeEngineChannel"/>), в тестах — двойник, который отвечает заранее.
 /// </summary>
 public interface IEngineChannel : IDisposable
 {

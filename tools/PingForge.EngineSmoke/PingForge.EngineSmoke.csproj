@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>PingForge.EngineSmoke</AssemblyName>
+    <RootNamespace>PingForge.EngineSmoke</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Тот же клиент канала и тот же разговор со службой, что и в окне программы: проверять
+         надо не «какой-то» клиент, а ровно тот, которым пользуется интерфейс. -->
+    <ProjectReference Include="..\..\src\PingForge.App.ViewModels\PingForge.App.ViewModels.csproj" />
+    <ProjectReference Include="..\..\src\PingForge.Service\PingForge.Service.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -16,5 +16,6 @@
   <Project Path="src/PingForge.Network/PingForge.Network.csproj" />
   <Project Path="src/PingForge.Network.Windows/PingForge.Network.Windows.csproj" />
   <Project Path="tools/PingForge.CatalogDump/PingForge.CatalogDump.csproj" />
+  <Project Path="tools/PingForge.EngineSmoke/PingForge.EngineSmoke.csproj" />
   <Project Path="tests/PingForge.Tests/PingForge.Tests.csproj" />
 </Solution>

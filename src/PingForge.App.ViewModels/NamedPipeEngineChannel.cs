@@ -1,13 +1,16 @@
 using System.IO;
 using System.IO.Pipes;
-using PingForge.App.ViewModels;
 using PingForge.Service.Protocol;
 
-namespace PingForge.App;
+namespace PingForge.App.ViewModels;
 
 /// <summary>
-/// Клиентский конец канала службы. Живёт в слое Windows: на сборочной машине без Windows он только
-/// компилируется, а поведение проверяется на живой системе.
+/// Клиентский конец канала службы — тот самый, которым пользуется окно программы.
+///
+/// Переехал сюда из проекта окна, потому что ничего оконного в нём нет: только именованный канал и
+/// рамка протокола. За это он теперь проверяется тестами на любой машине (сервер-двойник поднимается
+/// в самом тесте) и им же пользуется утилита живой проверки службы
+/// <c>tools/PingForge.EngineSmoke</c>.
 ///
 /// Соединение открывается на время одного обмена и закрывается сразу. Так сделано нарочно: держать
 /// канал открытым «для скорости» — значит занимать одно из немногих подключений службы, пока окно
@@ -55,14 +58,11 @@ public sealed class NamedPipeEngineChannel : IEngineChannel
         }
         catch (TimeoutException)
         {
-            throw new EngineUnavailableException(
-                $"Служба не ответила за {_timeout.TotalSeconds:0} с. Она перегружена или стоит на паузе — " +
-                "повторите нажатие.");
+            throw NoAnswer();
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new EngineUnavailableException(
-                "Ответ службы не пришёл вовремя: связь оборвана. Проверьте, что служба PingForge запущена.");
+            throw NoAnswer();
         }
         catch (IOException ex)
         {
@@ -75,6 +75,14 @@ public sealed class NamedPipeEngineChannel : IEngineChannel
                 $"Служба ответила неразборчиво: {ex.Message}. Это ошибка версий — приложение и служба должны быть из одной сборки.", ex);
         }
     }
+
+    /// <summary>
+    /// Один и тот же текст на «не дождались ответа» и на «ответ не пришёл вовремя»: для человека это
+    /// одно и то же событие, а разные формулировки заставляли искать разницу там, где её нет.
+    /// </summary>
+    private EngineUnavailableException NoAnswer() => new(
+        $"Служба не ответила за {_timeout.TotalSeconds:0.#} с: она занята другой работой, остановлена или " +
+        "связь оборвана. Проверьте, что служба PingForge запущена, и повторите нажатие.");
 
     public void Dispose()
     {

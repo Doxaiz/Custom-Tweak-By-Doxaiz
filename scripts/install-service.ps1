@@ -72,8 +72,15 @@ if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 }
 
-Get-ChildItem -Path $scriptDir -File | Where-Object { $_.Extension -in '.exe', '.dll', '.json', '.ps1', '.md' } |
-    ForEach-Object { Copy-Item $_.FullName -Destination $InstallDir -Force }
+# Скрипт зовут из двух мест: из распакованного архива (тогда файлы надо скопировать) и из установщика,
+# который уже положил файлы на место. Во втором случае копировать файл сам в себя нельзя.
+$sameFolder = ($scriptDir.TrimEnd('\') -ieq $InstallDir.TrimEnd('\'))
+if ($sameFolder) {
+    Ok 'Скрипт запущен из папки установки: файлы уже на месте.'
+} else {
+    Get-ChildItem -Path $scriptDir -File | Where-Object { $_.Extension -in '.exe', '.dll', '.json', '.ps1', '.md' } |
+        ForEach-Object { Copy-Item $_.FullName -Destination $InstallDir -Force }
+}
 
 # Из компактной сборки нужен рантайм .NET; проверяем и говорим прямо, если его нет.
 if (-not (Test-Path (Join-Path $InstallDir 'e_sqlite3.dll'))) {

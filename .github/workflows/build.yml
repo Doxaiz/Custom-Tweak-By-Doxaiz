@@ -3,8 +3,11 @@ name: Сборка, тесты и готовые .exe
 # Что делает этот сценарий:
 #   1) собирает решение и прогоняет все 450 тестов;
 #   2) выгружает каталог твиков, перерисовывает обе витрины и гоняет четыре чекера интерфейса;
-#   3) собирает .exe в двух видах и прикладывает их к сборке;
-#   4) на теге вида v0.1.0 — создаёт релиз с этими файлами.
+#   3) собирает .exe в двух видах, установщик (NSIS) и контрольные суммы, прикладывает их к сборке;
+#   4) проверяет установщик по-настоящему: тихо ставит на сборочной Windows, смотрит файлы, ярлыки,
+#      запись в «Программах и компонентах», службу, разговаривает со службой живой утилитой
+#      PingForge.EngineSmoke и тихо удаляет — после чего проверяет, что следов не осталось;
+#   5) на теге вида v0.2.0 — создаёт релиз с этими файлами.
 #
 # Запускается на каждый push и вручную из вкладки Actions.
 
@@ -98,13 +101,113 @@ jobs:
           Get-ChildItem dist -File | Select-Object Name, Length
         shell: pwsh
 
+      - name: Установщик — собрать (NSIS)
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # NSIS есть не на всякой сборочной машине: если его нет — ставим пакетным менеджером.
+          $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+          if (-not (Test-Path $makensis)) {
+            $found = Get-Command makensis -ErrorAction SilentlyContinue
+            if ($found) {
+              $makensis = $found.Source
+            } else {
+              Write-Host 'NSIS не найден — ставлю через choco.'
+              choco install nsis --no-progress -y | Out-Null
+              $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+            }
+          }
+          if (-not (Test-Path $makensis)) { throw "Не нашёл makensis: $makensis" }
+          Write-Host "makensis: $makensis"
+
+          $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+          Write-Host "Версия изделия: $version"
+
+          & $makensis -INPUTCHARSET UTF8 -DVERSION=$version -DSOURCE_DIR=dist\portable -DOUT_DIR=dist installer\CustomTweakByDoxaiz.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis вернул код $LASTEXITCODE" }
+
+          Get-Item "dist\CustomTweakByDoxaiz-Setup-$version.exe" | Select-Object Name, @{n='МБ';e={[math]::Round($_.Length / 1MB, 1)}}
+        shell: pwsh
+
+      - name: Установщик — проверка на Windows (тихая установка, служба, живой разговор, удаление)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+          $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
+          $installDir = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz'
+          $arp = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CustomTweakByDoxaiz'
+
+          Write-Host '── Тихая установка (то же, что двойной щелчок, только без вопросов)'
+          $install = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Установщик вернул код $($install.ExitCode)" }
+
+          foreach ($name in @('CustomTweakByDoxaiz.exe', 'CustomTweakByDoxaiz.Service.exe', 'Uninstall.exe',
+                              'install-service.ps1', 'uninstall-service.ps1', 'УСТАНОВКА.md')) {
+            $path = Join-Path $installDir $name
+            if (-not (Test-Path $path)) { throw "После установки нет файла: $path" }
+            Write-Host "  [есть] $name"
+          }
+
+          $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Custom Tweak By Doxaiz\Custom Tweak By Doxaiz.lnk'
+          if (-not (Test-Path $shortcut)) { throw "Нет ярлыка в меню «Пуск»: $shortcut" }
+          Write-Host '  [есть] ярлык в меню «Пуск»'
+
+          if (-not (Test-Path $arp)) { throw 'Нет записи в «Программах и компонентах»' }
+          Write-Host "  [есть] запись в списке программ, версия $((Get-ItemProperty $arp).DisplayVersion)"
+
+          Write-Host '── Служба'
+          $service = Get-Service -Name PingForge -ErrorAction SilentlyContinue
+          if (-not $service) { throw 'Служба PingForge не зарегистрирована' }
+          (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(90))
+          Write-Host "  Служба работает: $((Get-Service -Name PingForge).Status)"
+
+          Write-Host '── Живой разговор со службой (тем же каналом, что у окна программы)'
+          $smoke = "${{ runner.temp }}/art/bin/PingForge.EngineSmoke/release/PingForge.EngineSmoke.exe"
+          if (-not (Test-Path $smoke)) { throw "Не нашёл утилиту проверки: $smoke" }
+          & $smoke
+          if ($LASTEXITCODE -ne 0) { throw "Живая проверка службы вернула код $LASTEXITCODE" }
+
+          Write-Host '── Тихое удаление'
+          $remove = Start-Process (Join-Path $installDir 'Uninstall.exe') -ArgumentList '/S' -Wait -PassThru
+          if ($remove.ExitCode -ne 0) { throw "Удаление вернуло код $($remove.ExitCode)" }
+
+          if (Test-Path $installDir) { throw "Папка установки осталась: $installDir" }
+          if (Get-Service -Name PingForge -ErrorAction SilentlyContinue) { throw 'Служба осталась после удаления' }
+          if (Test-Path $arp) { throw 'Запись в «Программах и компонентах» осталась' }
+          if (Test-Path $shortcut) { throw 'Ярлык остался после удаления' }
+
+          $dataDir = Join-Path $env:ProgramData 'PingForge'
+          if (Test-Path $dataDir) { Write-Host "  Данные оставлены, как и обещано в вопросе: $dataDir" }
+
+          Write-Host 'Установщик проверен: ставит, запускает службу, удаляется без следов.'
+        shell: pwsh
+
+      - name: Готовые .exe и контрольные суммы
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+
+          # Отдельные .exe — для тех, кому не нужен ни архив, ни установщик.
+          Copy-Item dist\portable\CustomTweakByDoxaiz.exe "dist\CustomTweakByDoxaiz-$version.exe" -Force
+          Copy-Item dist\portable\CustomTweakByDoxaiz.Service.exe "dist\CustomTweakByDoxaiz.Service-$version.exe" -Force
+
+          Get-ChildItem dist -File | Where-Object { $_.Extension -in '.exe', '.zip' } |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content dist\SHA256SUMS.txt -Encoding utf8
+
+          Get-ChildItem dist -File | Select-Object Name, @{n='МБ';e={[math]::Round($_.Length / 1MB, 1)}}
+          Get-Content dist\SHA256SUMS.txt
+        shell: pwsh
+
       - name: Приложить к сборке
         uses: actions/upload-artifact@v7
         with:
           name: CustomTweakByDoxaiz-win-x64
           path: |
-            dist/CustomTweakByDoxaiz-compact-win-x64.zip
-            dist/CustomTweakByDoxaiz-portable-win-x64.zip
+            dist/CustomTweakByDoxaiz-*.exe
+            dist/CustomTweakByDoxaiz-*-win-x64.zip
+            dist/SHA256SUMS.txt
           if-no-files-found: error
 
       - name: Релиз (только на тег)
@@ -113,15 +216,40 @@ jobs:
         with:
           name: Custom Tweak By Doxaiz ${{ github.ref_name }}
           body: |
-            Готовые файлы программы и службы.
+            ## Что скачивать
 
-            **CustomTweakByDoxaiz-portable-win-x64.zip** — автономная сборка: .NET устанавливать не нужно,
-            распаковали и запустили. Первый запуск чуть дольше обычного.
+            **`CustomTweakByDoxaiz-Setup-0.2.0.exe` — установщик, обычный случай.** Один файл: двойной щелчок,
+            «Далее», готово. Он сам положит программу в «C:\Program Files\Custom Tweak By Doxaiz», зарегистрирует
+            и запустит службу, создаст ярлыки и появится в «Программах и компонентах». Ничего доустанавливать
+            не нужно. При удалении служба снимается, а журнал и снапшоты остаются — их можно удалить отдельным
+            вопросом, но молча ничего не пропадает.
 
-            **CustomTweakByDoxaiz-compact-win-x64.zip** — компактная сборка: нужен
-            [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (он же понадобится службе).
+            **`CustomTweakByDoxaiz-0.2.0.exe` — та же программа одним файлом, без установки.** Просто запустить.
+            Службу придётся поставить отдельно (второй .exe ниже и скрипт `install-service.ps1`), иначе программе
+            будет нечем менять настройки: менять систему может только служба с правами администратора.
 
-            Как установить службу — в файле `УСТАНОВКА.md` внутри архива.
+            **`CustomTweakByDoxaiz.Service-0.2.0.exe`** — служба отдельным файлом. Положить рядом с программой
+            и вызвать `install-service.ps1` от имени администратора.
+
+            **`CustomTweakByDoxaiz-portable-win-x64.zip`** — автономная сборка архивом: .NET не нужен,
+            внутри оба .exe, скрипты и инструкция.
+
+            **`CustomTweakByDoxaiz-compact-win-x64.zip`** — компактная сборка: нужен
+            [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0).
+
+            **`SHA256SUMS.txt`** — контрольные суммы файлов: можно сверить, что скачалось ровно то, что собрано.
+
+            ## Что важно знать
+
+            Сразу после установки программа НИЧЕГО не меняет. Любое изменение — только после нажатия кнопки
+            в окне и подтверждения, с предложением точки восстановления и со снапшотом прежних значений.
+            Программа не влезает в игру и не трогает её память, не выключает анти-читы, Защитник, брандмауэр,
+            обновления и UAC, не подменяет MAC/IP, не собирает телеметрию.
+
+            Установщик не подписан сертификатом EV, поэтому SmartScreen может показать предупреждение —
+            «Подробнее» → «Выполнить в любом случае». Подпись появится, когда будет сертификат.
+          # Имена без номера версии: следующий релиз не потребует править этот список.
           files: |
-            dist/CustomTweakByDoxaiz-compact-win-x64.zip
-            dist/CustomTweakByDoxaiz-portable-win-x64.zip
+            dist/CustomTweakByDoxaiz-*.exe
+            dist/CustomTweakByDoxaiz-*-win-x64.zip
+            dist/SHA256SUMS.txt

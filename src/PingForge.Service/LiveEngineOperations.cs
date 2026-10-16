@@ -41,7 +41,7 @@ public sealed class LiveEngineOperations : IEngineOperations
         Func<PerfProfile>? readProfile = null,
         Action<PerfProfile>? applyProfile = null,
         string productName = "Custom Tweak By Doxaiz",
-        string appVersion = "0.1.0",
+        string? appVersion = null,
         ISystemStateReader? stateReader = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -52,7 +52,7 @@ public sealed class LiveEngineOperations : IEngineOperations
         _readProfile = readProfile;
         _applyProfile = applyProfile;
         _productName = productName;
-        _appVersion = appVersion;
+        _appVersion = appVersion ?? typeof(LiveEngineOperations).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
         _stateReader = stateReader;
         IsElevationAvailable = isElevationAvailable;
     }

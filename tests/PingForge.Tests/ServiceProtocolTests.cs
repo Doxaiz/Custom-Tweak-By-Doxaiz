@@ -274,6 +274,36 @@ public class ServiceProtocolTests
     }
 
     [Fact]
+    public void Каждая_команда_переживает_дорогу_через_JSON_под_своим_именем()
+    {
+        // Этот тест появился после настоящей ошибки: имя команды собиралось из имени значения
+        // перечисления, поэтому «чтение состояния» уходило как «read-system-state», а служба ждала
+        // «system-state», и команда выглядела неизвестной. Проверка идёт по всем значениям сразу:
+        // так следующая команда не сможет разойтись так же тихо.
+        foreach (EngineCommandKind kind in Enum.GetValues<EngineCommandKind>())
+        {
+            string json = EngineJson.Encode(new EngineRequest("ui-1", kind));
+
+            Assert.True(EngineJson.TryDecodeRequest(json, out EngineRequest? decoded, out string errorRu), errorRu);
+            Assert.Equal(kind, decoded!.Command);
+            Assert.Contains($"\"command\":\"{EngineCommandCatalog.Get(kind).WireName}\"", json);
+        }
+    }
+
+    [Fact]
+    public void Имена_которыми_раньше_расходились_приложение_и_служба_закреплены_намертво()
+    {
+        string state = EngineJson.Encode(new EngineRequest("1", EngineCommandKind.ReadSystemState));
+        string rollback = EngineJson.Encode(new EngineRequest("1", EngineCommandKind.RollbackSnapshot));
+
+        Assert.Contains("\"command\":\"system-state\"", state);
+        Assert.DoesNotContain("read-system-state", state);
+
+        Assert.Contains("\"command\":\"rollback\"", rollback);
+        Assert.DoesNotContain("rollback-snapshot", rollback);
+    }
+
+    [Fact]
     public void Права_администратора_требуются_ровно_там_где_меняется_система()
     {
         Assert.False(EngineCommandCatalog.Get(EngineCommandKind.Ping).NeedsElevation);

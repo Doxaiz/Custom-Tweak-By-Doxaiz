@@ -31,8 +31,8 @@ public static class EngineProtocol
 /// <summary>Нарушение протокола: кадр битый, оборванный или слишком большой. Текст — для журнала, не для пользователя.</summary>
 public sealed class EngineProtocolViolationException : Exception
 {
-    public EngineProtocolViolationException(string messageRu)
-        : base(messageRu)
+    public EngineProtocolViolationException(string messageRu, Exception? inner = null)
+        : base(messageRu, inner)
     {
     }
 }

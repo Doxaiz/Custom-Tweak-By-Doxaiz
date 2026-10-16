@@ -78,6 +78,32 @@ public sealed record EngineOperationResult(bool Ok, string MessageRu, string? Da
     public static EngineOperationResult Failure(string messageRu) => new(false, messageRu);
 }
 
+/// <summary>
+/// Имя команды в JSON — из таблицы команд, а не из имени значения перечисления.
+///
+/// Так было не всегда, и это стоило ошибки: имя собиралось из перечисления, поэтому приложение писало
+/// «read-system-state» и «rollback-snapshot», а служба ждала «system-state» и «rollback». Канал отвечал
+/// «команда неизвестна» — то есть кнопки чтения состояния и возврата настроек не работали бы вовсе,
+/// хотя обе стороны были из одной сборки. Теперь имя одно на двоих, и его проверяет тест на каждое
+/// значение перечисления.
+/// </summary>
+public sealed class EngineCommandKindJsonConverter : JsonConverter<EngineCommandKind>
+{
+    public override EngineCommandKind Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        string? wireName = reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
+        EngineCommandDescriptor? descriptor = EngineCommandCatalog.Find(wireName);
+
+        return descriptor is not null
+            ? descriptor.Kind
+            : throw new JsonException(
+                $"Команда «{wireName}» неизвестна. Известные команды: {EngineCommandCatalog.KnownWireNamesRu()}.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, EngineCommandKind value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(EngineCommandCatalog.Get(value).WireName);
+}
+
 /// <summary>JSON протокола: имена свойств в camelCase, перечисления строками — чтобы журнал канала читался глазами.</summary>
 public static class EngineJson
 {
@@ -85,7 +111,12 @@ public static class EngineJson
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower, allowIntegerValues: false) },
+        Converters =
+        {
+            // Имена команд берутся из таблицы команд — из того же места, откуда их читает служба.
+            new EngineCommandKindJsonConverter(),
+            new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower, allowIntegerValues: false),
+        },
     };
 
     public static string Encode(EngineRequest request) => JsonSerializer.Serialize(request, Options);
@@ -148,9 +179,23 @@ public static class EngineJson
     }
 
     /// <summary>Разобрать ответ (нужно клиенту и тестам протокола).</summary>
-    public static EngineResponse DecodeResponse(string json) =>
-        JsonSerializer.Deserialize<EngineResponse>(json, Options)
-        ?? throw new EngineProtocolViolationException("Ответ службы разобрался в null.");
+    /// <summary>
+    /// Разобрать ответ службы. Битую рамку честно называем нарушением протокола: иначе «служба другой
+    /// версии» выглядела бы для человека как «служба не отвечает», и искать причину пришлось бы наугад.
+    /// </summary>
+    public static EngineResponse DecodeResponse(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<EngineResponse>(json, Options)
+                ?? throw new EngineProtocolViolationException("Ответ службы разобрался в null.");
+        }
+        catch (JsonException ex)
+        {
+            string sample = json.Length <= 120 ? json : json[..120] + "…";
+            throw new EngineProtocolViolationException($"Ответ не разбирается как JSON: «{sample}».", ex);
+        }
+    }
 
     /// <summary>То, что реально приходит по каналу: перечисление строкой, а не числом.</summary>
     private sealed record WireRequest(string? Id, string? Command, Dictionary<string, string>? Args);
