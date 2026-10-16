@@ -4,11 +4,11 @@
   <StackPanel>
     <TextBlock Style="{StaticResource Title}" Text="Оптимизация соединения" />
 
+    <!-- Кнопка и состояние — в одной карточке; показатели — отдельной строкой ниже.
+         Раньше показатели делили строку с кнопкой, и на четыре карточки оставалось по сто точек:
+         подписи резались. Это видел снимок окна со сборочной Windows. -->
     <Border Style="{StaticResource Card}">
-      <Grid VerticalAlignment="Top">
-        <!-- Ширина колонки с кнопкой задана числом, а не «по содержимому»: подпись под кнопкой
-             иначе растягивала колонку и сжимала карточки показателей до нечитаемых полос —
-             именно это и было видно на снимке окна со сборочной Windows. -->
+      <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="300" />
           <ColumnDefinition Width="*" />
@@ -23,42 +23,45 @@
                      Text="Одна кнопка: замер «до», поиск игры, выбор пути. Повторное нажатие возвращает всё как было." />
         </StackPanel>
 
-        <UniformGrid Grid.Column="1" Columns="4" Rows="1" VerticalAlignment="Top">
-          <Border x:Name="StatPing" Style="{StaticResource Card}" Margin="0,0,8,0" MinWidth="110">
-            <StackPanel>
-              <TextBlock Text="{Binding CurrentRttMs, StringFormat={}{0:0.#} мс, TargetNullValue=не измерено}"
-                         FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
-              <TextBlock Style="{StaticResource Caption}" Text="пинг сейчас" />
-            </StackPanel>
-          </Border>
-          <Border x:Name="StatBetter" Style="{StaticResource Card}" Margin="0,0,8,0" MinWidth="110">
-            <StackPanel>
-              <TextBlock Text="{Binding ImprovementMs, StringFormat=−{0:0.#} мс, TargetNullValue=—}"
-                         FontSize="20" FontWeight="SemiBold" />
-              <TextBlock Style="{StaticResource Caption}" Text="стало лучше" />
-            </StackPanel>
-          </Border>
-          <Border x:Name="StatBefore" Style="{StaticResource Card}" Margin="0,0,8,0" MinWidth="110">
-            <StackPanel>
-              <TextBlock Text="{Binding BaselineRttMs, StringFormat=было {0:0.#} мс, TargetNullValue=было —}"
-                         FontSize="15" FontWeight="SemiBold" />
-              <TextBlock Style="{StaticResource Caption}" Text="до оптимизации" />
-            </StackPanel>
-          </Border>
-          <Border x:Name="StatQuality" Style="{StaticResource Card}" Margin="0" MinWidth="110">
-            <StackPanel>
-              <TextBlock Text="{Binding QualityRu}" FontSize="15" FontWeight="SemiBold" />
-              <TextBlock Style="{StaticResource Caption}" Text="оценка качества" />
-            </StackPanel>
-          </Border>
-        </UniformGrid>
+        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+          <TextBlock Text="{Binding RttLineRu}" FontWeight="SemiBold" />
+          <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding StatusRu}" />
+        </StackPanel>
       </Grid>
     </Border>
 
     <Border Style="{StaticResource Card}">
       <StackPanel>
-        <TextBlock Text="{Binding RttLineRu}" FontWeight="SemiBold" />
-        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding StatusRu}" />
+        <TextBlock Text="Показатели" FontWeight="SemiBold" Margin="0,0,0,10" />
+        <UniformGrid Columns="4" Rows="1">
+          <Border x:Name="StatPing" Style="{StaticResource Card}" Margin="0,0,8,0" MinWidth="120">
+            <StackPanel>
+              <TextBlock Text="{Binding CurrentRttMs, StringFormat={}{0:0.#} мс, TargetNullValue=не измерено}"
+                         FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+              <TextBlock Style="{StaticResource Caption}" Text="пинг сейчас" Margin="0,4,0,0" />
+            </StackPanel>
+          </Border>
+          <Border x:Name="StatBetter" Style="{StaticResource Card}" Margin="0,0,8,0" MinWidth="120">
+            <StackPanel>
+              <TextBlock Text="{Binding ImprovementMs, StringFormat=−{0:0.#} мс, TargetNullValue=—}"
+                         FontSize="18" FontWeight="SemiBold" />
+              <TextBlock Style="{StaticResource Caption}" Text="стало лучше" Margin="0,4,0,0" />
+            </StackPanel>
+          </Border>
+          <Border x:Name="StatBefore" Style="{StaticResource Card}" Margin="0,0,8,0" MinWidth="120">
+            <StackPanel>
+              <TextBlock Text="{Binding BaselineRttMs, StringFormat=было {0:0.#} мс, TargetNullValue=было —}"
+                         FontSize="18" FontWeight="SemiBold" />
+              <TextBlock Style="{StaticResource Caption}" Text="до оптимизации" Margin="0,4,0,0" />
+            </StackPanel>
+          </Border>
+          <Border x:Name="StatQuality" Style="{StaticResource Card}" Margin="0" MinWidth="120">
+            <StackPanel>
+              <TextBlock Text="{Binding QualityRu}" FontSize="18" FontWeight="SemiBold" />
+              <TextBlock Style="{StaticResource Caption}" Text="оценка качества" Margin="0,4,0,0" />
+            </StackPanel>
+          </Border>
+        </UniformGrid>
       </StackPanel>
     </Border>
 
