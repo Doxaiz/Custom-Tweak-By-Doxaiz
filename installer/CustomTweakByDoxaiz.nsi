@@ -58,11 +58,6 @@ OutFile "${OUT_DIR}\CustomTweakByDoxaiz-Setup-${VERSION}.exe"
 InstallDir "$PROGRAMFILES64\${APP_NAME}"
 InstallDirRegKey HKLM "${REG_APP}" "InstallDir"
 RequestExecutionLevel admin
-
-; Учёт 64-разрядного реестра — на верхнем уровне: InstallDirRegKey читается до .onInit,
-; и от порядка вызовов ничего зависеть не должно.
-SetRegView 64
-
 ShowInstDetails show
 ShowUninstDetails show
 
@@ -100,6 +95,9 @@ VIAddVersionKey /LANG=1049 "LegalCopyright" "MIT, ${PUBLISHER}"
 
 ; ── проверки перед началом ──────────────────────────────────────────────────────────────────────────
 Function .onInit
+  ; Учёт 64-разрядного реестра: SetRegView допустим только внутри функции или секции.
+  SetRegView 64
+
   ${IfNot} ${RunningX64}
     MessageBox MB_ICONSTOP "Нужна 64-разрядная Windows 10 или 11: программа работает в 64-разрядном виде."
     Abort
@@ -179,9 +177,10 @@ Section "Служба PingForge (регистрируется и запуска�
 
   ${If} $0 != "0"
     DetailPrint "Служба не зарегистрировалась, код возврата: $0"
-    IfSilent +3 0
-    MessageBox MB_ICONEXCLAMATION \
-      "Служба не зарегистрировалась (код $0).$\r$\n$\r$\nПрограмма установится и запустится, но менять настройки не сможет: для этого нужна служба.$\r$\nПопробуйте запустить install-service.ps1 из папки установки от имени администратора."
+    ${IfNot} ${Silent}
+      MessageBox MB_ICONEXCLAMATION \
+        "Служба не зарегистрировалась (код $0).$\r$\n$\r$\nПрограмма установится и запустится, но менять настройки не сможет: для этого нужна служба.$\r$\nПопробуйте запустить install-service.ps1 из папки установки от имени администратора."
+    ${EndIf}
   ${Else}
     DetailPrint "Служба ${SERVICE_NAME} зарегистрирована и запущена."
   ${EndIf}
