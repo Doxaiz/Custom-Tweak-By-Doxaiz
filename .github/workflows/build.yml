@@ -138,7 +138,7 @@ jobs:
             Get-Content $log | ForEach-Object { Write-Host "   $_" }
 
             if ($process.ExitCode -ne 0) {
-              throw "$title: самопроверка вернула код $($process.ExitCode). Подробности выше."
+              throw "${title}: самопроверка вернула код $($process.ExitCode). Подробности выше."
             }
           }
 
