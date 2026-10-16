@@ -17,6 +17,12 @@ import sys
 from html import escape
 from pathlib import Path
 
+# На Windows консоль по умолчанию работает в cp1252, и печать кириллицы валит скрипт с
+# UnicodeEncodeError (на Linux такой беды нет). Переключаем вывод в UTF-8, чтобы инструмент
+# вёл себя одинаково на обеих системах.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 ACCENT = "#38bdf8"
 ACCENT2 = "#4ade80"
 

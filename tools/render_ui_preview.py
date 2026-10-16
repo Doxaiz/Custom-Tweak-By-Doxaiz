@@ -16,6 +16,12 @@ from collections import Counter
 import re
 from pathlib import Path
 
+# На Windows консоль по умолчанию работает в cp1252, и печать кириллицы валит скрипт с
+# UnicodeEncodeError (на Linux такой беды нет). Переключаем вывод в UTF-8, чтобы инструмент
+# вёл себя одинаково на обеих системах.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 CSS = """
 :root{
   --bg:#0b0f16; --bg2:#111826; --card:#141c2b; --line:#1f2b3f; --line2:#2a3852;
