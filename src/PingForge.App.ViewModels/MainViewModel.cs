@@ -25,6 +25,7 @@ public sealed class MainViewModel : ObservableObject
     private bool _hasRights;
     private string? _noticeTitleRu;
     private string? _noticeRu;
+    private bool _versionWarningShown;
 
     /// <remarks>
     /// runsAsAdministrator — запущено ли окно с правами администратора. Раньше это поле начиналось с «нет»
@@ -165,6 +166,12 @@ public sealed class MainViewModel : ObservableObject
     public string RightsNoteRu => HasRights
         ? "Права администратора есть: можно менять настройки."
         : "Прав администратора нет: будут только замеры, менять настройки Windows программа не станет.";
+
+    /// <summary>
+    /// Строка о версиях окна и службы для раздела «О программе» (C5). Обновляется, когда служба
+    /// отвечает: человек должен видеть версии ДО того, как что-то пойдёт не так.
+    /// </summary>
+    public string VersionsNoteRu => _engine.VersionsNoteRu;
 
     /// <summary>«120 мс → 78 мс» или честное «не измерено».</summary>
     public string RttLineRu => BaselineRttMs is null || CurrentRttMs is null
@@ -339,6 +346,15 @@ public sealed class MainViewModel : ObservableObject
             }
 
             OnPropertyChanged(nameof(RttLineRu));
+            OnPropertyChanged(nameof(VersionsNoteRu));
+
+            // C5: версии окна и службы разошлись — говорим один раз и не молчим. Это предупреждение,
+            // а не отказ: команды работают (протокол один), но сборка неполная.
+            if (_engine.VersionState == EngineVersionState.AppDiffers && !_versionWarningShown)
+            {
+                _versionWarningShown = true;
+                ShowNotice("Версии различаются", _engine.VersionsNoteRu);
+            }
         }
         catch (System.Text.Json.JsonException)
         {

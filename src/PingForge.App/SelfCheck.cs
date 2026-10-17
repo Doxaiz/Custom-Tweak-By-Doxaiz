@@ -527,6 +527,15 @@ internal static class SelfCheck
             {
                 StartupLog.Note($"Служба: {message}");
                 StartupLog.Note($"СЛУЖБА: отвечает — {message}");
+
+                // C5: версии окна и службы сверяются на живой машине, а не только в тестах.
+                StartupLog.Note($"ВЕРСИИ: {client.VersionsNoteRu}");
+                if (client.VersionState == EngineVersionState.ProtocolMismatch)
+                {
+                    StartupLog.Note("ВЕРСИИ: протоколы не совпадают — проверка считается проваленной");
+                    problems.Add(client.VersionsNoteRu);
+                }
+
                 ServiceAnswered = true;
                 return;
             }

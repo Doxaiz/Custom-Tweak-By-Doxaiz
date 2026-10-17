@@ -46,7 +46,9 @@ public class ViewModelTests
 
         Assert.True(main.IsOptimizing);
         Assert.Equal("Остановить и вернуть как было", main.ButtonTextRu);
-        Assert.Equal(EngineCommandKind.RealtimeStart, channel.Requests[0].Command);
+        // Первым уходит проверочный ping (окно сверяет версии перед меняющей командой), затем сама команда.
+        Assert.Equal(EngineCommandKind.Ping, channel.Requests[0].Command);
+        Assert.Equal(EngineCommandKind.RealtimeStart, channel.Requests[^1].Command);
         Assert.Equal("Fortnite", main.GameTitleRu);
         Assert.Equal(120, main.BaselineRttMs);
         Assert.Equal(78, main.CurrentRttMs);
@@ -214,7 +216,7 @@ public class ViewModelTests
 
         await main.RepairNetworkCommand.ExecuteAsync();
 
-        Assert.Equal(EngineCommandKind.RepairNetwork, Assert.Single(channel.Requests).Command);
+        Assert.Equal(EngineCommandKind.RepairNetwork, channel.Requests[^1].Command);
         Assert.Contains("Остатков после аварии не найдено", main.StatusRu);
     }
 
@@ -412,8 +414,7 @@ public class ViewModelTests
         Assert.Single(dialogs.RestorePointOffers);
         Assert.Equal((19, "Низкий пинг"), dialogs.RestorePointOffers[0]);
 
-        EngineRequest request = Assert.Single(channel.Requests);
-        Assert.Equal(EngineCommandKind.ApplyPreset, request.Command);
+        EngineRequest request = channel.Requests.Single(r => r.Command == EngineCommandKind.ApplyPreset);
         Assert.Equal("low-latency", request.Argument("preset"));
         Assert.Equal("true", request.Argument("restorePoint"));
         Assert.Contains("применено 19 из 19", tweaks.StatusRu);
@@ -441,7 +442,7 @@ public class ViewModelTests
 
         await tweaks.ApplyPresetCommand.ExecuteAsync();
 
-        Assert.Equal("false", Assert.Single(channel.Requests).Argument("restorePoint"));
+        Assert.Equal("false", channel.Requests.Single(r => r.Command == EngineCommandKind.ApplyPreset).Argument("restorePoint"));
     }
 
     [Fact]
@@ -458,7 +459,7 @@ public class ViewModelTests
         Assert.Contains("3 твиков", dialogs.Confirmations[0].Title);
         Assert.Contains("1 с вердиктом «не советуем»", dialogs.Confirmations[0].Message);
 
-        EngineRequest request = Assert.Single(channel.Requests);
+        EngineRequest request = channel.Requests.Single(r => r.Command == EngineCommandKind.ApplyTweaks);
         Assert.Equal("TWEAK_0,TWEAK_1,TWEAK_45", request.Argument("tweaks"));
     }
 
@@ -486,7 +487,7 @@ public class ViewModelTests
 
         dialogs.ConfirmAnswer = true;
         await tweaks.RollbackCommand.ExecuteAsync();
-        Assert.Equal(EngineCommandKind.RollbackSnapshot, Assert.Single(channel.Requests).Command);
+        Assert.Equal(EngineCommandKind.RollbackSnapshot, channel.Requests[^1].Command);
     }
 
     [Fact]
@@ -596,7 +597,7 @@ public class ViewModelTests
 
         await settings.ApplyProfileCommand.ExecuteAsync();
 
-        Assert.Equal("economy", Assert.Single(channel.Requests).Argument("profile"));
+        Assert.Equal("economy", channel.Requests.Single(r => r.Command == EngineCommandKind.PerfProfile).Argument("profile"));
         Assert.Contains("Контроль каждые 6 с", settings.ProfileNoteRu);
         Assert.Contains("10 проб в минуту", settings.ProfileNoteRu);
         Assert.Contains("на паузу", settings.ProfileNoteRu);

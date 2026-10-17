@@ -38,6 +38,7 @@
       <StackPanel>
         <TextBlock Text="Служба и права" FontWeight="SemiBold" />
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding RightsNoteRu}" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding VersionsNoteRu}" />
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
                    Text="Изменения вносит отдельная служба Windows. Без прав администратора приложение продолжает работать, но только меряет и показывает." />
       </StackPanel>
