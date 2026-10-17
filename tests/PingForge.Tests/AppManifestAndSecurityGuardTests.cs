@@ -23,6 +23,17 @@ public sealed class AppManifestAndSecurityGuardTests
         return File.ReadAllText(path);
     }
 
+    [Fact]
+    public void PipeClientInspector_читает_реальный_production_файл_с_клиентским_PID_и_TOKEN_QUERY()
+    {
+        string source = CheckedFile("PipeClientInspector.cs");
+        Assert.Contains("GetNamedPipeClientProcessId", source);
+        Assert.Contains("TokenQuery = 0x0008", source);
+        Assert.Contains("OpenProcessToken(process.DangerousGetHandle(), TokenQuery", source);
+        Assert.DoesNotContain("GetNamedPipeServerProcessId", source);
+        Assert.DoesNotContain("TokenQueryLimited", source);
+    }
+
     // ── манифест окна (C4) ──────────────────────────────────────────────────────────────────────
 
     [Fact]

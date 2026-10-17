@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Security.Principal;
 using PingForge.App.ViewModels;
 using PingForge.Service.Protocol;
 
@@ -47,7 +48,9 @@ internal static class Program
         try
         {
             // 1. Служба вообще на связи?
-            (bool pingOk, string pingMessage) = await client.PingAsync();
+            EngineResponse pingResponse = await client.SendAsync(EngineCommandKind.Ping);
+            bool pingOk = pingResponse.Ok;
+            string pingMessage = pingResponse.MessageRu;
             Console.WriteLine($"[1/5] Связь: {pingMessage}");
             if (!pingOk)
             {
@@ -56,6 +59,46 @@ internal static class Program
             }
 
             Console.WriteLine($"      Версия протокола, названная службой: {client.ProtocolVersion?.ToString() ?? "не названа"}");
+
+            if (args.Contains("--expect-identity", StringComparer.OrdinalIgnoreCase))
+            {
+                if (!OperatingSystem.IsWindows())
+                {
+                    Console.WriteLine("Проверка личности требует Windows.");
+                    return 3;
+                }
+
+                if (pingResponse.DataJson is null)
+                {
+                    Console.WriteLine("Ответ ping не содержит данных личности клиента.");
+                    return 3;
+                }
+
+                using var identityData = JsonDocument.Parse(pingResponse.DataJson);
+                JsonElement identityRoot = identityData.RootElement;
+                string? reportedName = ReadString(identityRoot, "clientName");
+                string? reportedSid = ReadString(identityRoot, "clientSid");
+                bool? reportedAdmin = identityRoot.TryGetProperty("clientIsAdmin", out JsonElement adminValue)
+                    && adminValue.ValueKind is JsonValueKind.True or JsonValueKind.False
+                        ? adminValue.GetBoolean()
+                        : null;
+
+                using WindowsIdentity current = WindowsIdentity.GetCurrent();
+                string expectedName = current.Name;
+                string expectedSid = current.User?.Value ?? string.Empty;
+                bool expectedAdmin = new WindowsPrincipal(current).IsInRole(WindowsBuiltInRole.Administrator);
+                Console.WriteLine($"      Личность службы: name={reportedName ?? "null"}; SID={reportedSid ?? "null"}; admin={reportedAdmin?.ToString() ?? "null"}");
+                Console.WriteLine($"      Процесс smoke: name={expectedName}; SID={expectedSid}; admin={expectedAdmin}");
+                if (string.IsNullOrWhiteSpace(reportedName) || string.IsNullOrWhiteSpace(reportedSid) || reportedAdmin is null
+                    || !string.Equals(reportedName, expectedName, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(reportedSid, expectedSid, StringComparison.OrdinalIgnoreCase)
+                    || reportedAdmin.Value != expectedAdmin)
+                {
+                    Console.WriteLine("Личность службы не совпала с токеном процесса smoke.");
+                    return 3;
+                }
+                Console.WriteLine("      [OK] Личность совпадает с токеном процесса smoke.");
+            }
 
             // 2. Список команд должен совпадать с тем, что знает эта сборка. Сверяем не «сколько»,
             // а какие именно: счётчик совпадёт и тогда, когда одну команду переименовали, а другую потеряли.
@@ -327,6 +370,11 @@ internal static class Program
 
         return read;
     }
+
+    private static string? ReadString(JsonElement root, string name) =>
+        root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     private static string Text(JsonElement root, string name) =>
         root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String

@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Text.Json.Nodes;
 using PingForge.Service.Protocol;
 
 namespace PingForge.Service.Windows;
@@ -130,6 +131,22 @@ public sealed class EnginePipeServer
                         denialRu => _log($"ОТКАЗ ПО ПРАВАМ ({client.DescribeRu()}): {denialRu}"),
                         ct)
                     .ConfigureAwait(false);
+
+                // Эти поля формирует служба из токена реально подключившегося процесса;
+                // свойства запроса клиента никогда не используются как источник личности.
+                if (EngineJson.TryDecodeRequest(frame, out EngineRequest? request, out _)
+                    && request?.Command == EngineCommandKind.Ping
+                    && response.Ok)
+                {
+                    JsonObject ping = response.DataJson is null
+                        ? new JsonObject()
+                        : JsonNode.Parse(response.DataJson)?.AsObject() ?? new JsonObject();
+                    ping["clientName"] = client.ProblemRu is null ? client.NameRu : null;
+                    ping["clientSid"] = client.ProblemRu is null ? client.Sid : null;
+                    ping["clientIsAdmin"] = client.ProblemRu is null ? client.IsAdministrator : null;
+                    response = response with { DataJson = ping.ToJsonString(EngineJson.Options) };
+                }
+
                 if (!await TryWriteAsync(pipe, response, ct).ConfigureAwait(false))
                 {
                     break;
