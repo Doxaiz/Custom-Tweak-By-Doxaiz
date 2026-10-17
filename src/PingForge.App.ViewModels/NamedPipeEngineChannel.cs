@@ -26,10 +26,48 @@ public sealed class NamedPipeEngineChannel : IEngineChannel
     /// <summary>Сколько ждали в последнем запросе — для честного текста отказа.</summary>
     private TimeSpan _lastTimeout;
 
+    /// <param name="pipeName">
+    /// Имя канала. Не задано — выбирается самим по правам процесса (C2): программа от администратора
+    /// идёт в основной канал, обычная — в канал только для чтения. Так окно всегда получает ровно те
+    /// команды, какие ему доступны, и не стучится в закрытую дверь.
+    /// </param>
+    /// <param name="timeout">Явный предел ожидания, ограничивает сверху любой запрос.</param>
     public NamedPipeEngineChannel(string? pipeName = null, TimeSpan? timeout = null)
     {
-        _pipeName = pipeName ?? EngineProtocol.PipeName;
+        _pipeName = pipeName ?? DefaultPipeName();
         _cap = timeout;
+    }
+
+    /// <summary>Имя канала, к которому подключается этот клиент — для честных сообщений и журнала.</summary>
+    public string PipeName => _pipeName;
+
+    /// <summary>
+    /// Какой канал нужен этому процессу. Основной — только от администратора: там команды, меняющие
+    /// Windows, и его права закрыты для обычного пользователя на уровне ACL канала. Остальным доступен
+    /// канал чтения — состояние, журнал и остановка своих изменений.
+    /// </summary>
+    public static string DefaultPipeName() =>
+        IsElevatedAdministrator() ? EngineProtocol.PipeName : EngineProtocol.ReadOnlyPipeName;
+
+    private static bool IsElevatedAdministrator()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        try
+        {
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            return new System.Security.Principal.WindowsPrincipal(identity)
+                .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        }
+        catch (Exception ex) when (ex is SystemException or UnauthorizedAccessException)
+        {
+            // Не смогли узнать свои права — значит считаем, что их нет: пойдём в канал чтения.
+            // Показать больше, чем есть, хуже, чем показать меньше.
+            return false;
+        }
     }
 
     public async Task<EngineResponse> SendAsync(EngineRequest request, TimeSpan timeout, CancellationToken ct = default)

@@ -34,12 +34,14 @@ internal static class Program
 
         string? pipeName = args.Length > 0 ? args[0] : null;
         Console.WriteLine("Custom Tweak By Doxaiz — живая проверка службы");
-        Console.WriteLine(pipeName is null
-            ? $"Канал: {EngineProtocol.PipeName} (как у окна программы)"
-            : $"Канал: {pipeName} (задан аргументом)");
-        Console.WriteLine();
 
         using var channel = new NamedPipeEngineChannel(pipeName, TimeSpan.FromSeconds(30));
+        // Печатаем имя канала, к которому ПОДКЛЮЧИЛИСЬ: без аргумента клиент сам выбирает канал
+        // по своим правам (основной от администратора, иначе чтение), и прежний текст мог соврать.
+        Console.WriteLine(pipeName is null
+            ? $"Канал: {channel.PipeName} (выбран по правам процесса)"
+            : $"Канал: {pipeName} (задан аргументом)");
+        Console.WriteLine();
         var client = new EngineClient(channel);
 
         try

@@ -25,8 +25,21 @@ public sealed class EngineDispatcher
 
     private readonly IEngineOperations _operations;
 
-    public EngineDispatcher(IEngineOperations operations) =>
+    /// <summary>Какой канал обслуживает этот разборщик: от этого зависит набор доступных команд.</summary>
+    private readonly EngineChannelKind _channelKind;
+
+    public EngineDispatcher(IEngineOperations operations, EngineChannelKind channelKind = EngineChannelKind.Main)
+    {
         _operations = operations ?? throw new ArgumentNullException(nameof(operations));
+        _channelKind = channelKind;
+    }
+
+    /// <summary>
+    /// Разборщик тех же операций для другого канала (C2). Один и тот же набор действий службы,
+    /// но разные наборы команд: канал чтения не выполняет ничего, что меняет Windows, — даже для
+    /// администратора. Так проверка «что можно через этот канал» не смешивается с проверкой прав.
+    /// </summary>
+    public EngineDispatcher ForChannel(EngineChannelKind channelKind) => new(_operations, channelKind);
 
     /// <summary>
     /// Полный путь: JSON по каналу → ответ. Пустой или битый запрос тоже получает ответ с текстом.
@@ -63,6 +76,21 @@ public sealed class EngineDispatcher
         ArgumentNullException.ThrowIfNull(request);
 
         EngineCommandDescriptor descriptor = EngineCommandCatalog.Get(request.Command);
+
+        // C2: канал только для чтения не выполняет команды, меняющие систему, — и это отдельная
+        // проверка от прав клиента. Даже администратор, подключившийся к каналу чтения, получит
+        // отказ и подсказку идти в основной канал: изменения должны проходить через место, где
+        // работают все проверки, а не через «удобную лазейку» рядом.
+        if (_channelKind == EngineChannelKind.ReadOnly && !EngineCommandCatalog.IsAllowedOnReadOnlyChannel(descriptor))
+        {
+            string denial =
+                $"Команда «{descriptor.WireName}» недоступна: этот канал службы открыт только для чтения. " +
+                $"Отсюда доступны {EngineCommandCatalog.ReadOnlyChannelWireNamesRu()} — посмотреть состояние, " +
+                "прочитать журнал и убрать свои изменения. Чтобы менять настройки Windows, запустите программу " +
+                "от имени администратора: тогда она подключится к основному каналу, где такие команды выполняются.";
+            onDenialRu?.Invoke(denial);
+            return EngineResponse.Failure(request.Id, denial);
+        }
 
         if (descriptor.NeedsElevation)
         {

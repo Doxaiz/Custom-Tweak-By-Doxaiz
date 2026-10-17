@@ -5,8 +5,13 @@ using Xunit;
 namespace PingForge.Tests;
 
 /// <summary>
-/// Права на канал службы. Проверка короткая, но важная: правило вида «добавим Everyone,
-/// чтобы точно заработало» открывает доступ к настройкам Windows кому угодно в системе.
+/// Права на каналы службы. Проверка короткая, но важная: правило вида «добавим Everyone,
+/// чтобы точно заработало» открывает доступ к настройкам Windows кому угодно в системе,
+/// а широкий основной канал — готовое повышение привилегий для любого пользователя компьютера.
+///
+/// Схема (C2): основной канал — LocalSystem и Администраторы (в интерактивном пользователе там нет
+/// нужды: изменения идут от администратора); канал только для чтения — плюс интерактивный вход,
+/// но только на чтение и только с командами просмотра.
 /// </summary>
 public class ServiceSecurityTests
 {
@@ -25,31 +30,62 @@ public class ServiceSecurityTests
     {
         Assert.False(ServiceSecurityPlan.HasForbiddenIdentity());
 
-        Assert.All(ServiceSecurityPlan.ForbiddenSids, sid =>
-            Assert.False(ServiceSecurityPlan.IsGranted(sid), $"в правилах оказался запрещённый SID {sid}"));
+        foreach (IReadOnlyList<PipeAccessGrant> table in new[] { ServiceSecurityPlan.Grants, ServiceSecurityPlan.ReadOnlyGrants })
+        {
+            Assert.All(ServiceSecurityPlan.ForbiddenSids, sid =>
+                Assert.False(ServiceSecurityPlan.IsGranted(table, sid), $"в правилах оказался запрещённый SID {sid}"));
+        }
 
-        // Отдельно: доступ «всем» и «анонимному входу» не выдаётся даже на чтение.
-        Assert.DoesNotContain(ServiceSecurityPlan.Grants, g => g.Right == PipeAccessRight.ReadOnly);
+        // Доступ «всем» и «анонимному входу» не выдаётся ни в одном канале, ни на чтение.
+        Assert.DoesNotContain(ServiceSecurityPlan.Grants, g => g.Sid is "S-1-1-0" or "S-1-5-7");
+        Assert.DoesNotContain(ServiceSecurityPlan.ReadOnlyGrants, g => g.Sid is "S-1-1-0" or "S-1-5-7");
+    }
+
+    [Fact]
+    public void В_главном_канале_нет_места_интерактивному_пользователю()
+    {
+        // C2 закрыл главную дыру ACL: раньше интерактивный вход (S-1-5-4 — это ВСЕ залогиненные
+        // пользователи) имел в основном канале право записи. Канал, который меняет настройки Windows,
+        // не должен открываться каждому вошедшему: изменения идут от администратора, а просмотр
+        // переехал в отдельный канал чтения.
+        Assert.DoesNotContain(ServiceSecurityPlan.Grants, g => g.Sid == ServiceSecurityPlan.InteractiveSid);
+        Assert.Equal(2, ServiceSecurityPlan.Grants.Count);
+    }
+
+    [Fact]
+    public void Канал_чтения_даёт_интерактиву_только_чтение()
+    {
+        PipeAccessGrant user = Assert.Single(ServiceSecurityPlan.ReadOnlyGrants, g => g.Sid == ServiceSecurityPlan.InteractiveSid);
+
+        Assert.Equal(PipeAccessRight.ReadOnly, user.Right);
     }
 
     [Fact]
     public void У_каждого_правила_есть_имя_причина_и_разумные_права()
     {
-        Assert.All(ServiceSecurityPlan.Grants, grant =>
+        foreach (IReadOnlyList<PipeAccessGrant> table in new[] { ServiceSecurityPlan.Grants, ServiceSecurityPlan.ReadOnlyGrants })
         {
-            Assert.False(string.IsNullOrWhiteSpace(grant.WhoRu));
-            Assert.False(string.IsNullOrWhiteSpace(grant.WhyRu));
-            Assert.Matches("^S-1-[0-9-]+$", grant.Sid);
-            Assert.False(string.IsNullOrWhiteSpace(ServiceSecurityPlan.RightRu(grant.Right)));
-        });
+            Assert.All(table, grant =>
+            {
+                Assert.False(string.IsNullOrWhiteSpace(grant.WhoRu));
+                Assert.False(string.IsNullOrWhiteSpace(grant.WhyRu));
+                Assert.Matches("^S-1-[0-9-]+$", grant.Sid);
+                Assert.False(string.IsNullOrWhiteSpace(ServiceSecurityPlan.RightRu(grant.Right)));
+            });
+        }
     }
 
     [Fact]
     public void Обычному_пользователю_не_дают_полный_доступ()
     {
-        PipeAccessGrant user = Assert.Single(ServiceSecurityPlan.Grants, g => g.Sid == ServiceSecurityPlan.InteractiveSid);
+        // В основном канале для него нет вообще никакого правила — то есть и двери тоже нет.
+        // В канале чтения — только чтение.
+        Assert.DoesNotContain(ServiceSecurityPlan.Grants, g => g.Sid == ServiceSecurityPlan.InteractiveSid);
 
-        Assert.Equal(PipeAccessRight.ReadWrite, user.Right);
+        PipeAccessGrant user = Assert.Single(ServiceSecurityPlan.ReadOnlyGrants, g => g.Sid == ServiceSecurityPlan.InteractiveSid);
+        Assert.NotEqual(PipeAccessRight.FullControl, user.Right);
+        Assert.NotEqual(PipeAccessRight.ReadWrite, user.Right);
+
         Assert.Contains("администратора", user.WhyRu + ServiceSecurityPlan.DescribeRu());
     }
 
@@ -58,18 +94,19 @@ public class ServiceSecurityTests
     {
         // Сторож на слова и на дело: если из кода уберут проверку прав клиента, описание останется
         // обещанием. Поэтому проверяется и текст правил, и поведение разборщика (отдельный тест).
-        PipeAccessGrant user = ServiceSecurityPlan.Grants.Single(g => g.Sid == ServiceSecurityPlan.InteractiveSid);
+        PipeAccessGrant user = ServiceSecurityPlan.ReadOnlyGrants.Single(g => g.Sid == ServiceSecurityPlan.InteractiveSid);
 
         Assert.Contains("права того, кто подключился", user.WhyRu);
         Assert.Contains("Второй уровень защиты", ServiceSecurityPlan.DescribeRu());
     }
 
     [Fact]
-    public void Описание_правил_называет_канал_предел_подключений_и_запреты()
+    public void Описание_правил_называет_оба_канала_предел_подключений_и_запреты()
     {
         string text = ServiceSecurityPlan.DescribeRu();
 
         Assert.Contains(EngineProtocol.PipeName, text);
+        Assert.Contains(EngineProtocol.ReadOnlyPipeName, text);
         Assert.Contains(ServiceSecurityPlan.MaxConnections.ToString(), text);
         Assert.Contains("Everyone", text);
         Assert.Contains("ANONYMOUS LOGON", text);

@@ -4,15 +4,19 @@ using PingForge.Service.Protocol;
 namespace PingForge.Service.Windows;
 
 /// <summary>
-/// Канал службы: слушает, читает кадры, отдаёт их разборщику и отправляет ответ.
+/// Каналы службы: слушает, читает кадры, отдаёт их разборщику и отправляет ответ.
 ///
-/// Канал обслуживается по очереди, а не пачкой потоков. Это осознанное решение: команды применяют твики
-/// и ставят маршруты, то есть меняют систему. Две такие операции одновременно — это гонка в реестре
+/// Каналов два (C2), и обслуживаются они одинаково, но с разными правами и разборщиками:
+///   • основной — LocalSystem и Администраторы, полный набор команд;
+///   • канал только для чтения — плюс интерактивный вход, но команды только просмотр.
+///
+/// Каждый канал обслуживается по очереди, а не пачкой потоков. Это осознанное решение: команды применяют
+/// твики и ставят маршруты, то есть меняют систему. Две такие операции одновременно — это гонка в реестре
 /// и в таблице маршрутов, а не «быстрее». Клиенты, пришедшие вторыми, просто ждут своей очереди.
 ///
 /// У каждого подключения читаются права клиента (<see cref="PipeClientInspector"/>) и передаются
-/// разборщику: канал открыт для интерактивного пользователя на чтение, и без этой проверки любой
-/// пользователь компьютера мог бы менять настройки Windows от имени службы (LocalSystem).
+/// разборщику: это третий уровень защиты — даже администратор по каналу чтения не получит меняющую
+/// команду, а обычный пользователь по основному каналу не получит ничего вовсе (туда он не подключится).
 /// Отказ по правам пишется в журнал службы вместе с именем клиента — следы попытки остаются.
 /// </summary>
 public sealed class EnginePipeServer
@@ -26,23 +30,38 @@ public sealed class EnginePipeServer
         _log = log ?? (_ => { });
     }
 
-    /// <summary>Слушать канал до отмены. Возврат — только по остановке службы.</summary>
+    /// <summary>
+    /// Слушать оба канала до отмены. Возврат — только по остановке службы.
+    /// Разборщик канала чтения создаётся от того же набора операций: действия те же, права — другие.
+    /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
-        _log($"Слушаю канал {EngineProtocol.PipeName}; одновременных подключений: {ServiceSecurityPlan.MaxConnections}.");
         _log(ServiceSecurityPlan.DescribeRu());
+
+        await Task.WhenAll(
+            RunChannelAsync(EngineChannelKind.Main, _dispatcher, ct),
+            RunChannelAsync(EngineChannelKind.ReadOnly, _dispatcher.ForChannel(EngineChannelKind.ReadOnly), ct))
+            .ConfigureAwait(false);
+    }
+
+    private async Task RunChannelAsync(EngineChannelKind channelKind, EngineDispatcher dispatcher, CancellationToken ct)
+    {
+        string pipeName = PipeNameOf(channelKind);
+        string kindRu = channelKind == EngineChannelKind.Main ? "основной" : "только чтение";
+
+        _log($"Слушаю канал {pipeName} ({kindRu}); одновременных подключений: {ServiceSecurityPlan.MaxConnections}.");
 
         while (!ct.IsCancellationRequested)
         {
             NamedPipeServerStream pipe;
             try
             {
-                pipe = PipeAclFactory.CreateServerStream();
+                pipe = PipeAclFactory.CreateServerStream(channelKind);
             }
             catch (UnauthorizedAccessException ex)
             {
                 // Сюда попадаем, если канал занят другим экземпляром службы — это честная причина остановиться.
-                _log($"Канал {EngineProtocol.PipeName} занят: {ex.Message}. Похоже, служба уже запущена.");
+                _log($"Канал {pipeName} занят: {ex.Message}. Похоже, служба уже запущена.");
                 return;
             }
 
@@ -54,9 +73,9 @@ public sealed class EnginePipeServer
                 // не меняется, а спрашивать токен на каждую команду — лишняя работа и лишний повод
                 // получить отказ там, где его не должно быть.
                 PipeClientIdentity client = PipeClientInspector.Inspect(pipe);
-                _log($"Подключился клиент. {client.DescribeRu()}");
+                _log($"Подключился клиент ({kindRu}). {client.DescribeRu()}");
 
-                await HandleConnectionAsync(pipe, client, ct).ConfigureAwait(false);
+                await HandleConnectionAsync(pipe, client, dispatcher, ct).ConfigureAwait(false);
                 _log("Клиент отключился.");
             }
             catch (OperationCanceledException)
@@ -71,10 +90,17 @@ public sealed class EnginePipeServer
             }
         }
 
-        _log("Канал закрыт: служба останавливается.");
+        _log($"Канал {pipeName} закрыт: служба останавливается.");
     }
 
-    private async Task HandleConnectionAsync(NamedPipeServerStream pipe, PipeClientIdentity client, CancellationToken ct)
+    private static string PipeNameOf(EngineChannelKind channelKind) =>
+        channelKind == EngineChannelKind.Main ? EngineProtocol.PipeName : EngineProtocol.ReadOnlyPipeName;
+
+    private async Task HandleConnectionAsync(
+        NamedPipeServerStream pipe,
+        PipeClientIdentity client,
+        EngineDispatcher dispatcher,
+        CancellationToken ct)
     {
         try
         {
@@ -97,7 +123,7 @@ public sealed class EnginePipeServer
                     break;
                 }
 
-                EngineResponse response = await _dispatcher
+                EngineResponse response = await dispatcher
                     .HandleJsonAsync(
                         frame,
                         client.IsAdministrator,
