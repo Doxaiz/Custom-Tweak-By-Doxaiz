@@ -13,6 +13,8 @@
     <ProjectReference Include="..\PingForge.Core\PingForge.Core.csproj" />
     <ProjectReference Include="..\PingForge.Network\PingForge.Network.csproj" />
     <ProjectReference Include="..\PingForge.Orchestration\PingForge.Orchestration.csproj" />
+    <!-- Настоящие пробы: ICMP, TCP-рукопожатие, разрешение имён. Пишутся один раз здесь. -->
+    <ProjectReference Include="..\PingForge.Probing\PingForge.Probing.csproj" />
     <!-- Переиспользуем уже написанные Windows-порты: реестр и запуск утилит. -->
     <ProjectReference Include="..\PingForge.Tweaks.Windows\PingForge.Tweaks.Windows.csproj" />
   </ItemGroup>

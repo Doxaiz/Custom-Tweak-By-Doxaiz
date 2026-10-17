@@ -113,7 +113,7 @@ public sealed class LiveEngineOperations : IEngineOperations
 
         string realtimeNote = _realtime is null
             ? "Движок живой оптимизации не подключён."
-            : $"Состояние живой оптимизации: {StateRu(state)}.";
+            : $"Движок живой оптимизации подключён. Состояние: {StateRu(state)}.";
 
         string message = $"{realtimeNote} {gameNote} {pendingNote} " +
             $"Профиль потребления: {ResourceBudgetOptions.DescribeProfile(profile)}.";
@@ -348,7 +348,14 @@ public sealed class LiveEngineOperations : IEngineOperations
             return new EngineOperationResult(report.EverythingReverted, message, data);
         }
 
-        RealtimeSnapshot snapshot = await _realtime.StartAsync(ct).ConfigureAwait(false);
+        // Настройки контроля берутся из профиля потребления, который человек выбрал в окне:
+        // экономный профиль растягивает окна, «максимум реакции» — наоборот.
+        PerfProfile profile = _readProfile?.Invoke() ?? PerfProfile.Balanced;
+        var options = new RealtimeOptions(Budget: new ResourceBudgetOptions(profile));
+
+        RealtimeSnapshot snapshot = await _realtime
+            .StartAsync(options, isAdministrator: IsElevationAvailable, preferredGame: null, ct: ct)
+            .ConfigureAwait(false);
         string startMessage = snapshot.State == RealtimeOptimizationState.ReadOnlyNoAdmin
             ? "Оптимизация запущена без прав: идут только замеры, менять сеть служба не станет."
             : $"{snapshot.StatusRu} Игра: {snapshot.GameTitleRu ?? "не найдена"}, задержка: {FormatMs(snapshot.CurrentRttMs)}.";

@@ -10,6 +10,8 @@
     <ProjectReference Include="..\PingForge.Core\PingForge.Core.csproj" />
     <!-- Контракты действий оптимизации объявлены в Orchestration: сетевой слой их реализует. -->
     <ProjectReference Include="..\PingForge.Orchestration\PingForge.Orchestration.csproj" />
+    <!-- Пробы пути: ICMP и TCP-рукопожатие. Мост к живому оптимизатору живёт здесь же. -->
+    <ProjectReference Include="..\PingForge.Probing\PingForge.Probing.csproj" />
   </ItemGroup>
 
 </Project>

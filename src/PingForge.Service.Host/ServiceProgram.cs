@@ -2,7 +2,11 @@ using PingForge.Core.Abstractions;
 using PingForge.Core.Tweaks;
 using PingForge.Data;
 using PingForge.Data.Repositories;
+using PingForge.Network;
+using PingForge.Network.Windows;
 using PingForge.Orchestration;
+using PingForge.Orchestration.Realtime;
+using PingForge.Probing;
 using PingForge.Service;
 using PingForge.Service.Protocol;
 using PingForge.SystemState;
@@ -100,6 +104,45 @@ public static class ServiceProgram
             restorePoints);
         var coordinator = new TweakCoordinator(snapshotService, journal, catalog);
 
+        // ── Сетевой слой: живая оптимизация уже запущенной игры ────────────────────────────────
+        // Раньше здесь был null, и кнопка честно отвечала «движок не подключён». Теперь собраны
+        // все части: поиск игрового потока по таблице соединений, настоящие пробы (ICMP и TCP),
+        // действия «маршрут для игры» и «QoS DSCP», откат и фоновый контроль.
+        using var network = new WindowsGameNetworkPlatform(platform, new GameProcessCatalog());
+
+        // Настоящие транспорты: ICMP-эхо, время TCP-рукопожатия, системный DNS.
+        var icmp = new SystemNetIcmpProbe();
+        var probes = new RouteProbeService(
+            icmp,
+            new SocketTcpHandshakeProbe(),
+            new SystemHostResolver(),
+            new HopTracerouteEngine(icmp));
+        var measurement = new RouteProbeMeasurementSource(probes, samplesPerWindow: 12);
+
+        var realtime = new RealtimeOptimizer(
+            network.Watcher,
+            measurement,
+            new GameNetworkActionRunner(network.RouteActions, network.DscpActions));
+
+        // Профиль потребления — общий с окном файл: экономный профиль растягивает контроль,
+        // «максимум реакции» — наоборот. Служба читает его при каждом запуске оптимизации.
+        Func<PerfProfile> readProfile = () => ServiceSettings.ReadProfile(DataDirectory);
+        Action<PerfProfile> writeProfile = profile =>
+        {
+            if (!ServiceSettings.TryWriteProfile(DataDirectory, profile))
+            {
+                Log($"Профиль {profile} не записался в {ServiceSettings.FilePath(DataDirectory)}");
+            }
+        };
+
+        var monitor = new RealtimeMonitor(
+            realtime,
+            interval: () => new ResourceBudgetOptions(readProfile())
+                .EffectiveMonitorInterval(TimeSpan.FromSeconds(2)),
+            log: Log);
+
+        Log("Живая оптимизация подключена: поиск игры, замеры ICMP/TCP, маршрут и QoS, откат.");
+
         // Служба идёт от LocalSystem: права на изменение системы у неё есть по определению.
         var operations = new LiveEngineOperations(
             catalog,
@@ -107,6 +150,9 @@ public static class ServiceProgram
             coordinator,
             isElevationAvailable: true,
             journal: journal,
+            realtime: realtime,
+            readProfile: readProfile,
+            applyProfile: writeProfile,
             stateReader: systemState);
 
         var dispatcher = new EngineDispatcher(operations);
@@ -115,7 +161,18 @@ public static class ServiceProgram
         Log($"Каталог: {catalog.GetAllTweaks().Count} твиков. База: {database.DatabasePath}");
         Log(EngineCommandCatalog.DescribeRu());
 
-        await server.RunAsync(ct).ConfigureAwait(false);
+        // Контроль живой оптимизации идёт рядом с каналом и заканчивается вместе со службой.
+        Task monitorTask = monitor.RunAsync(ct);
+
+        try
+        {
+            await server.RunAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await monitorTask.ConfigureAwait(false);
+            Log($"Живая оптимизация: окон контроля за сеанс — {monitor.Ticks}.");
+        }
     }
 
     /// <summary>

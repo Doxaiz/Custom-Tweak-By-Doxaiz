@@ -22,6 +22,8 @@
     <ProjectReference Include="..\PingForge.Orchestration\PingForge.Orchestration.csproj" />
     <ProjectReference Include="..\PingForge.Tweaks\PingForge.Tweaks.csproj" />
     <ProjectReference Include="..\PingForge.Tweaks.Windows\PingForge.Tweaks.Windows.csproj" />
+    <!-- Сетевой слой: поиск игрового потока, маршрут, QoS и настоящие пробы. -->
+    <ProjectReference Include="..\PingForge.Network.Windows\PingForge.Network.Windows.csproj" />
   </ItemGroup>
 
 </Project>
