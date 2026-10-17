@@ -95,7 +95,16 @@ jobs:
         if: always()
         shell: pwsh
         run: |
+          # Уборка — не проверка: её задача вернуть машину в исходное состояние.
+          # Скрипт может вернуть 1, если службы уже нет; это не повод краснеть всему прогону.
           $script = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\uninstall-service.ps1'
-          if (Test-Path $script) { & $script -KeepFiles -RemoveData 2>&1 | Out-Host }
-          Get-Service -Name PingForge -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue
-          sc.exe delete PingForge | Out-Null
+          if (Test-Path $script) { & $script -KeepFiles -RemoveData 2>&1 | Out-Host; $LASTEXITCODE = 0 }
+          $service = Get-Service -Name PingForge -ErrorAction SilentlyContinue
+          if ($service) {
+            Stop-Service -Name PingForge -Force -ErrorAction SilentlyContinue
+            sc.exe delete PingForge | Out-Null
+            $LASTEXITCODE = 0
+          }
+
+          Write-Host 'Уборка закончена.'
+          exit 0
