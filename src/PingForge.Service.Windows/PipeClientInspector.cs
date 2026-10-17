@@ -30,7 +30,7 @@ public sealed record PipeClientIdentity(
     bool IsAdministrator,
     string NameRu,
     string Sid,
-    int ProcessId,
+    uint ProcessId,
     string? ProblemRu)
 {
     /// <summary>Права определить не удалось. Команды, меняющие систему, такому клиенту не положены.</summary>
@@ -67,7 +67,7 @@ public static class PipeClientInspector
 
         try
         {
-            if (!TryGetClientProcessId(pipe, out int processId))
+            if (!TryGetClientProcessId(pipe, out uint processId))
             {
                 return PipeClientIdentity.Unknown("система не назвала процесс клиента");
             }
@@ -111,7 +111,7 @@ public static class PipeClientInspector
     /// для чего-либо ещё. Служба идёт от LocalSystem и откроет любой процесс, но просит минимум:
     /// лишние права в коде, который проверяет чужие права, — это отдельный риск.
     /// </summary>
-    private static SafeTokenHandle? OpenClientToken(int processId, out string? problem)
+    private static SafeTokenHandle? OpenClientToken(uint processId, out string? problem)
     {
         problem = null;
 
@@ -134,12 +134,11 @@ public static class PipeClientInspector
         return opened;
     }
 
-    private static bool TryGetClientProcessId(NamedPipeServerStream pipe, out int processId)
+    private static bool TryGetClientProcessId(NamedPipeServerStream pipe, out uint processId)
     {
         processId = 0;
-        return GetNamedPipeClientProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out uint clientProcessId)
-            && clientProcessId <= int.MaxValue
-            && (processId = (int)clientProcessId) > 0;
+        return GetNamedPipeClientProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out processId)
+            && processId != 0;
     }
 
     /// <summary>TOKEN_QUERY: право читать сведения о токене; не путать с PROCESS_QUERY_LIMITED_INFORMATION.</summary>
@@ -156,7 +155,7 @@ public static class PipeClientInspector
     private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out SafeTokenHandle tokenHandle);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, int processId);
+    private static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, uint processId);
 
     /// <summary>Дескриптор токена: закрывается сам, иначе каждый клиент оставлял бы в системе ручку.</summary>
     private sealed class SafeTokenHandle : Microsoft.Win32.SafeHandles.SafeHandleZeroOrMinusOneIsInvalid
