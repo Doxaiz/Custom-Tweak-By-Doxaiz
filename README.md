@@ -17,7 +17,7 @@
 | [**`CustomTweakByDoxaiz-Setup-0.4.0.exe`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/download/v0.4.0/CustomTweakByDoxaiz-Setup-0.4.0.exe) | **установщик** — обычный случай: ставит программу в `Program Files`, регистрирует и запускает службу, делает ярлыки, появляется в «Программах и компонентах» | 71 МБ |
 | [**`CustomTweakByDoxaiz-0.4.0.exe`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/download/v0.4.0/CustomTweakByDoxaiz-0.4.0.exe) | **готовая программа одним файлом** — скачал и запустил, ставить ничего не нужно | 168 МБ |
 | [**`CustomTweakByDoxaiz.Service-0.4.0.exe`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/download/v0.4.0/CustomTweakByDoxaiz.Service-0.4.0.exe) | **служба отдельным файлом** — без неё программе нечем менять настройки Windows | 73 МБ |
-| [**все файлы релиза `v0.3.0`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/latest) | ещё два архива (автономный и компактный) и `SHA256SUMS.txt` — контрольные суммы | — |
+| [**все файлы релиза `v0.4.0`**](https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/latest) | ещё два архива (автономный и компактный) и `SHA256SUMS.txt` — контрольные суммы | — |
 
 Репозиторий приватный, поэтому прямая ссылка открывается **под своим аккаунтом GitHub** (в браузере,
 где вы вошли). Если ссылка всё же отвечает «404» — откройте страницу
