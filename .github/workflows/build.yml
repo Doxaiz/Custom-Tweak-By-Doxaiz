@@ -72,18 +72,7 @@ jobs:
         run: dotnet build PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --nologo
 
       - name: Тесты
-        run: |
-          dotnet test PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --no-build --nologo --logger "console;verbosity=normal" 2>&1 | Tee-Object -Variable out
-          $code = $LASTEXITCODE
-          for ($i = 0; $i -lt $out.Count; $i++) {
-            if ($out[$i] -match 'Failed |Error Message') {
-              Write-Host "::error::$($out[$i])"
-              foreach ($j in 1..3) {
-                if ($i + $j -lt $out.Count) { Write-Host "::error::$($out[$i + $j])" }
-              }
-            }
-          }
-          exit $code
+        run: dotnet test PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --no-build --nologo
 
       # Витрины собираются из того же каталога, что применяет служба: если данные каталога разойдутся
       # с разметкой витрины, проверки упадут прямо здесь.
