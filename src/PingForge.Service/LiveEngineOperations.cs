@@ -356,9 +356,15 @@ public sealed class LiveEngineOperations : IEngineOperations
         RealtimeSnapshot snapshot = await _realtime
             .StartAsync(options, isAdministrator: IsElevationAvailable, preferredGame: null, ct: ct)
             .ConfigureAwait(false);
-        string startMessage = snapshot.State == RealtimeOptimizationState.ReadOnlyNoAdmin
-            ? "Оптимизация запущена без прав: идут только замеры, менять сеть служба не станет."
-            : $"{snapshot.StatusRu} Игра: {snapshot.GameTitleRu ?? "не найдена"}, задержка: {FormatMs(snapshot.CurrentRttMs)}.";
+        // При отказе не добавляем хвост «Игра: не найдена, задержка: не измерено»: человек и так
+        // читает причину отказа, а хвост превращает её в длинную склейку из двух предложений.
+        string startMessage = snapshot.State switch
+        {
+            RealtimeOptimizationState.Failed => snapshot.StatusRu,
+            RealtimeOptimizationState.ReadOnlyNoAdmin =>
+                "Оптимизация запущена без прав: идут только замеры, менять сеть служба не станет.",
+            _ => $"{snapshot.StatusRu} Игра: {snapshot.GameTitleRu ?? "не найдена"}, задержка: {FormatMs(snapshot.CurrentRttMs)}."
+        };
 
         string startData = Encode(new RealtimeData(
             StateWire(snapshot.State),

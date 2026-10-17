@@ -322,6 +322,22 @@ public class ServiceProtocolTests
     }
 
     [Fact]
+    public void Долгие_команды_ждут_дольше_быстрых_и_предел_есть_у_каждой()
+    {
+        // Раньше у всех команд был один предел в 10 секунд: применение твиков с точкой
+        // восстановления и живой запуск не успевали, и человек читал «служба не ответила».
+        Assert.Equal(10, EngineCommandCatalog.Get(EngineCommandKind.Ping).TimeoutSeconds);
+        Assert.Equal(10, EngineCommandCatalog.Get(EngineCommandKind.Status).TimeoutSeconds);
+        Assert.True(EngineCommandCatalog.Get(EngineCommandKind.RealtimeStart).TimeoutSeconds >= 120);
+        Assert.True(EngineCommandCatalog.Get(EngineCommandKind.ApplyTweaks).TimeoutSeconds >= 300);
+        Assert.True(EngineCommandCatalog.Get(EngineCommandKind.RollbackSnapshot).TimeoutSeconds >= 300);
+
+        Assert.All(
+            EngineCommandCatalog.All,
+            command => Assert.InRange(command.TimeoutSeconds, 5, 600));
+    }
+
+    [Fact]
     public void Описание_команд_называет_числа_которые_считаются_из_таблицы()
     {
         string text = EngineCommandCatalog.DescribeRu();
