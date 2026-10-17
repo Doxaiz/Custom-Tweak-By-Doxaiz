@@ -1,7 +1,7 @@
 ﻿ControlType.Window | Custom Tweak By Doxaiz | enabled=True
 ControlType.Text | Custom Tweak By Doxaiz | enabled=True
 ControlType.Text |  | enabled=True
-ControlType.Text | Твиков в каталоге: 47 · версия 0.2.1 | enabled=True
+ControlType.Text | Твиков в каталоге: 47 · версия 0.2.2 | enabled=True
 ControlType.Button | Поддержать автора ↗ | enabled=True
 ControlType.Text | Поддержать автора ↗ | enabled=True
 ControlType.Text | Программа запускается молча: ничего не меняется, пока вы не нажмёте кнопку. | enabled=True
