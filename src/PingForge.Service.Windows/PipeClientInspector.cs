@@ -72,13 +72,12 @@ public static class PipeClientInspector
                 return PipeClientIdentity.Unknown("система не назвала процесс клиента");
             }
 
-            using SafeProcessHandle? process = OpenClientToken(processId, out SafeTokenHandle? token, out string? problem);
+            using SafeTokenHandle? token = OpenClientToken(processId, out string? problem);
             if (token is null)
             {
                 return PipeClientIdentity.Unknown(problem ?? "не удалось открыть токен процесса клиента");
             }
 
-            using (token)
             using var identity = new WindowsIdentity(token.DangerousGetHandle());
             var principal = new WindowsPrincipal(identity);
 
@@ -96,6 +95,7 @@ public static class PipeClientInspector
             string sid = identity.User?.Value ?? "SID не прочитан";
             bool isAdmin = principal.IsInRole(WindowsBuiltInRole.Administrator);
 
+            // Имя, SID и роль прочитаны до закрытия дескрипторов: токен живёт только внутри этого блока.
             return new PipeClientIdentity(isAdmin, name, sid, processId, null);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception
@@ -111,10 +111,9 @@ public static class PipeClientInspector
     /// для чего-либо ещё. Служба идёт от LocalSystem и откроет любой процесс, но просит минимум:
     /// лишние права в коде, который проверяет чужие права, — это отдельный риск.
     /// </summary>
-    private static SafeProcessHandle? OpenClientToken(int processId, out SafeTokenHandle? token, out string? problem)
+    private static SafeTokenHandle? OpenClientToken(int processId, out string? problem)
     {
         problem = null;
-        token = null;
 
         IntPtr raw = OpenProcess(ProcessQueryLimitedInformation, false, processId);
         if (raw == IntPtr.Zero)
@@ -123,16 +122,16 @@ public static class PipeClientInspector
             return null;
         }
 
-        var process = new SafeProcessHandle(raw, ownsHandle: true);
+        // Дескриптор процесса нужен только на время запроса токена: сам токен живёт своей жизнью.
+        using var process = new SafeProcessHandle(raw, ownsHandle: true);
         if (!OpenProcessToken(process.DangerousGetHandle(), TokenQueryLimited, out SafeTokenHandle opened) || opened.IsInvalid)
         {
             problem = $"токен процесса {processId} не открылся (ошибка {Marshal.GetLastWin32Error()})";
             opened?.Dispose();
-            return process;
+            return null;
         }
 
-        token = opened;
-        return process;
+        return opened;
     }
 
     private static bool TryGetClientProcessId(NamedPipeServerStream pipe, out int processId)

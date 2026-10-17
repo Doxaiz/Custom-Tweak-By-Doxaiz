@@ -31,12 +31,14 @@ public sealed class EngineDispatcher
     /// <summary>
     /// Полный путь: JSON по каналу → ответ. Пустой или битый запрос тоже получает ответ с текстом.
     /// </summary>
+    /// <param name="requestJson">Кадр запроса, пришедший по каналу.</param>
     /// <param name="clientIsAdministrator">
     /// Есть ли права администратора у того, кто подключился к каналу, — в его собственном процессе.
     /// По умолчанию «да» только ради существующих проверок разбора запросов; настоящий канал обязан
     /// передавать сюда прочитанные права клиента (см. <c>PipeClientInspector</c>).
     /// </param>
     /// <param name="onDenialRu">Куда сообщить об отказе по правам: служба пишет это в журнал вместе с именем клиента.</param>
+    /// <param name="ct">Отмена: закрылось окно или останавливается служба.</param>
     public async Task<EngineResponse> HandleJsonAsync(
         string requestJson,
         bool clientIsAdministrator = true,
