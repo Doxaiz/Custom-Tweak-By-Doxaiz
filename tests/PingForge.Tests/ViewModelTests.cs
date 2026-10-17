@@ -249,7 +249,8 @@ public class ViewModelTests
         gate.SetResult();
         await start;
 
-        Assert.Equal(TimeSpan.FromSeconds(180), channel.Timeouts[0]);
+        // Первым уходит проверочный ping (10 с по каталогу), за ним сама команда (180 с).
+        Assert.Equal(TimeSpan.FromSeconds(180), channel.Timeouts[^1]);
 
         var quick = new FakeEngineChannel();
         var quickMain = new MainViewModel(new EngineClient(quick), new FakeDialogs());
