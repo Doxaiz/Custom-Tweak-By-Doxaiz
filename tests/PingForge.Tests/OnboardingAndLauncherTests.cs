@@ -1,4 +1,4 @@
-using PingForge.App.ViewModels;
+﻿using PingForge.App.ViewModels;
 using PingForge.Core.Models;
 using PingForge.Network;
 using PingForge.Orchestration.Realtime;
@@ -311,7 +311,7 @@ public class OnboardingAndLauncherTests
     }
 
     [Fact]
-    public void Пути_игр_переживают_сохранение_настроек_в_другом_разделе()
+    public async Task Пути_игр_переживают_сохранение_настроек_в_другом_разделе()
     {
         // Настройки читаются заново перед записью: иначе «Сохранить» в «Настройках» стёрло бы
         // и пути к играм, и пройденный мастер.
@@ -322,7 +322,10 @@ public class OnboardingAndLauncherTests
         var engine = new EngineClient(new FakeEngineChannel());
         var settings = new SettingsViewModel(engine, store, new FakeDialogs());
         settings.CloseToTray = false;
-        settings.SaveCommand.ExecuteAsync().GetAwaiter().GetResult();
+
+        // Команда ожидается, а не «выполнить и блокирующе дождаться»: блокирующее ожидание задачи
+        // в тесте — это предупреждение xUnit1031 и риск взаимной блокировки на потоке теста.
+        await settings.SaveCommand.ExecuteAsync();
 
         AppSettings saved = store.Load();
         Assert.True(saved.SetupCompleted);

@@ -9,6 +9,11 @@ namespace PingForge.Service.Windows;
 /// Канал обслуживается по очереди, а не пачкой потоков. Это осознанное решение: команды применяют твики
 /// и ставят маршруты, то есть меняют систему. Две такие операции одновременно — это гонка в реестре
 /// и в таблице маршрутов, а не «быстрее». Клиенты, пришедшие вторыми, просто ждут своей очереди.
+///
+/// У каждого подключения читаются права клиента (<see cref="PipeClientInspector"/>) и передаются
+/// разборщику: канал открыт для интерактивного пользователя на чтение, и без этой проверки любой
+/// пользователь компьютера мог бы менять настройки Windows от имени службы (LocalSystem).
+/// Отказ по правам пишется в журнал службы вместе с именем клиента — следы попытки остаются.
 /// </summary>
 public sealed class EnginePipeServer
 {
@@ -44,8 +49,14 @@ public sealed class EnginePipeServer
             try
             {
                 await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
-                _log("Подключился клиент.");
-                await HandleConnectionAsync(pipe, ct).ConfigureAwait(false);
+
+                // Права клиента определяются один раз на подключение: процесс за время разговора
+                // не меняется, а спрашивать токен на каждую команду — лишняя работа и лишний повод
+                // получить отказ там, где его не должно быть.
+                PipeClientIdentity client = PipeClientInspector.Inspect(pipe);
+                _log($"Подключился клиент. {client.DescribeRu()}");
+
+                await HandleConnectionAsync(pipe, client, ct).ConfigureAwait(false);
                 _log("Клиент отключился.");
             }
             catch (OperationCanceledException)
@@ -63,7 +74,7 @@ public sealed class EnginePipeServer
         _log("Канал закрыт: служба останавливается.");
     }
 
-    private async Task HandleConnectionAsync(NamedPipeServerStream pipe, CancellationToken ct)
+    private async Task HandleConnectionAsync(NamedPipeServerStream pipe, PipeClientIdentity client, CancellationToken ct)
     {
         try
         {
@@ -86,7 +97,13 @@ public sealed class EnginePipeServer
                     break;
                 }
 
-                EngineResponse response = await _dispatcher.HandleJsonAsync(frame, ct).ConfigureAwait(false);
+                EngineResponse response = await _dispatcher
+                    .HandleJsonAsync(
+                        frame,
+                        client.IsAdministrator,
+                        denialRu => _log($"ОТКАЗ ПО ПРАВАМ ({client.DescribeRu()}): {denialRu}"),
+                        ct)
+                    .ConfigureAwait(false);
                 if (!await TryWriteAsync(pipe, response, ct).ConfigureAwait(false))
                 {
                     break;

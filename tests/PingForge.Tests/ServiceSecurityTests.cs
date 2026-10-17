@@ -54,6 +54,17 @@ public class ServiceSecurityTests
     }
 
     [Fact]
+    public void Правила_говорят_что_доступ_к_каналу_не_заменяет_прав_клиента()
+    {
+        // Сторож на слова и на дело: если из кода уберут проверку прав клиента, описание останется
+        // обещанием. Поэтому проверяется и текст правил, и поведение разборщика (отдельный тест).
+        PipeAccessGrant user = ServiceSecurityPlan.Grants.Single(g => g.Sid == ServiceSecurityPlan.InteractiveSid);
+
+        Assert.Contains("права того, кто подключился", user.WhyRu);
+        Assert.Contains("Второй уровень защиты", ServiceSecurityPlan.DescribeRu());
+    }
+
+    [Fact]
     public void Описание_правил_называет_канал_предел_подключений_и_запреты()
     {
         string text = ServiceSecurityPlan.DescribeRu();
