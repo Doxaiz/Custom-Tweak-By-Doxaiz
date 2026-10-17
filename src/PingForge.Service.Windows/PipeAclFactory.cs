@@ -18,6 +18,20 @@ public static class PipeAclFactory
     /// <summary>Собрать права канала по таблице доступа.</summary>
     public static PipeSecurity Build()
     {
+        // Защитная проверка вызывается именно здесь — в единственном месте, где канал открывается.
+        // Объявлена она была и раньше, но её никто не звал: добавь кто-нибудь в таблицу Everyone,
+        // Guests или ANONYMOUS LOGON «чтобы точно заработало» — ни сборка, ни тесты этого бы не заметили.
+        if (ServiceSecurityPlan.HasForbiddenIdentity())
+        {
+            string forbidden = string.Join(", ", ServiceSecurityPlan.Grants
+                .Where(grant => ServiceSecurityPlan.ForbiddenSids.Contains(grant.Sid))
+                .Select(grant => $"{grant.Sid} ({grant.WhoRu})"));
+            throw new InvalidOperationException(
+                "Канал службы не открыт: в таблице прав есть идентификатор, которому доступ запрещён — " +
+                $"{forbidden}. Канал умеет менять настройки Windows, поэтому «открыть всем, чтобы заработало» " +
+                "здесь не проходит. Уберите правило из ServiceSecurityPlan.Grants.");
+        }
+
         var security = new PipeSecurity();
 
         // Свои правила вместо унаследованных: канал не должен получить «Everyone» от окружения.

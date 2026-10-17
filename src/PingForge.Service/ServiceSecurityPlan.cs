@@ -79,8 +79,18 @@ public static class ServiceSecurityPlan
     public static bool IsGranted(string sid) =>
         Grants.Any(grant => string.Equals(grant.Sid, sid, StringComparison.Ordinal));
 
-    /// <summary>Есть ли в таблице запрещённый идентификатор (это ошибка сборки правил).</summary>
-    public static bool HasForbiddenIdentity() => Grants.Any(grant => ForbiddenSids.Contains(grant.Sid));
+    /// <summary>Есть ли в действующей таблице запрещённый идентификатор (это ошибка сборки правил).</summary>
+    public static bool HasForbiddenIdentity() => HasForbiddenIdentity(Grants);
+
+    /// <summary>
+    /// Есть ли в таблице запрещённый идентификатор. Отдельная проверка своей таблицы нужна тесту:
+    /// по действующей таблице ответ всегда «нет», и без своей таблицы сторож нельзя было бы проверить.
+    /// </summary>
+    public static bool HasForbiddenIdentity(IReadOnlyList<PipeAccessGrant> grants)
+    {
+        ArgumentNullException.ThrowIfNull(grants);
+        return grants.Any(grant => ForbiddenSids.Contains(grant.Sid));
+    }
 
     /// <summary>Описание правил обычным текстом: идёт в журнал службы и в интерфейс.</summary>
     public static string DescribeRu()
