@@ -8,7 +8,7 @@ namespace PingForge.Network;
 /// то, что нашёл детектор. Кода под Windows здесь нет — только логика поверх портов, поэтому поведение
 /// проверяется автотестами.
 /// </summary>
-public sealed class WindowsGameFlowWatcher : IGameFlowWatcher
+public sealed class WindowsGameFlowWatcher : IGameFlowReporter
 {
     private readonly IRawConnectionTableProvider _table;
     private readonly IProcessNameResolver _processNames;
@@ -57,6 +57,44 @@ public sealed class WindowsGameFlowWatcher : IGameFlowWatcher
     {
         GameFlowDetectionReport report = await DetectAsync(ct).ConfigureAwait(false);
         return report.Flows;
+    }
+
+    public async Task<(IReadOnlyList<GameFlowInfo> Flows, string? NoGameReasonRu)> FindGameFlowsWithReasonAsync(
+        CancellationToken ct = default)
+    {
+        GameFlowDetectionReport report = await DetectAsync(ct).ConfigureAwait(false);
+        return (report.Flows, report.HasGames ? null : DescribeNoGameRu(report));
+    }
+
+    /// <summary>
+    /// Почему игры нет — по-человечески и без догадок. Если в таблице есть публичные соединения
+    /// процессов, которых нет в каталоге, так и говорим: они похожи на игру, но назвать их игрой
+    /// программа не имеет права. Если таблицу прочитать не удалось — тоже говорим прямо.
+    /// </summary>
+    internal static string DescribeNoGameRu(GameFlowDetectionReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        if (report.UnknownCandidates.Count > 0)
+        {
+            UnknownGameCandidate first = report.UnknownCandidates[0];
+            string more = report.UnknownCandidates.Count > 1
+                ? $" Всего таких процессов: {report.UnknownCandidates.Count}, лучший выбран по порту и типу соединения."
+                : string.Empty;
+
+            return $"Похожее на игру соединение есть, но оптимизировать его нельзя: процесс «{first.ProcessName}» " +
+                $"({first.EndpointText}) не входит в список известных игр, а название по имени файла программа " +
+                $"не угадывает.{more} " +
+                "Если это ваша игра — добавьте её в список известных игр, и кнопка возьмёт именно этот поток.";
+        }
+
+        if (report.RowsRead == 0)
+        {
+            return "Таблица соединений пуста: возможно, нет прав на её чтение или сеть сейчас не используется.";
+        }
+
+        return $"Публичных соединений не найдено: прочитано строк — {report.RowsRead}, " +
+            $"с публичными адресами — {report.PublicFlowRows}. Зайдите в матч и нажмите кнопку снова.";
     }
 
     private async Task<IReadOnlyList<RawConnectionRow>> ReadRowsAsync(CancellationToken ct)

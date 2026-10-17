@@ -39,9 +39,13 @@ public sealed class FakeEngineChannel : IEngineChannel
     /// <summary>Подменить номер в ответе: так проверяется защита от чужого ответа.</summary>
     public bool AnswerWithWrongId { get; set; }
 
-    public Task<EngineResponse> SendAsync(EngineRequest request, CancellationToken ct = default)
+    /// <summary>Сколько ждал клиент в каждом запросе: так проверяется, что долгие команды не обрываются.</summary>
+    public List<(EngineRequest Request, TimeSpan Timeout)> Calls { get; } = [];
+
+    public Task<EngineResponse> SendAsync(EngineRequest request, TimeSpan timeout, CancellationToken ct = default)
     {
         Requests.Add(request);
+        Calls.Add((request, timeout));
 
         if (ThrowOnSend is not null)
         {

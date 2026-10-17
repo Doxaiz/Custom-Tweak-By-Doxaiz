@@ -81,12 +81,28 @@ public sealed class RealtimeOptimizer
 
         SetState(RealtimeOptimizationState.FindingGame, "Ищем запущенную игру и её сетевой поток…");
 
-        IReadOnlyList<GameFlowInfo> flows = await _watcher.FindActiveGameFlowsAsync(ct).ConfigureAwait(false);
+        // Один проход по таблице соединений. Если наблюдатель умеет объяснять отказ, берём объяснение:
+        // человеку с запущенной игрой, которой нет в каталоге, нужно знать, что соединение видно,
+        // а не читать «игра не найдена» и думать, что программа сломана.
+        IReadOnlyList<GameFlowInfo> flows;
+        string? noGameReason = null;
+
+        if (_watcher is IGameFlowReporter reporter)
+        {
+            (flows, noGameReason) = await reporter.FindGameFlowsWithReasonAsync(ct).ConfigureAwait(false);
+        }
+        else
+        {
+            flows = await _watcher.FindActiveGameFlowsAsync(ct).ConfigureAwait(false);
+        }
+
         if (flows.Count == 0)
         {
+            string tail = string.IsNullOrWhiteSpace(noGameReason) ? string.Empty : " " + noGameReason;
+
             return Fail(
                 "Запущенная игра не найдена. Оптимизировать «интернет вообще» нельзя: у каждой игры свой сервер и свой путь. " +
-                "Запустите игру, зайдите в матч и нажмите кнопку снова.");
+                "Запустите игру, зайдите в матч и нажмите кнопку снова." + tail);
         }
 
         _flow = PickFlow(flows, preferredGame);

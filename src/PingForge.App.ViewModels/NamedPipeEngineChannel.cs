@@ -20,20 +20,30 @@ namespace PingForge.App.ViewModels;
 public sealed class NamedPipeEngineChannel : IEngineChannel
 {
     private readonly string _pipeName;
-    private readonly TimeSpan _timeout;
+    /// <summary>Явно заданный предел канала: если он есть, он ограничивает сверху любой запрос.</summary>
+    private readonly TimeSpan? _cap;
+
+    /// <summary>Сколько ждали в последнем запросе — для честного текста отказа.</summary>
+    private TimeSpan _lastTimeout;
 
     public NamedPipeEngineChannel(string? pipeName = null, TimeSpan? timeout = null)
     {
         _pipeName = pipeName ?? EngineProtocol.PipeName;
-        _timeout = timeout ?? TimeSpan.FromSeconds(10);
+        _cap = timeout;
     }
 
-    public async Task<EngineResponse> SendAsync(EngineRequest request, CancellationToken ct = default)
+    public async Task<EngineResponse> SendAsync(EngineRequest request, TimeSpan timeout, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Если канал создан с явным пределом (так делают проверки и смоук-тесты), он ограничивает
+        // сверху: живой тест «служба молчит» не должен ждать десять секунд только потому,
+        // что у команды ping в каталоге такой предел. Без явного предела решает каталог команд.
+        TimeSpan asked = timeout <= TimeSpan.Zero ? TimeSpan.FromSeconds(10) : timeout;
+        _lastTimeout = _cap is { } cap && cap < asked ? cap : asked;
+
         using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutSource.CancelAfter(_timeout);
+        timeoutSource.CancelAfter(_lastTimeout);
 
         try
         {
@@ -81,7 +91,7 @@ public sealed class NamedPipeEngineChannel : IEngineChannel
     /// одно и то же событие, а разные формулировки заставляли искать разницу там, где её нет.
     /// </summary>
     private EngineUnavailableException NoAnswer() => new(
-        $"Служба не ответила за {_timeout.TotalSeconds:0.#} с: она занята другой работой, остановлена или " +
+        $"Служба не ответила за {_lastTimeout.TotalSeconds:0.#} с: она занята другой работой, остановлена или " +
         "связь оборвана. Проверьте, что служба PingForge запущена, и повторите нажатие.");
 
     public void Dispose()

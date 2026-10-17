@@ -399,6 +399,116 @@ foreach ($line in ($answerText -split "`r?`n" | Where-Object { $_.Trim() } | Sel
     Say "    $($line.Trim())"
 }
 
+# ── 3б. Движок при существующем «игровом» потоке ────────────────────────────────────────────────
+# На сборочной машине игры нет и быть не может. Но проверить, что движок видит живой поток,
+# можно честно: поднимаем настоящее TCP-соединение на игровой порт 3074 (его использует Xbox/CoD)
+# к публичному адресу. Процесс при этом не из списка известных игр — значит, правильный ответ
+# программы: «соединение вижу, игрой его назвать не могу», с именем процесса и адресом.
+# Никакого «оптимизировал Fortnite» здесь не будет и быть не должно.
+Say ''
+Say '── Шаг 3б: проверяю движок, когда в системе есть живое соединение на игровой порт'
+Say '    (эмуляция честная: TCP на порт 3074, процесс не из списка игр, адрес публичный)'
+
+$helper = $null
+try
+{
+    # Только IPv4: служба по умолчанию читает таблицу TCPv4, и соединение по IPv6 она бы не увидела.
+    $helperCommand = "`$ip = [Net.Dns]::GetHostAddresses('portquiz.net') | " +
+        "Where-Object { `$_.AddressFamily -eq 'InterNetwork' } | Select-Object -First 1; " +
+        "`$c = New-Object Net.Sockets.TcpClient; `$c.Connect(`$ip, 3074); Start-Sleep -Seconds 240"
+
+    # Start-Process склеивает аргументы через пробел и не расставляет кавычки сам:
+    # без них команда развалится на куски и вспомогательный процесс сразу выйдет.
+    $helper = Start-Process -FilePath 'powershell.exe' -PassThru -WindowStyle Hidden -ArgumentList @(
+        '-NoProfile',
+        '-Command',
+        ('"' + $helperCommand + '"')
+    )
+
+    # Ждём, пока соединение действительно появится в таблице Windows: без этого проверка
+    # нажала бы кнопку раньше, чем поток возник, и результат был бы случайным.
+    $flowDeadline = (Get-Date).AddSeconds(30)
+    $flowReady = $false
+    while ((Get-Date) -lt $flowDeadline)
+    {
+        Start-Sleep -Milliseconds 500
+        $established = @(Get-NetTCPConnection -RemotePort 3074 -State Established -ErrorAction SilentlyContinue |
+            Where-Object { $_.RemoteAddress -match '^\d+\.\d+\.\d+\.\d+$' })
+        if ($established.Count -gt 0)
+        {
+            $flowReady = $true
+            Say "соединение IPv4 на порт 3074 установлено (PID $($established[0].OwningProcess), $($established[0].RemoteAddress))"
+            break
+        }
+    }
+
+    if (-not $flowReady)
+    {
+        # Это не отказ программы, а отсутствие сети до порта 3074 на сборочной машине.
+        # Честнее написать «не проверено», чем покрасить прогон в красный из-за чужой сети.
+        Say 'ПРОПУЩЕНО: на этой машине не открывается соединение на порт 3074 — проверку потока провести нельзя'
+    }
+
+    if ($flowReady)
+    {
+        # Убираем карточку прошлого ответа: иначе ожидание «что скажет программа» сразу увидит
+        # старый текст «игра не найдена» и засчитает его за новый ответ.
+        $dismiss = Find-ByName $mainWindow 'Понятно' 3000
+        if ($null -ne $dismiss)
+        {
+            Invoke-Element $dismiss 'Понятно' | Out-Null
+            Start-Sleep -Milliseconds 400
+        }
+
+        $optimizeAgain = Find-ByName $mainWindow 'Оптимизировать соединение' 10000
+        if ($null -eq $optimizeAgain) { throw 'Кнопки «Оптимизировать соединение» нет перед повторным нажатием' }
+        Invoke-Element $optimizeAgain 'Оптимизировать соединение' | Out-Null
+
+        $flowText = ''
+        $deadline = (Get-Date).AddSeconds(40)
+        while ((Get-Date) -lt $deadline)
+        {
+            Start-Sleep -Milliseconds 700
+            if ($process.HasExited) { break }
+
+            Close-Dialogs $process.Id $handle | Out-Null
+            $flowText = Get-TextOfMainScreen $mainWindow
+
+            if ($flowText -match 'не входит в список известных игр' -or $flowText -match 'Запущенная игра не найдена')
+            {
+                break
+            }
+        }
+
+        $handle = (Get-Process -Id $process.Id).MainWindowHandle
+        Save-Window $handle 'похожее-соединение'
+
+        if ($flowText -notmatch 'не входит в список известных игр')
+        {
+            $shown = ($flowText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 20) -join ' / '
+            throw "Движок не увидел живое соединение на игровом порту. Что было на экране: $shown"
+        }
+
+        if ($flowText -notmatch '3074')
+        {
+            throw 'В ответе нет адреса и порта найденного соединения — человек не поймёт, о чём речь'
+        }
+
+        Say 'движок увидел живое соединение на игровом порту и честно отказался называть его игрой'
+        foreach ($line in ($flowText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 14))
+        {
+            Say "    $($line.Trim())"
+        }
+    }
+}
+finally
+{
+    if ($null -ne $helper -and -not $helper.HasExited)
+    {
+        Stop-Process -Id $helper.Id -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # ── 4. Открытие игры ───────────────────────────────────────────────────────────────────────────
 Say ''
 Say '── Шаг 4: открываю игру в разделе «Игры»'

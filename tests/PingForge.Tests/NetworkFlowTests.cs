@@ -318,6 +318,44 @@ public class NetworkFlowTests
         Assert.True((await watcher.DetectAsync()).HasGames);
     }
 
+    [Fact]
+    public async Task Watcher_ExplainsUnknownProcessInsteadOfPlainNotFound()
+    {
+        // Живой случай: игра запущена, соединение с игровым портом есть, но игры нет в каталоге.
+        // Раньше человек видел «игра не найдена» и не понимал, что соединение программа видит.
+        var watcher = new WindowsGameFlowWatcher(
+            new FakeConnectionTableProvider(new[]
+            {
+                new RawConnectionRow(ConnectionProtocol.Udp, 9001, "192.168.1.50", 50000, "34.16.1.5", 3074, "")
+            }),
+            new FakeProcessNameResolver(new Dictionary<int, string> { [9001] = "MyUnknownGame.exe" }),
+            includeUnknownProcesses: false);
+
+        (IReadOnlyList<GameFlowInfo> flows, string? reason) = await watcher.FindGameFlowsWithReasonAsync();
+
+        Assert.Empty(flows);
+        Assert.NotNull(reason);
+        Assert.Contains("MyUnknownGame.exe", reason, StringComparison.Ordinal);
+        Assert.Contains("34.16.1.5", reason, StringComparison.Ordinal);
+        Assert.Contains("не входит в список известных игр", reason, StringComparison.Ordinal);
+
+        // И ни одного обещания, что «оптимизирует» этот процесс молча.
+        Assert.DoesNotContain("оптимизируем", reason, StringComparison.OrdinalIgnoreCase);
+
+        // А когда игра из каталога есть — объяснять нечего.
+        var known = new WindowsGameFlowWatcher(
+            new FakeConnectionTableProvider(new[]
+            {
+                new RawConnectionRow(ConnectionProtocol.Udp, 8124, "192.168.1.50", 50000, "34.16.1.5", 3074, "")
+            }),
+            new FakeProcessNameResolver(new Dictionary<int, string> { [8124] = "FortniteClient-Win64-Shipping.exe" }));
+
+        (IReadOnlyList<GameFlowInfo> knownFlows, string? noReason) = await known.FindGameFlowsWithReasonAsync();
+
+        Assert.Single(knownFlows);
+        Assert.Null(noReason);
+    }
+
     // ── 5. Действие «маршрут для игры» ────────────────────────────────────────────────────────────
 
     [Fact]

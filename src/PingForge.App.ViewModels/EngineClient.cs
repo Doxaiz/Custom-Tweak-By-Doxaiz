@@ -59,10 +59,15 @@ public sealed class EngineClient
         string id = NextId();
         var request = new EngineRequest(id, command, args);
 
+        // Предел ожидания берётся из каталога команд: у «проверить связь» — секунды, у применения
+        // твиков с точкой восстановления или живого запуска — минуты. Один общий предел в 10 секунд
+        // означал, что долгая команда выглядела как «служба не ответила», хотя служба продолжала работать.
+        TimeSpan timeout = TimeSpan.FromSeconds(EngineCommandCatalog.Get(command).TimeoutSeconds);
+
         EngineResponse response;
         try
         {
-            response = await _channel.SendAsync(request, ct).ConfigureAwait(false);
+            response = await _channel.SendAsync(request, timeout, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

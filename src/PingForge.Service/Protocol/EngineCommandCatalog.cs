@@ -9,7 +9,8 @@ public sealed record EngineCommandDescriptor(
     bool NeedsElevation,
     IReadOnlyList<string> RequiredArgs,
     IReadOnlyList<string> OptionalArgs,
-    string ExampleRu);
+    string ExampleRu,
+    int TimeoutSeconds = 10);
 
 /// <summary>
 /// Список команд службы в одном месте. Из него собирается и текст команды <c>capabilities</c>,
@@ -58,7 +59,8 @@ public static class EngineCommandCatalog
             NeedsElevation: true,
             RequiredArgs: ["preset"],
             OptionalArgs: ["restorePoint"],
-            ExampleRu: """{"id":"4","command":"apply-preset","args":{"preset":"low-latency","restorePoint":"true"}}"""),
+            ExampleRu: """{"id":"4","command":"apply-preset","args":{"preset":"low-latency","restorePoint":"true"}}""",
+            TimeoutSeconds: 180),
 
         new(
             EngineCommandKind.ApplyTweaks,
@@ -68,7 +70,8 @@ public static class EngineCommandCatalog
             NeedsElevation: true,
             RequiredArgs: ["tweaks"],
             OptionalArgs: ["restorePoint"],
-            ExampleRu: """{"id":"5","command":"apply-tweaks","args":{"tweaks":"TCP_NO_DELAY,GAME_MODE_ON"}}"""),
+            ExampleRu: """{"id":"5","command":"apply-tweaks","args":{"tweaks":"TCP_NO_DELAY,GAME_MODE_ON"}}""",
+            TimeoutSeconds: 300),
 
         new(
             EngineCommandKind.RollbackSnapshot,
@@ -78,7 +81,8 @@ public static class EngineCommandCatalog
             NeedsElevation: true,
             RequiredArgs: [],
             OptionalArgs: ["snapshot"],
-            ExampleRu: """{"id":"6","command":"rollback","args":{"snapshot":"snap-2026-10-16-001"}}"""),
+            ExampleRu: """{"id":"6","command":"rollback","args":{"snapshot":"snap-2026-10-16-001"}}""",
+            TimeoutSeconds: 300),
 
         new(
             EngineCommandKind.RepairNetwork,
@@ -88,7 +92,8 @@ public static class EngineCommandCatalog
             NeedsElevation: true,
             RequiredArgs: [],
             OptionalArgs: [],
-            ExampleRu: """{"id":"7","command":"repair-network"}"""),
+            ExampleRu: """{"id":"7","command":"repair-network"}""",
+            TimeoutSeconds: 120),
 
         new(
             EngineCommandKind.JournalTail,
@@ -98,7 +103,8 @@ public static class EngineCommandCatalog
             NeedsElevation: false,
             RequiredArgs: [],
             OptionalArgs: ["limit"],
-            ExampleRu: """{"id":"8","command":"journal-tail","args":{"limit":"50"}}"""),
+            ExampleRu: """{"id":"8","command":"journal-tail","args":{"limit":"50"}}""",
+            TimeoutSeconds: 20),
 
         new(
             EngineCommandKind.RealtimeStart,
@@ -108,7 +114,8 @@ public static class EngineCommandCatalog
             NeedsElevation: true,
             RequiredArgs: [],
             OptionalArgs: [],
-            ExampleRu: """{"id":"9","command":"realtime-start"}"""),
+            ExampleRu: """{"id":"9","command":"realtime-start"}""",
+            TimeoutSeconds: 180),
 
         new(
             EngineCommandKind.RealtimeStop,
@@ -118,7 +125,8 @@ public static class EngineCommandCatalog
             NeedsElevation: false,
             RequiredArgs: [],
             OptionalArgs: [],
-            ExampleRu: """{"id":"10","command":"realtime-stop"}"""),
+            ExampleRu: """{"id":"10","command":"realtime-stop"}""",
+            TimeoutSeconds: 120),
 
         new(
             EngineCommandKind.PerfProfile,
@@ -139,7 +147,8 @@ public static class EngineCommandCatalog
             NeedsElevation: false,
             RequiredArgs: [],
             OptionalArgs: [],
-            ExampleRu: """{"id":"12","command":"system-state"}"""),
+            ExampleRu: """{"id":"12","command":"system-state"}""",
+            TimeoutSeconds: 30),
     ];
 
     /// <summary>Все команды в порядке объявления — он же порядок вывода в интерфейсе.</summary>

@@ -17,8 +17,12 @@ public sealed class EngineUnavailableException : Exception
 /// </summary>
 public interface IEngineChannel : IDisposable
 {
-    /// <summary>Отправить запрос и получить ответ. Бросает <see cref="EngineUnavailableException"/>, если связи нет.</summary>
-    Task<EngineResponse> SendAsync(EngineRequest request, CancellationToken ct = default);
+    /// <summary>
+    /// Отправить запрос и получить ответ. Бросает <see cref="EngineUnavailableException"/>, если связи нет.
+    /// Предел ожидания — у каждой команды свой: долгая команда (точка восстановления, живой запуск)
+    /// не должна выглядеть как «служба не ответила» через десять секунд.
+    /// </summary>
+    Task<EngineResponse> SendAsync(EngineRequest request, TimeSpan timeout, CancellationToken ct = default);
 }
 
 /// <summary>

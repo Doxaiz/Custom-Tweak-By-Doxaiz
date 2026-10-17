@@ -102,9 +102,11 @@ public sealed class GameFlowDetector
             }
             else
             {
+                // В кандидата кладём имя в том виде, как его отдаёт система: человек ищет процесс
+                // в диспетчере задач по настоящему имени, а не по приведённому к нижнему регистру.
                 unknown.Add(new UnknownGameCandidate(
                     group.Key,
-                    exe,
+                    rawName.Trim(),
                     candidates.Count,
                     endpointText,
                     "Процесса нет в списке известных игр — название по имени файла не угадываем."));

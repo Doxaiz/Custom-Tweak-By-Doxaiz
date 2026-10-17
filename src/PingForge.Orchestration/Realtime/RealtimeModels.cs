@@ -52,6 +52,18 @@ public interface IGameFlowWatcher
     Task<IReadOnlyList<GameFlowInfo>> FindActiveGameFlowsAsync(CancellationToken ct = default);
 }
 
+/// <summary>
+/// Расширенный поиск: кроме потоков игры он объясняет, почему игры нет, если в таблице соединений
+/// есть что-то похожее. Без этого человек с запущенной игрой, которой нет в списке известных,
+/// видел бы сухое «игра не найдена» и решил, что программа не работает.
+/// </summary>
+public interface IGameFlowReporter : IGameFlowWatcher
+{
+    /// <summary>Один проход по таблице: потоки игры и честное объяснение, если игр нет.</summary>
+    Task<(IReadOnlyList<GameFlowInfo> Flows, string? NoGameReasonRu)> FindGameFlowsWithReasonAsync(
+        CancellationToken ct = default);
+}
+
 /// <summary>Одно окно замеров живого потока. Неизмеримо — это честный результат, а не нули.</summary>
 public sealed record PathMeasurement(
     bool IsMeasurable,

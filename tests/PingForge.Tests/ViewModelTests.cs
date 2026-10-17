@@ -234,6 +234,29 @@ public class ViewModelTests
     }
 
     [Fact]
+    public async Task Долгие_команды_ждут_дольше_десяти_секунд_а_быстрые_нет()
+    {
+        // Так было на живой Windows: канал ждал 10 секунд на любую команду, а применение твиков
+        // с точкой восстановления и живой запуск идут дольше. Человек видел «служба не ответила»,
+        // хотя служба продолжала работать, и казалось, что кнопка не работает.
+        var gate = new TaskCompletionSource();
+        var channel = new SlowChannel(gate);
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+
+        Task start = main.OptimizeCommand.ExecuteAsync();
+        gate.SetResult();
+        await start;
+
+        Assert.Equal(TimeSpan.FromSeconds(180), channel.Timeouts[0]);
+
+        var quick = new FakeEngineChannel();
+        var quickMain = new MainViewModel(new EngineClient(quick), new FakeDialogs());
+        await quickMain.RefreshStatusCommand.ExecuteAsync();
+
+        Assert.Equal(TimeSpan.FromSeconds(10), quick.Calls[0].Timeout);
+    }
+
+    [Fact]
     public async Task Обновление_состояния_не_ломает_экран_при_битом_ответе()
     {
         var channel = new FakeEngineChannel(request => request.Command == EngineCommandKind.Status
@@ -668,9 +691,12 @@ public class ViewModelTests
 
         public List<EngineRequest> Requests { get; } = [];
 
-        public async Task<EngineResponse> SendAsync(EngineRequest request, CancellationToken ct = default)
+        public List<TimeSpan> Timeouts { get; } = [];
+
+        public async Task<EngineResponse> SendAsync(EngineRequest request, TimeSpan timeout, CancellationToken ct = default)
         {
             Requests.Add(request);
+            Timeouts.Add(timeout);
             await _gate.Task.ConfigureAwait(false);
             return Fallback.DefaultAnswer(request);
         }

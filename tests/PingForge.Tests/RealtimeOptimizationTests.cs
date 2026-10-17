@@ -6,6 +6,29 @@ namespace PingForge.Tests;
 
 public sealed class RealtimeOptimizationTests
 {
+
+    [Fact]
+    public async Task Нет_игры_но_есть_похожее_соединение_объяснение_доходит_до_человека()
+    {
+        // Так выглядит запущенная игра, которой нет в каталоге: соединение есть, игры «официально» нет.
+        // Отказ должен называть процесс и адрес, а не ограничиваться «не найдена».
+        const string reason = "Похожее на игру соединение есть: процесс «MyGame.exe» на 34.16.1.5:3074.";
+        var watcher = new ExplainingWatcher(reason);
+
+        var optimizer = new RealtimeOptimizer(
+            watcher,
+            new ScriptedMeasurements(),
+            new RecordingRunner());
+
+        RealtimeSnapshot snapshot = await optimizer.StartAsync();
+
+        Assert.Equal(RealtimeOptimizationState.Failed, snapshot.State);
+        Assert.Contains("MyGame.exe", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("34.16.1.5:3074", snapshot.StatusRu, StringComparison.Ordinal);
+
+        // Таблица соединений читается один раз: объяснение приходит от того же прохода.
+        Assert.Equal(1, watcher.Calls);
+    }
     private sealed class StubWatcher : IGameFlowWatcher
     {
         public StubWatcher(params GameFlowInfo[] flows) => Flows = flows;
@@ -14,6 +37,30 @@ public sealed class RealtimeOptimizationTests
 
         public Task<IReadOnlyList<GameFlowInfo>> FindActiveGameFlowsAsync(CancellationToken ct = default) =>
             Task.FromResult(Flows);
+    }
+
+    /// <summary>Наблюдатель, который не нашёл игру, но умеет объяснить почему.</summary>
+    private sealed class ExplainingWatcher : IGameFlowReporter
+    {
+        public ExplainingWatcher(string reasonRu) => ReasonRu = reasonRu;
+
+        public string ReasonRu { get; }
+
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<GameFlowInfo>> FindActiveGameFlowsAsync(CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult<IReadOnlyList<GameFlowInfo>>(Array.Empty<GameFlowInfo>());
+        }
+
+        public Task<(IReadOnlyList<GameFlowInfo> Flows, string? NoGameReasonRu)> FindGameFlowsWithReasonAsync(
+            CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult<(IReadOnlyList<GameFlowInfo>, string?)>(
+                (Array.Empty<GameFlowInfo>(), ReasonRu));
+        }
     }
 
     /// <summary>Замеры идут по заранее заданной ленте: тест полностью определяет «реальность».</summary>
