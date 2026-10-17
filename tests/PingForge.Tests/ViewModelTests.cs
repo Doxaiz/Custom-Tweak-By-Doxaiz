@@ -46,9 +46,10 @@ public class ViewModelTests
 
         Assert.True(main.IsOptimizing);
         Assert.Equal("Остановить и вернуть как было", main.ButtonTextRu);
-        // Первым уходит проверочный ping (окно сверяет версии перед меняющей командой), затем сама команда.
+        // Первым уходит проверочный ping (окно сверяет версии перед меняющей командой), затем сама
+        // команда, затем обновление состояния — порядок и проверяется, а не «единственный запрос».
         Assert.Equal(EngineCommandKind.Ping, channel.Requests[0].Command);
-        Assert.Equal(EngineCommandKind.RealtimeStart, channel.Requests[^1].Command);
+        Assert.Contains(channel.Requests, request => request.Command == EngineCommandKind.RealtimeStart);
         Assert.Equal("Fortnite", main.GameTitleRu);
         Assert.Equal(120, main.BaselineRttMs);
         Assert.Equal(78, main.CurrentRttMs);
@@ -249,8 +250,11 @@ public class ViewModelTests
         gate.SetResult();
         await start;
 
-        // Первым уходит проверочный ping (10 с по каталогу), за ним сама команда (180 с).
-        Assert.Equal(TimeSpan.FromSeconds(180), channel.Timeouts[^1]);
+        // Рядом с командой идут проверочный ping и обновление состояния (по 10 с) — предел команды
+        // ищется по её запросу, а не «первый/последний в списке».
+        int startIndex = channel.Requests.FindIndex(request => request.Command == EngineCommandKind.RealtimeStart);
+        Assert.True(startIndex >= 0, "команда запуска не дошла до канала");
+        Assert.Equal(TimeSpan.FromSeconds(180), channel.Timeouts[startIndex]);
 
         var quick = new FakeEngineChannel();
         var quickMain = new MainViewModel(new EngineClient(quick), new FakeDialogs());
