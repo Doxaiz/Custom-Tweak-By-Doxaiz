@@ -75,8 +75,13 @@ jobs:
         run: |
           dotnet test PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --no-build --nologo --logger "console;verbosity=normal" 2>&1 | Tee-Object -Variable out
           $code = $LASTEXITCODE
-          foreach ($line in $out) {
-            if ($line -match 'Failed |Error Message|Error:') { Write-Host "::error::$line" }
+          for ($i = 0; $i -lt $out.Count; $i++) {
+            if ($out[$i] -match 'Failed |Error Message') {
+              Write-Host "::error::$($out[$i])"
+              foreach ($j in 1..3) {
+                if ($i + $j -lt $out.Count) { Write-Host "::error::$($out[$i + $j])" }
+              }
+            }
           }
           exit $code
 
