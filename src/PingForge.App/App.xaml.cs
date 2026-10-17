@@ -112,7 +112,7 @@ public partial class App : Application
         StartupLog.Step("Собираю модели представления");
         Engine = new EngineClient(new NamedPipeEngineChannel());
 
-        MainScreen = new MainViewModel(Engine, dialogs);
+        MainScreen = new MainViewModel(Engine, dialogs, runsAsAdministrator: IsAdministrator());
         Tweaks = new TweaksViewModel(
             Engine,
             dialogs,

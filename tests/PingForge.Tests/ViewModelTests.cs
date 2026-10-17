@@ -146,6 +146,18 @@ public class ViewModelTests
     }
 
     [Fact]
+    public void Окно_запущенное_от_администратора_не_пишет_что_прав_нет()
+    {
+        // Так было на живой Windows: журнал писал «Права администратора: есть», а раздел «О программе» —
+        // «Прав администратора нет». Права знает сама Windows, поэтому окно берёт их у неё.
+        var channel = new FakeEngineChannel(request => Fallback.DefaultAnswer(request));
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs(), runsAsAdministrator: true);
+
+        Assert.True(main.HasRights);
+        Assert.Contains("можно менять", main.RightsNoteRu);
+    }
+
+    [Fact]
     public async Task Нажатие_кнопки_не_открывает_модальных_окон_а_пишет_ответ_в_интерфейс()
     {
         // Правило: окно программы не должно замирать на время ответа. Любой ответ — на экране.

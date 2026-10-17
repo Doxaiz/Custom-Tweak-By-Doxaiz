@@ -26,10 +26,16 @@ public sealed class MainViewModel : ObservableObject
     private string? _noticeTitleRu;
     private string? _noticeRu;
 
-    public MainViewModel(EngineClient engine, IUserDialogs dialogs)
+    /// <remarks>
+    /// runsAsAdministrator — запущено ли окно с правами администратора. Раньше это поле начиналось с «нет»
+    /// и ждало ответа службы: на снимке живой Windows выходило «Прав администратора нет» — при том, что
+    /// журнал той же программы писал «есть». Права окна знает сама Windows; ответ службы их уточняет.
+    /// </remarks>
+    public MainViewModel(EngineClient engine, IUserDialogs dialogs, bool runsAsAdministrator = false)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
+        _hasRights = runsAsAdministrator;
 
         OptimizeCommand = new AsyncRelayCommand(ToggleOptimizationAsync, () => true);
         RefreshStatusCommand = new AsyncRelayCommand(RefreshStatusAsync, () => true);
