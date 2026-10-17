@@ -20,10 +20,22 @@ public sealed class SharedSettingsFileTests : IDisposable
 {
     private readonly string _directory;
 
+    /// <summary>
+    /// Имя блокировки ОДНО на весь тест: два писателя в тесте — это окно и служба, а в жизни они
+    /// делят одну и ту же константу имени. Разные имена в тесте означали бы, что писатели друг друга
+    /// не слышат, и тест проверял бы гонку, а не защиту от неё.
+    /// </summary>
+    private readonly string _mutexName;
+
+    /// <summary>Запасное имя на случай, если основное платформа не примет.</summary>
+    private readonly string _fallbackMutexName;
+
     public SharedSettingsFileTests()
     {
         _directory = Path.Combine(Path.GetTempPath(), $"pf_shared_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_directory);
+        _mutexName = $@"Local\PingForge.Settings.Test.{Guid.NewGuid():N}";
+        _fallbackMutexName = $"PingForge.Settings.Test.{Guid.NewGuid():N}";
     }
 
     public void Dispose()
@@ -36,15 +48,7 @@ public sealed class SharedSettingsFileTests : IDisposable
 
     private string PathIn(string name) => Path.Combine(_directory, name);
 
-    /// <summary>Имя блокировки у каждого теста своё: тесты идут параллельно и не должны спорить за файл.</summary>
-    private static (string Global, string Session) MutexNames() =>
-        ($@"Local\PingForge.Settings.Test.{Guid.NewGuid():N}", $"PingForge.Settings.Test.{Guid.NewGuid():N}");
-
-    private SharedSettingsFileWriter NewWriter(string path)
-    {
-        (string global, string session) = MutexNames();
-        return new SharedSettingsFileWriter(path, global, session);
-    }
+    private SharedSettingsFileWriter NewWriter(string path) => new(path, _mutexName, _fallbackMutexName);
 
     [Fact]
     public async Task Два_писателя_в_цикле_не_теряют_поля_друг_друга()
