@@ -339,6 +339,42 @@ public class NetworkFlowTests
         Assert.Contains("34.16.1.5", reason, StringComparison.Ordinal);
         Assert.Contains("не входит в список известных игр", reason, StringComparison.Ordinal);
 
+        // Порядок — «сначала самые игровые». В живой проверке первым оказался системный агент
+        // с портом 32526, а настоящее соединение на игровой порт 3074 — ниже: человек читал
+        // про чужой процесс и не узнавал свою игру. Теперь игровой порт идёт первым.
+        var two = new WindowsGameFlowWatcher(
+            new FakeConnectionTableProvider(new[]
+            {
+                new RawConnectionRow(ConnectionProtocol.Tcp, 700, "192.168.1.50", 50001, "16.129.63.168", 32526, "Established"),
+                new RawConnectionRow(ConnectionProtocol.Tcp, 701, "192.168.1.50", 50002, "35.180.86.68", 3074, "Established")
+            }),
+            new FakeProcessNameResolver(new Dictionary<int, string>
+            {
+                [700] = "windowsazureguestagent.exe",
+                [701] = "MyUnknownGame.exe"
+            }));
+
+        GameFlowDetectionReport report = await two.DetectAsync();
+        Assert.Equal("MyUnknownGame.exe", report.UnknownCandidates[0].ProcessName);
+
+        // Служба разрешения имён (UDP 53) не должна перебивать игровой порт: иначе человек
+        // прочитает про DNS и решит, что программа не видит его игру.
+        var dnsAndGame = new WindowsGameFlowWatcher(
+            new FakeConnectionTableProvider(new[]
+            {
+                new RawConnectionRow(ConnectionProtocol.Udp, 600, "192.168.1.50", 50003, "8.8.8.8", 53, ""),
+                new RawConnectionRow(ConnectionProtocol.Tcp, 601, "192.168.1.50", 50004, "35.180.86.68", 3074, "Established")
+            }),
+            new FakeProcessNameResolver(new Dictionary<int, string>
+            {
+                [600] = "dnshelper.exe",
+                [601] = "MyUnknownGame.exe"
+            }));
+
+        GameFlowDetectionReport mixed = await dnsAndGame.DetectAsync();
+        Assert.Equal("MyUnknownGame.exe", mixed.UnknownCandidates[0].ProcessName);
+        Assert.Contains("«MyUnknownGame.exe» (35.180.86.68:3074)", WindowsGameFlowWatcher.DescribeNoGameRu(report), StringComparison.Ordinal);
+
         // И ни одного обещания, что «оптимизирует» этот процесс молча.
         Assert.DoesNotContain("оптимизируем", reason, StringComparison.OrdinalIgnoreCase);
 

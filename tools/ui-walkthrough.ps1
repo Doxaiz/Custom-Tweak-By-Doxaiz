@@ -474,7 +474,7 @@ try
             Close-Dialogs $process.Id $handle | Out-Null
             $flowText = Get-TextOfMainScreen $mainWindow
 
-            if ($flowText -match 'не входит в список известных игр' -or $flowText -match 'Запущенная игра не найдена')
+            if ($flowText -match 'не вход(ит|ят) в список известных игр' -or $flowText -match 'Запущенная игра не найдена')
             {
                 break
             }
@@ -483,7 +483,7 @@ try
         $handle = (Get-Process -Id $process.Id).MainWindowHandle
         Save-Window $handle 'похожее-соединение'
 
-        if ($flowText -notmatch 'не входит в список известных игр')
+        if ($flowText -notmatch 'не вход(ит|ят) в список известных игр')
         {
             $shown = ($flowText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 20) -join ' / '
             throw "Движок не увидел живое соединение на игровом порту. Что было на экране: $shown"

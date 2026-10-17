@@ -71,21 +71,38 @@ public sealed class WindowsGameFlowWatcher : IGameFlowReporter
     /// процессов, которых нет в каталоге, так и говорим: они похожи на игру, но назвать их игрой
     /// программа не имеет права. Если таблицу прочитать не удалось — тоже говорим прямо.
     /// </summary>
-    internal static string DescribeNoGameRu(GameFlowDetectionReport report)
+    public static string DescribeNoGameRu(GameFlowDetectionReport report)
     {
         ArgumentNullException.ThrowIfNull(report);
 
         if (report.UnknownCandidates.Count > 0)
         {
-            UnknownGameCandidate first = report.UnknownCandidates[0];
-            string more = report.UnknownCandidates.Count > 1
-                ? $" Всего таких процессов: {report.UnknownCandidates.Count}, лучший выбран по порту и типу соединения."
-                : string.Empty;
+            // Показываем до трёх лучших: на обычной машине публичные соединения есть и у служб
+            // Windows, и человеку нужно видеть свою игру в первой строке, а не чужой агент.
+            const int shown = 3;
+            IReadOnlyList<UnknownGameCandidate> best = report.UnknownCandidates
+                .OrderByDescending(candidate => candidate.Score)
+                .ThenBy(candidate => candidate.ProcessId)
+                .Take(shown)
+                .ToList();
 
-            return $"Похожее на игру соединение есть, но оптимизировать его нельзя: процесс «{first.ProcessName}» " +
-                $"({first.EndpointText}) не входит в список известных игр, а название по имени файла программа " +
-                $"не угадывает.{more} " +
-                "Если это ваша игра — добавьте её в список известных игр, и кнопка возьмёт именно этот поток.";
+            string list = string.Join(", ", best.Select(candidate => $"«{candidate.ProcessName}» ({candidate.EndpointText})"));
+            string more = report.UnknownCandidates.Count > best.Count
+                ? $" Всего таких процессов: {report.UnknownCandidates.Count}; здесь первые {best.Count}, остальные тоже не значатся в списке известных игр."
+                : $" Всего таких процессов: {report.UnknownCandidates.Count}.";
+
+            // Один процесс — единственное число: «соединение есть, процесс не входит». Их несколько —
+            // «соединения есть, процессы не входят». Так текст читается как речь, а не как шаблон.
+            string what = report.UnknownCandidates.Count == 1
+                ? "Похожее на игру соединение есть, но оптимизировать его нельзя"
+                : "Похожие на игру соединения есть, но оптимизировать их нельзя";
+
+            string why = report.UnknownCandidates.Count == 1
+                ? "этот процесс не входит в список известных игр"
+                : "эти процессы не входят в список известных игр";
+
+            return $"{what}: {list} — {why}, а название по имени файла программа не угадывает.{more} " +
+                "Если среди них ваша игра — добавьте её в список известных игр, и кнопка возьмёт именно этот поток.";
         }
 
         if (report.RowsRead == 0)

@@ -24,6 +24,9 @@ public sealed class GameFlowDetector
 
     private static readonly int[] WebPorts = { 80, 443 };
 
+    /// <summary>Служебные порты: DNS, NTP, LLMNR/mDNS. Это точно не игровой сервер.</summary>
+    private static readonly int[] ServicePorts = { 53, 123, 5353, 5355, 67, 68 };
+
     private readonly GameProcessCatalog _catalog;
     private readonly bool _includeUnknownProcesses;
 
@@ -109,7 +112,8 @@ public sealed class GameFlowDetector
                     rawName.Trim(),
                     candidates.Count,
                     endpointText,
-                    "Процесса нет в списке известных игр — название по имени файла не угадываем."));
+                    "Процесса нет в списке известных игр — название по имени файла не угадываем.",
+                    score));
             }
         }
 
@@ -144,7 +148,9 @@ public sealed class GameFlowDetector
 
         return new GameFlowDetectionReport(
             Games: games.OrderByDescending(g => g.Score).ToList(),
-            UnknownCandidates: unknown,
+            // Порядок — «сначала самые игровые»: интерфейс называет первые, и человек должен
+            // увидеть в первую очередь своё соединение на игровой порт, а не службу Windows с портом 32526.
+            UnknownCandidates: unknown.OrderByDescending(u => u.Score).ThenBy(u => u.ProcessId).ToList(),
             NotesRu: notes,
             RowsRead: rows.Count,
             PublicFlowRows: publicRows,
@@ -166,9 +172,16 @@ public sealed class GameFlowDetector
             score += 3;
         }
 
+        // Известный игровой порт — сильный признак: он перевешивает «просто нестандартный порт»
+        // и должен перевешивать даже UDP-DNS, иначе программа назовёт игрой службу разрешения имён.
         if (GameLikePorts.Contains(row.RemotePort))
         {
-            score += 2;
+            score += 6;
+        }
+
+        if (ServicePorts.Contains(row.RemotePort))
+        {
+            score -= 4;
         }
 
         if (row.Protocol == ConnectionProtocol.Tcp

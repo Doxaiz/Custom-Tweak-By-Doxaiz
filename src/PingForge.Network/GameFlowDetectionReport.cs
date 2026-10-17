@@ -33,7 +33,8 @@ public sealed record UnknownGameCandidate(
     string ProcessName,
     int CandidateCount,
     string EndpointText,
-    string ReasonRu);
+    string ReasonRu,
+    int Score = 0);
 
 /// <summary>Итог одного поиска игры: что нашли, что не смогли прочитать и что из этого следует.</summary>
 public sealed record GameFlowDetectionReport(
