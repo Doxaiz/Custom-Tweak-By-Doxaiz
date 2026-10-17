@@ -71,6 +71,18 @@ public static class PfWin
 
     /// Закрыть окно сообщения так же, как это делает нажатие на крестик: WM_CLOSE.
     public static void Close(IntPtr handle) { PostMessage(handle, 0x0010, IntPtr.Zero, IntPtr.Zero); }
+
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+
+    /// Настоящий клик мышью: так же, как это делает человек, а не программный вызов.
+    public static void ClickAt(int x, int y)
+    {
+        SetCursorPos(x, y);
+        System.Threading.Thread.Sleep(120);
+        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);   // левая кнопка вниз
+        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);   // левая кнопка вверх
+    }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int cmd);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
@@ -259,35 +271,52 @@ $statusText = Get-TextOfMainScreen $mainWindow
 # ── 3. Разделы ──────────────────────────────────────────────────────────────────────────────────
 Say ''
 Say '── Шаг 3: прохожу по разделам'
+# Координаты пунктов меню внутри окна — запасной путь, если Windows не отдаёт их через
+# UI Automation (в этом прогоне так и вышло: список радиокнопок приходил пустым).
 $sections = @(
-    @{ Name = 'Твики';            Shot = 'раздел-твики' },
-    @{ Name = 'Журнал';           Shot = 'раздел-журнал' },
-    @{ Name = 'Настройки';        Shot = 'раздел-настройки' },
-    @{ Name = 'О программе';      Shot = 'раздел-о-программе' },
-    @{ Name = 'Оптимизация';      Shot = 'раздел-оптимизация' }
+    @{ Name = 'Твики';       Shot = 'раздел-твики';        X = 120; Y = 159 },
+    @{ Name = 'Журнал';      Shot = 'раздел-журнал';       X = 120; Y = 199 },
+    @{ Name = 'Настройки';   Shot = 'раздел-настройки';    X = 120; Y = 239 },
+    @{ Name = 'О программе'; Shot = 'раздел-о-программе';  X = 120; Y = 279 },
+    @{ Name = 'Оптимизация'; Shot = 'раздел-оптимизация';  X = 120; Y = 118 }
 )
+
+# Диагностика: что вообще видит Windows в окне. Если пункты не находятся — по этому файлу видно почему.
+$rect = New-Object PfWin+RECT
+[PfWin]::GetWindowRect((Get-Process -Id $process.Id).MainWindowHandle, [ref]$rect) | Out-Null
+$dump = New-Object System.Text.StringBuilder
+$condition = New-Object System.Windows.Automation.PropertyCondition(
+    [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+foreach ($element in ([System.Windows.Automation.AutomationElement]::RootElement).FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants, $condition))
+{
+    [void]$dump.AppendLine("$($element.Current.ControlType.ProgrammaticName) | $($element.Current.Name) | enabled=$($element.Current.IsEnabled)")
+}
+$dumpPath = Join-Path $OutDir 'walkthrough-tree.txt'
+$dump.ToString() | Set-Content $dumpPath -Encoding UTF8
+Say "дерево окон записано: $dumpPath ($((($dump.ToString() -split "`n").Count)) строк)"
 
 foreach ($section in $sections)
 {
     $handle = (Get-Process -Id $process.Id).MainWindowHandle
     $mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
-    $element = Find-ByName $mainWindow $section.Name 6000
-    if ($null -eq $element)
+    $element = Find-ByName $mainWindow $section.Name 3000
+
+    if ($null -ne $element)
     {
-        # Запасной путь: показать, что вообще есть в окне, — иначе непонятно, что искать.
-        $titles = @()
-        $condition = New-Object System.Windows.Automation.PropertyCondition(
-            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-            [System.Windows.Automation.ControlType]::RadioButton)
-        foreach ($radio in $mainWindow.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition))
-        {
-            $titles += $radio.Current.Name
-        }
-        Say "пункты меню, которые видит Windows: $($titles -join ' | ')"
-        throw "В окне нет пункта меню «$($section.Name)»"
+        Invoke-Element $element $section.Name | Out-Null
+    }
+    else
+    {
+        # Настоящий клик мышью по тому месту, где пункт нарисован. Окно уже поднято на передний план.
+        [PfWin]::SetForegroundWindow($handle) | Out-Null
+        Start-Sleep -Milliseconds 300
+        $x = $rect.Left + $section.X
+        $y = $rect.Top + $section.Y
+        Say "пункт «$($section.Name)» не виден через UI Automation — щёлкаю мышью в $x,$y"
+        [PfWin]::ClickAt($x, $y)
     }
 
-    Invoke-Element $element $section.Name | Out-Null
     Start-Sleep -Milliseconds 1200
     Close-Dialogs $process.Id $handle ('сообщение-' + $section.Shot) | Out-Null
     Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) $section.Shot
