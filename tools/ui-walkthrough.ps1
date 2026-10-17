@@ -1,4 +1,4 @@
-﻿<#
+﻿﻿<#
     Проверка приложения «как человек» на настоящей Windows.
 
     Что делает скрипт — и только это:
@@ -100,6 +100,20 @@ function Find-ByName($root, [string]$name, [int]$timeoutMs = 8000)
     return $null
 }
 
+function Get-TextOfMainScreen($root)
+{
+    # Собираем все тексты, которые видит человек: по ним понятно, что программа ответила.
+    $builder = New-Object System.Text.StringBuilder
+    $condition = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Text)
+    foreach ($element in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition))
+    {
+        [void]$builder.AppendLine($element.Current.Name)
+    }
+    return $builder.ToString()
+}
+
 function Invoke-Element($element, [string]$what)
 {
     $pattern = $null
@@ -122,10 +136,12 @@ function Invoke-Element($element, [string]$what)
     return $false
 }
 
-function Close-Dialogs([int]$processId, [string]$namePrefix)
+function Close-Dialogs([int]$processId, [IntPtr]$mainHandle)
 {
-    # Сообщения программы — отдельные окна того же процесса. Их надо и снять, и закрыть,
-    # иначе следующее действие упрётся в модальное окно.
+    # Сообщения программы — отдельные окна того же процесса (класс #32770). Главное окно
+    # отличается по ОБРАБОТЧИКУ, а не по заголовку: у сообщения заголовок тоже начинается
+    # с названия программы, и первая версия скрипта из-за этого считала сообщение главным
+    # окном, не закрывала его — и дальше не могла найти ни одного раздела.
     $closed = 0
     $root = [System.Windows.Automation.AutomationElement]::RootElement
     $condition = New-Object System.Windows.Automation.PropertyCondition(
@@ -133,25 +149,36 @@ function Close-Dialogs([int]$processId, [string]$namePrefix)
 
     foreach ($window in $root.FindAll([System.Windows.Automation.TreeScope]::Children, $condition))
     {
+        if ($window.Current.ClassName -ne '#32770') { continue }
+        if ([IntPtr]$window.Current.NativeWindowHandle -eq $mainHandle) { continue }
+
         $title = $window.Current.Name
-        if ([string]::IsNullOrWhiteSpace($title)) { continue }
-        if ($title -like "*$namePrefix*" -and $title -notlike "$namePrefix") { continue }   # главное окно — не диалог
-        if ($window.Current.ClassName -ne "#32770") { continue }
-
         Say "появилось сообщение: «$title»"
-        Save-Window ([IntPtr]$window.Current.NativeWindowHandle) "сообщение"
+        Save-Window ([IntPtr]$window.Current.NativeWindowHandle) 'сообщение'
 
-        foreach ($label in @('ОК', 'OK', 'Да', 'Yes', 'Нет', 'No'))
+        $pressed = $false
+        foreach ($label in @('ОК', 'OK', 'Да', 'Yes', 'Закрыть', 'Close'))
         {
-            $button = Find-ByName $window $label 1200
+            $button = Find-ByName $window $label 1500
             if ($null -ne $button)
             {
                 Invoke-Element $button "«$label» в сообщении" | Out-Null
-                $closed++
-                Start-Sleep -Milliseconds 500
+                $pressed = $true
                 break
             }
         }
+
+        if (-not $pressed)
+        {
+            # Запасной путь: Enter нажимает кнопку по умолчанию в любом сообщении Windows.
+            [PfWin]::SetForegroundWindow([IntPtr]$window.Current.NativeWindowHandle) | Out-Null
+            Start-Sleep -Milliseconds 300
+            [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+            Say 'нажато: Enter в сообщении (кнопка по умолчанию)'
+        }
+
+        $closed++
+        Start-Sleep -Milliseconds 700
     }
 
     return $closed
@@ -198,11 +225,17 @@ Invoke-Element $button 'Оптимизировать соединение' | Out
 
 # Даём время дойти до службы (её ответ — до 10 с) и посмотреть, что вышло.
 $dialogSeen = 0
-for ($i = 0; $i -lt 12; $i++)
+$statusText = ''
+for ($i = 0; $i -lt 25; $i++)
 {
-    Start-Sleep -Seconds 1
-    $dialogSeen += Close-Dialogs $process.Id 'Custom Tweak By Doxaiz'
+    Start-Sleep -Milliseconds 800
+    $dialogSeen += Close-Dialogs $process.Id $handle
     if ($process.HasExited) { break }
+
+    # Ждём, пока программа закончит отвечать: кнопка снова доступна — значит работа кончилась.
+    $mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $statusText = Get-TextOfMainScreen $mainWindow
+    if ($dialogSeen -gt 0 -and $i -ge 3) { break }
 }
 
 if ($process.HasExited)
@@ -227,16 +260,27 @@ $sections = @(
 
 foreach ($section in $sections)
 {
-    $mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $handle = (Get-Process -Id $process.Id).MainWindowHandle
+    $mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
     $element = Find-ByName $mainWindow $section.Name 6000
     if ($null -eq $element)
     {
+        # Запасной путь: показать, что вообще есть в окне, — иначе непонятно, что искать.
+        $titles = @()
+        $condition = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            [System.Windows.Automation.ControlType]::RadioButton)
+        foreach ($radio in $mainWindow.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition))
+        {
+            $titles += $radio.Current.Name
+        }
+        Say "пункты меню, которые видит Windows: $($titles -join ' | ')"
         throw "В окне нет пункта меню «$($section.Name)»"
     }
 
     Invoke-Element $element $section.Name | Out-Null
-    Start-Sleep -Milliseconds 900
-    Close-Dialogs $process.Id 'Custom Tweak By Doxaiz' | Out-Null
+    Start-Sleep -Milliseconds 1200
+    Close-Dialogs $process.Id $handle | Out-Null
     Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) $section.Shot
 }
 
@@ -247,7 +291,12 @@ if ($process.HasExited)
     throw "Программа закрылась во время проверки (код $($process.ExitCode))"
 }
 
-Say "── Итог: программа жива, окон открыто: $(($process = Get-Process -Id $process.Id).MainWindowTitle), снимков: $shots"
+Say "── Итог: программа жива, заголовок окна: «$((Get-Process -Id $process.Id).MainWindowTitle)», снимков: $shots"
+Say '── Что показывает главный экран после нажатия:'
+foreach ($line in ($statusText -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 } | Select-Object -First 12))
+{
+    Say "    $line"
+}
 
 if (Test-Path $log)
 {
