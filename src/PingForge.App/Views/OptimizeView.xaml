@@ -4,6 +4,19 @@
   <StackPanel>
     <TextBlock Style="{StaticResource Title}" Text="Оптимизация соединения" />
 
+    <!-- Ответ программы на нажатие. Живёт на экране, а не в модальном окне: модальное окно
+         раньше вешало главное окно до «(Not Responding)», и разделы не открывались. -->
+    <Border Style="{StaticResource Card}" Margin="0,0,0,12"
+            Visibility="{Binding IsNoticeVisible, Converter={StaticResource BoolToVisibility}}">
+      <StackPanel>
+        <TextBlock Text="{Binding NoticeTitleRu}" FontWeight="SemiBold"
+                   Foreground="{StaticResource Accent2}" TextWrapping="Wrap" />
+        <TextBlock x:Name="NoticeText" Text="{Binding NoticeRu}" TextWrapping="Wrap" Margin="0,6,0,0" />
+        <Button Style="{StaticResource GhostButton}" Content="Понятно" Margin="0,12,0,0"
+                HorizontalAlignment="Left" Command="{Binding DismissNoticeCommand}" />
+      </StackPanel>
+    </Border>
+
     <!-- Кнопка и состояние — в одной карточке; показатели — отдельной строкой ниже.
          Раньше показатели делили строку с кнопкой, и на четыре карточки оставалось по сто точек:
          подписи резались. Это видел снимок окна со сборочной Windows. -->

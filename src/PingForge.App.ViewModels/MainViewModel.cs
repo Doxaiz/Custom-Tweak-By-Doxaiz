@@ -23,6 +23,8 @@ public sealed class MainViewModel : ObservableObject
     private double? _improvementMs;
     private bool _isOptimizing;
     private bool _hasRights;
+    private string? _noticeTitleRu;
+    private string? _noticeRu;
 
     public MainViewModel(EngineClient engine, IUserDialogs dialogs)
     {
@@ -32,6 +34,47 @@ public sealed class MainViewModel : ObservableObject
         OptimizeCommand = new AsyncRelayCommand(ToggleOptimizationAsync, () => true);
         RefreshStatusCommand = new AsyncRelayCommand(RefreshStatusAsync, () => true);
         RepairNetworkCommand = new AsyncRelayCommand(RepairNetworkAsync, () => true);
+        DismissNoticeCommand = new RelayCommand(() => ShowNotice(null, null));
+    }
+
+    /// <summary>Закрыть ответ программы, когда он прочитан.</summary>
+    public RelayCommand DismissNoticeCommand { get; }
+
+    /// <summary>
+    /// Заголовок ответа программы. Ответ показывается прямо на экране, а не модальным окном.
+    ///
+    /// Почему так, а не MessageBox: на живой Windows окно сообщения с флагом
+    /// MessageBoxOptions.DefaultDesktopOnly не вставало в модальный цикл окна — главное окно
+    /// на всё это время становилось «(Not Responding)», и ни меню, ни кнопки не работали.
+    /// Это увидел прогон «как человек»: семь одинаковых снимков и ни одного переключённого раздела.
+    /// Встроенный ответ нельзя не заметить, он не блокирует окно и остаётся на экране, пока его не прочтут.
+    /// </summary>
+    public string? NoticeTitleRu
+    {
+        get => _noticeTitleRu;
+        private set => Set(ref _noticeTitleRu, value);
+    }
+
+    /// <summary>Текст ответа. Пусто — ответа нет.</summary>
+    public string? NoticeRu
+    {
+        get => _noticeRu;
+        private set => Set(ref _noticeRu, value);
+    }
+
+    /// <summary>Показывать ли карточку с ответом.</summary>
+    public bool IsNoticeVisible => !string.IsNullOrWhiteSpace(NoticeRu);
+
+    /// <summary>
+    /// Показать ответ программы на экране. null — убрать.
+    /// Публичный не для красоты: так ответ проверяет самопроверка на живой Windows — она показывает
+    /// карточку и убеждается, что текст дошёл до разметки, а окно осталось живым.
+    /// </summary>
+    public void ShowNotice(string? titleRu, string? messageRu)
+    {
+        NoticeTitleRu = titleRu;
+        NoticeRu = messageRu;
+        OnPropertyChanged(nameof(IsNoticeVisible));
     }
 
     public AsyncRelayCommand OptimizeCommand { get; }
@@ -146,6 +189,7 @@ public sealed class MainViewModel : ObservableObject
         }
 
         StatusRu = "Ищу запущенную игру и меряю задержку «до»…";
+        ShowNotice(null, null);
 
         try
         {
@@ -158,7 +202,7 @@ public sealed class MainViewModel : ObservableObject
             if (!response.Ok && !response.MessageRu.Contains("только замеры", StringComparison.Ordinal))
             {
                 StatusRu = response.MessageRu;
-                await _dialogs.InformAsync("Оптимизация не запустилась", response.MessageRu).ConfigureAwait(true);
+                ShowNotice("Оптимизация не запустилась", response.MessageRu);
                 return;
             }
 
@@ -169,7 +213,7 @@ public sealed class MainViewModel : ObservableObject
         catch (EngineUnavailableException ex)
         {
             StatusRu = ex.Message;
-            await _dialogs.InformAsync("Служба недоступна", ex.Message).ConfigureAwait(true);
+            ShowNotice("Служба недоступна", ex.Message);
         }
     }
 
@@ -235,12 +279,12 @@ public sealed class MainViewModel : ObservableObject
         {
             EngineResponse response = await _engine.SendAsync(EngineCommandKind.RepairNetwork).ConfigureAwait(true);
             StatusRu = response.MessageRu;
-            await _dialogs.InformAsync("Починка сети", response.MessageRu).ConfigureAwait(true);
+            ShowNotice("Починка сети", response.MessageRu);
         }
         catch (EngineUnavailableException ex)
         {
             StatusRu = ex.Message;
-            await _dialogs.InformAsync("Служба недоступна", ex.Message).ConfigureAwait(true);
+            ShowNotice("Служба недоступна", ex.Message);
         }
     }
 

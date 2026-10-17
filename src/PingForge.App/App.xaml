@@ -13,6 +13,9 @@
       <Color x:Key="AccentColor">#4ADE80</Color>
       <Color x:Key="Accent2Color">#38BDF8</Color>
 
+      <!-- Показ/скрытие карточек по булеву полю модели: без своего кода, средствами WPF. -->
+      <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
       <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />
       <SolidColorBrush x:Key="Panel" Color="{StaticResource PanelColor}" />
       <SolidColorBrush x:Key="Line" Color="{StaticResource LineColor}" />

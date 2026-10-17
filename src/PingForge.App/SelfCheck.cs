@@ -52,6 +52,7 @@ internal static class SelfCheck
         int windowCode = CheckWindow(app, problems);
 
         CheckBindings(app, problems);
+        CheckNotice(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -63,6 +64,7 @@ internal static class SelfCheck
             || problem.Contains("нет карточки", StringComparison.Ordinal)
             || problem.Contains("потеряла данные", StringComparison.Ordinal)
             || problem.Contains("нет надписей", StringComparison.Ordinal)
+            || problem.Contains("нет карточки ответа", StringComparison.Ordinal)
             || problem.Contains("не переносятся", StringComparison.Ordinal)))
         {
             windowCode = WindowFailed;
@@ -236,6 +238,75 @@ internal static class SelfCheck
         }
 
         StartupLog.Note($"Привязки: страницы получили данные (проверено {expected.Length} надписи)");
+    }
+
+    /// <summary>
+    /// Ответ программы на нажатие должен быть виден на экране, а не в модальном окне.
+    ///
+    /// Так поймали дефект живой Windows: окно сообщения с MessageBoxOptions.DefaultDesktopOnly
+    /// держало главное окно в «(Not Responding)» — окно замирало на десять секунд, меню не работало.
+    /// Здесь проверяется обратное: карточка ответа существует, текст из модели доходит до разметки,
+    /// карточка становится видимой, а после закрытия — снова скрывается.
+    /// </summary>
+    private static void CheckNotice(App app, List<string> problems)
+    {
+        MainWindow? window = app.Shell;
+        if (window?.Content is not FrameworkElement root)
+        {
+            return;
+        }
+
+        ShowAllSections(window);
+
+        if (FindNamed<TextBlock>(root, "NoticeText") is not { } notice)
+        {
+            problems.Add("нет карточки ответа на главном экране (NoticeText) — ответ снова уйдёт в модальное окно");
+            StartupLog.Warn("Ответ программы: карточки NoticeText в окне нет");
+            return;
+        }
+
+        app.MainScreen.ShowNotice("Проверка", "Это проверочный ответ программы.");
+        root.UpdateLayout();
+
+        bool textArrived = notice.Text.Contains("проверочный ответ", StringComparison.Ordinal);
+        bool visible = app.MainScreen.IsNoticeVisible;
+        app.MainScreen.ShowNotice(null, null);
+        root.UpdateLayout();
+
+        if (!textArrived || !visible)
+        {
+            problems.Add("карточка ответа есть, но текст до неё не дошёл — ответ программы пользователь не увидит");
+            StartupLog.Warn("Ответ программы: текст не дошёл до разметки");
+            return;
+        }
+
+        if (app.MainScreen.IsNoticeVisible)
+        {
+            problems.Add("ответ программы нельзя убрать с экрана");
+            return;
+        }
+
+        StartupLog.Note("Ответ программы: карточка на экране, текст доходит, закрывается");
+    }
+
+    /// <summary>Найти элемент с таким x:Name — по имени, а не по типу («NoticeText»).</summary>
+    private static T? FindNamed<T>(DependencyObject node, string name) where T : FrameworkElement
+    {
+        if (node is T element && element.Name == name)
+        {
+            return element;
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            if (FindNamed<T>(VisualTreeHelper.GetChild(node, i), name) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     private static void ShowAllSections(MainWindow window)

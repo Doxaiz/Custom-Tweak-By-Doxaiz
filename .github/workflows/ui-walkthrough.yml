@@ -1,4 +1,4 @@
-# Проверка программы «как человек» на настоящей Windows — по запросу.
+﻿# Проверка программы «как человек» на настоящей Windows — по запросу.
 #
 # Локальной виртуальной машины у помощника нет (нет аппаратной виртуализации и памяти),
 # поэтому роль «живой Windows» играет эта сборочная машина: она настоящая, на ней есть
@@ -60,7 +60,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $exe = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\CustomTweakByDoxaiz.exe'
           & tools/ui-walkthrough.ps1 -AppPath $exe -OutDir 'dist/walkthrough'
-          if ($LASTEXITCODE -ne 0) { throw "Проверка вернула код $LASTEXITCODE" }
+          if (-not $?) { throw 'Проверка программы не прошла: причина — в строках выше' }
 
       - name: Приложить снимки и журналы
         if: always()

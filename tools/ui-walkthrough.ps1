@@ -85,6 +85,18 @@ public static class PfWin
     }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int cmd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam,
+        uint flags, uint timeout, out IntPtr result);
+
+    /// Отвечает ли окно на сообщения Windows. Занятый поток не ответит и за две секунды —
+    /// так ловится «(Not Responding)»: раньше окно уходило в него, а проверка этого не видела.
+    public static bool IsResponding(IntPtr hWnd)
+    {
+        IntPtr result;
+        return SendMessageTimeout(hWnd, 0x0000, IntPtr.Zero, IntPtr.Zero, 0x0002, 2000, out result) != IntPtr.Zero;
+    }
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
 }
 "@
@@ -146,13 +158,22 @@ function Find-ByName($root, [string]$name, [int]$timeoutMs = 8000)
 function Get-TextOfMainScreen($root)
 {
     # Собираем все тексты, которые видит человек: по ним понятно, что программа ответила.
+    # Ошибки UI Automation глушим: занятое окно может не ответить — это не повод падать,
+    # пустой текст здесь сам по себе улика.
     $builder = New-Object System.Text.StringBuilder
-    $condition = New-Object System.Windows.Automation.PropertyCondition(
-        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-        [System.Windows.Automation.ControlType]::Text)
-    foreach ($element in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition))
+    try
     {
-        [void]$builder.AppendLine($element.Current.Name)
+        $condition = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            [System.Windows.Automation.ControlType]::Text)
+        foreach ($element in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition))
+        {
+            try { [void]$builder.AppendLine($element.Current.Name) } catch { }
+        }
+    }
+    catch
+    {
+        Write-Host "  [внимание] не удалось прочитать текст окна: $($_.Exception.Message)"
     }
     return $builder.ToString()
 }
@@ -238,22 +259,33 @@ if ($null -eq $button)
     throw 'Кнопки «Оптимизировать соединение» нет в окне — главная страница не заполнилась'
 }
 
+$beforeText = Get-TextOfMainScreen $mainWindow
 Invoke-Element $button 'Оптимизировать соединение' | Out-Null
 
-# Даём время дойти до службы (её ответ — до 10 с) и посмотреть, что вышло.
-$dialogSeen = 0
-$quiet = 0
-for ($i = 0; $i -lt 30; $i++)
+# Ждём ответ столько, сколько он реально может идти: запрос к службе — до 10 секунд.
+# «Три тихие секунды» (так было раньше) — неверный признак: ответ просто не успевал появиться,
+# и проверка шла дальше, пока окно ещё стояло в ожидании.
+$answerText = ''
+$deadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $deadline)
 {
-    Start-Sleep -Milliseconds 1000
+    Start-Sleep -Milliseconds 700
     if ($process.HasExited) { break }
-    $closedNow = Close-Dialogs $process.Id $handle
-    $dialogSeen += $closedNow
-    $quiet = if ($closedNow -gt 0) { 0 } else { $quiet + 1 }
 
-    # Программа дошла до службы за секунду-две; если три секунды подряд ничего не появляется —
-    # работа закончилась, и ждать впустую незачем.
-    if ($quiet -ge 3) { break }
+    if (-not [PfWin]::IsResponding($handle))
+    {
+        Save-Window $handle 'окно-не-отвечает'
+        throw 'Окно программы перестало отвечать на сообщения Windows («Not Responding») — это отказ'
+    }
+
+    Close-Dialogs $process.Id $handle | Out-Null   # страховка, если сборка покажет окно сообщения
+    $answerText = Get-TextOfMainScreen $mainWindow
+
+    # Ответ узнаём по делу, а не по времени: либо служба честно отказала, либо оптимизация пошла.
+    if ($answerText -match 'не подключён' -or $answerText -match 'Остановить и вернуть как было' -or $answerText -match 'не запустилась')
+    {
+        break
+    }
 }
 
 if ($process.HasExited)
@@ -265,8 +297,17 @@ $handle = (Get-Process -Id $process.Id).MainWindowHandle
 Save-Window $handle 'после-нажатия'
 Say 'программа жива после нажатия'
 
-$mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
-$statusText = Get-TextOfMainScreen $mainWindow
+if ($answerText -notmatch 'не подключён' -and $answerText -notmatch 'Остановить и вернуть как было')
+{
+    $shown = ($answerText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 20) -join ' / '
+    throw "Программа не ответила на нажатие за 30 секунд. Что было на экране: $shown"
+}
+
+Say 'программа ответила на нажатие:'
+foreach ($line in ($answerText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 12))
+{
+    Say "    $($line.Trim())"
+}
 
 # ── 3. Разделы ──────────────────────────────────────────────────────────────────────────────────
 Say ''
@@ -331,9 +372,9 @@ if ($process.HasExited)
 
 Say "── Итог: программа жива, заголовок окна: «$((Get-Process -Id $process.Id).MainWindowTitle)», снимков: $shots"
 Say '── Что показывает главный экран после нажатия:'
-foreach ($line in ($statusText -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 } | Select-Object -First 12))
+foreach ($line in ($answerText -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 } | Select-Object -First 12))
 {
-    Say "    $line"
+    Say "    $($line.Trim())"
 }
 
 if (Test-Path $log)
@@ -353,3 +394,6 @@ else
 Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
 Write-Host ''
 Write-Host "Проверка пройдена: программа открывается, кнопка нажимается, разделы переключаются, снимки в $OutDir"
+# Явный код возврата: раньше рабочий процесс падал на проверке $LASTEXITCODE в workflow —
+# у вызова «& script.ps1» этой переменной просто нет, и рабочий прогон объявлялся красным.
+exit 0

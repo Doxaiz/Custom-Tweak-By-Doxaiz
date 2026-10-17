@@ -118,8 +118,16 @@ public class ViewModelTests
 
         Assert.False(main.IsOptimizing);
         Assert.Contains("Нет прав", main.StatusRu);
-        Assert.Single(dialogs.Information);
-        Assert.Equal("Оптимизация не запустилась", dialogs.Information[0].Title);
+
+        // Ответ виден прямо на экране: карточка с заголовком и текстом. Модального окна нет —
+        // на живой Windows именно модальное окно с DefaultDesktopOnly вешало главное окно.
+        Assert.True(main.IsNoticeVisible);
+        Assert.Equal("Оптимизация не запустилась", main.NoticeTitleRu);
+        Assert.Contains("Нет прав", main.NoticeRu);
+        Assert.Empty(dialogs.Information);
+
+        main.DismissNoticeCommand.Execute(null);
+        Assert.False(main.IsNoticeVisible);
     }
 
     [Fact]
@@ -133,7 +141,22 @@ public class ViewModelTests
 
         Assert.Contains("служба PingForge не отвечает", main.StatusRu, StringComparison.OrdinalIgnoreCase);
         Assert.False(main.IsOptimizing);
-        Assert.Equal("Служба недоступна", dialogs.Information[0].Title);
+        Assert.Equal("Служба недоступна", main.NoticeTitleRu);
+        Assert.True(main.IsNoticeVisible);
+    }
+
+    [Fact]
+    public async Task Нажатие_кнопки_не_открывает_модальных_окон_а_пишет_ответ_в_интерфейс()
+    {
+        // Правило: окно программы не должно замирать на время ответа. Любой ответ — на экране.
+        var channel = new FakeEngineChannel(request => Fallback.DefaultAnswer(request));
+        var dialogs = new FakeDialogs();
+        var main = new MainViewModel(new EngineClient(channel), dialogs);
+
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Empty(dialogs.Information);
+        Assert.Empty(dialogs.Confirmations);
     }
 
     [Fact]

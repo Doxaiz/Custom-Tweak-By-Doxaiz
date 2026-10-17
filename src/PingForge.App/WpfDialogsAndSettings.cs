@@ -12,28 +12,37 @@ namespace PingForge.App;
 /// </summary>
 public sealed class WpfDialogs : IUserDialogs
 {
+    /// <summary>
+    /// Окно-владелец диалога. Раньше здесь стоял MessageBoxOptions.DefaultDesktopOnly — и это
+    /// оказалось ловушкой: сообщение показывалось мимо модального цикла окна, главное окно
+    /// на всё время ответа становилось «(Not Responding)», а клики по меню не доходили.
+    /// Диалог должен принадлежать своему окну — тогда окно ждёт ответа, но остаётся живым.
+    /// </summary>
+    private static Window? Owner =>
+        Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive)
+        ?? Application.Current?.MainWindow;
+
     public Task<bool> ConfirmAsync(string titleRu, string messageRu, string confirmLabelRu, string cancelLabelRu)
     {
-        MessageBoxResult answer = MessageBox.Show(
-            messageRu,
-            $"Custom Tweak By Doxaiz — {titleRu}",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question,
-            MessageBoxResult.No,
-            MessageBoxOptions.DefaultDesktopOnly);
+        const string title = "Custom Tweak By Doxaiz — ";
+        MessageBoxResult answer = Owner is { } owner
+            ? MessageBox.Show(owner, messageRu, title + titleRu, MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No)
+            : MessageBox.Show(messageRu, title + titleRu, MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
 
         return Task.FromResult(answer == MessageBoxResult.Yes);
     }
 
     public Task InformAsync(string titleRu, string messageRu)
     {
-        MessageBox.Show(
-            messageRu,
-            $"Custom Tweak By Doxaiz — {titleRu}",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information,
-            MessageBoxResult.OK,
-            MessageBoxOptions.DefaultDesktopOnly);
+        const string title = "Custom Tweak By Doxaiz — ";
+        if (Owner is { } owner)
+        {
+            MessageBox.Show(owner, messageRu, title + titleRu, MessageBoxButton.OK, MessageBoxImage.Information, MessageBoxResult.OK);
+        }
+        else
+        {
+            MessageBox.Show(messageRu, title + titleRu, MessageBoxButton.OK, MessageBoxImage.Information, MessageBoxResult.OK);
+        }
 
         return Task.CompletedTask;
     }
