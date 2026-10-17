@@ -8,7 +8,8 @@
         WindowStartupLocation="CenterScreen">
 
   <Grid>
-    <Grid.RowDefinitions>
+    <Grid>
+      <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
@@ -66,6 +67,7 @@
 
           <StackPanel>
             <RadioButton x:Name="NavOptimize" Style="{StaticResource NavButton}" Content="Оптимизация" IsChecked="True" Checked="NavChanged" />
+            <RadioButton x:Name="NavGames" Style="{StaticResource NavButton}" Content="Игры" Checked="NavChanged" />
             <RadioButton x:Name="NavTweaks" Style="{StaticResource NavButton}" Content="Твики" Checked="NavChanged" />
             <RadioButton x:Name="NavJournal" Style="{StaticResource NavButton}" Content="Журнал" Checked="NavChanged" />
             <RadioButton x:Name="NavSettings" Style="{StaticResource NavButton}" Content="Настройки" Checked="NavChanged" />
@@ -77,6 +79,7 @@
       <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="20,18">
         <Grid>
           <views:OptimizeView x:Name="PageOptimize" DataContext="{Binding MainScreen}" />
+          <views:GamesView x:Name="PageGames" Visibility="Collapsed" DataContext="{Binding Games}" />
           <views:TweaksView x:Name="PageTweaks" Visibility="Collapsed" DataContext="{Binding Tweaks}" />
           <views:JournalView x:Name="PageJournal" Visibility="Collapsed" DataContext="{Binding Journal}" />
           <views:SettingsView x:Name="PageSettings" Visibility="Collapsed" DataContext="{Binding Settings}" />
@@ -85,10 +88,14 @@
       </ScrollViewer>
     </Grid>
 
-    <!-- Подвал: честная плашка про макет интерфейса. -->
-    <Border Grid.Row="2" Background="#0C1220" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="16,8">
-      <TextBlock Style="{StaticResource Caption}"
-                 Text="Программа запускается молча: ничего не меняется, пока вы не нажмёте кнопку. Окно, разделы, трей и связь со службой проверяются на живой Windows при каждой сборке." />
-    </Border>
+      <!-- Подвал: честная плашка про макет интерфейса. -->
+      <Border Grid.Row="2" Background="#0C1220" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="16,8">
+        <TextBlock Style="{StaticResource Caption}"
+                   Text="Программа запускается молча: ничего не меняется, пока вы не нажмёте кнопку. Окно, разделы, трей и связь со службой проверяются на живой Windows при каждой сборке." />
+      </Border>
+    </Grid>
+
+    <!-- Мастер первого запуска — поверх всего окна: как в BoosterX, но без единого изменения без согласия. -->
+    <views:OnboardingView x:Name="SetupOverlay" DataContext="{Binding Setup}" />
   </Grid>
 </Window>

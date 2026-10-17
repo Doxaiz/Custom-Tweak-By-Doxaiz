@@ -53,6 +53,7 @@ internal static class SelfCheck
 
         CheckBindings(app, problems);
         CheckNotice(app, problems);
+        CheckLauncherAndSetup(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -160,7 +161,11 @@ internal static class SelfCheck
             ShowAllSections(window);
 
             int elements = CountElements(root);
-            string[] sections = [nameof(OptimizeView), nameof(TweaksView), nameof(JournalView), nameof(SettingsView), nameof(AboutView)];
+            string[] sections =
+            [
+                nameof(OptimizeView), nameof(GamesView), nameof(TweaksView),
+                nameof(JournalView), nameof(SettingsView), nameof(AboutView),
+            ];
             var found = new List<string>();
             var missing = new List<string>();
             foreach (string section in sections)
@@ -238,6 +243,46 @@ internal static class SelfCheck
         }
 
         StartupLog.Note($"Привязки: страницы получили данные (проверено {expected.Length} надписи)");
+    }
+
+    /// <summary>
+    /// Раздел «Игры» и мастер первого запуска — то, что делает программу понятной с первого клика.
+    ///
+    /// Проверяется то, что видит человек: в списке игр есть карточки, у каждой есть путь или честное
+    /// «не найдена», а мастер либо показан на первом запуске, либо уже пройден — но его разметка
+    /// не потерялась (иначе кнопка «Пройти мастер заново» в настройках открывала бы пустоту).
+    /// </summary>
+    private static void CheckLauncherAndSetup(App app, List<string> problems)
+    {
+        MainWindow? window = app.Shell;
+        if (window?.Content is not FrameworkElement root)
+        {
+            return;
+        }
+
+        ShowAllSections(window);
+        root.UpdateLayout();
+
+        if (FindByName(root, nameof(GamesView)) is null)
+        {
+            problems.Add("в окне нет раздела «Игры»");
+            return;
+        }
+
+        int cards = app.Games.Cards.Count;
+        int withPath = app.Games.Cards.Count(card => card.HasPath);
+        StartupLog.Note($"Игры: карточек {cards}, с путём на диске {withPath}; мастер первого запуска " +
+            (app.Setup.IsVisible ? "показан" : "уже пройден"));
+
+        if (cards == 0)
+        {
+            problems.Add("в разделе «Игры» нет ни одной карточки — список пуст");
+        }
+
+        if (app.Setup.Recommended.TitleRu.Length == 0)
+        {
+            problems.Add("мастер первого запуска не может посчитать совет");
+        }
     }
 
     /// <summary>

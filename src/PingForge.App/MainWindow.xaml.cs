@@ -90,6 +90,7 @@ public partial class MainWindow : Window
         }
 
         PageOptimize.Visibility = NavOptimize.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        PageGames.Visibility = NavGames.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageTweaks.Visibility = NavTweaks.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageJournal.Visibility = NavJournal.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageSettings.Visibility = NavSettings.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
@@ -106,14 +107,14 @@ public partial class MainWindow : Window
     /// Все разделы окна — для самопроверки: ей нужно показать и проверить каждый, даже свёрнутый.
     /// </summary>
     internal IReadOnlyList<UIElement> SectionsForCheck =>
-        [PageOptimize, PageTweaks, PageJournal, PageSettings, PageAbout];
+        [PageOptimize, PageGames, PageTweaks, PageJournal, PageSettings, PageAbout];
 
     /// <summary>Готовы ли поля окна. Недосозданные поля — не ошибка: значит разметка ещё разбирается.</summary>
     private bool IsSectionReady() =>
-        PageOptimize is not null && PageTweaks is not null && PageJournal is not null &&
-        PageSettings is not null && PageAbout is not null &&
-        NavOptimize is not null && NavTweaks is not null && NavJournal is not null &&
-        NavSettings is not null && NavAbout is not null;
+        PageOptimize is not null && PageGames is not null && PageTweaks is not null &&
+        PageJournal is not null && PageSettings is not null && PageAbout is not null &&
+        NavOptimize is not null && NavGames is not null && NavTweaks is not null &&
+        NavJournal is not null && NavSettings is not null && NavAbout is not null;
 
     private void SupportClick(object sender, RoutedEventArgs e)
     {
@@ -140,6 +141,8 @@ public sealed class ShellViewModel
     public ShellViewModel(App app)
     {
         MainScreen = app.MainScreen;
+        Games = app.Games;
+        Setup = app.Setup;
         Tweaks = app.Tweaks;
         Journal = app.Journal;
         Settings = app.Settings;
@@ -148,6 +151,12 @@ public sealed class ShellViewModel
     }
 
     public MainViewModel MainScreen { get; }
+
+    /// <summary>Раздел «Игры»: открыть игру и начать оптимизацию.</summary>
+    public GameLauncherViewModel Games { get; }
+
+    /// <summary>Мастер первого запуска: показывается поверх окна, пока его не пройдут или не отложат.</summary>
+    public OnboardingViewModel Setup { get; }
 
     public TweaksViewModel Tweaks { get; }
 

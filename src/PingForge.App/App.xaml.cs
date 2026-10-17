@@ -1,5 +1,6 @@
 using System.IO;
 using System.Security.Principal;
+using System.Threading;
 using System.Windows;
 using PingForge.App.ViewModels;
 using PingForge.Tweaks;
@@ -21,6 +22,9 @@ public partial class App : Application
 {
     private MainWindow? _window;
     private TrayPresence? _tray;
+    private SplashWindow? _splash;
+    private SingleInstance? _instance;
+    private DateTime _splashShownUtc;
 
     /// <summary>Режим самопроверки: проходит весь путь старта без показа окна и человека.</summary>
     public static bool SelfCheckMode { get; private set; }
@@ -41,6 +45,12 @@ public partial class App : Application
 
     public SettingsViewModel Settings { get; private set; } = null!;
 
+    /// <summary>Раздел «Игры»: запуск игры и сразу оптимизация под неё.</summary>
+    public GameLauncherViewModel Games { get; private set; } = null!;
+
+    /// <summary>Мастер первого запуска: три вопроса и совет — как в BoosterX, но без изменений без согласия.</summary>
+    public OnboardingViewModel Setup { get; private set; } = null!;
+
     /// <summary>Окно — для самопроверки: ей нужно построить разметку, но не показывать её человеку.</summary>
     internal MainWindow? Shell => _window;
 
@@ -60,6 +70,17 @@ public partial class App : Application
             StartupLog.EnableConsoleOutput();
             SelfCheck.ArmWatchdog(120);
         }
+        else if (!QuietMode)
+        {
+            // Один экземпляр: повторный запуск поднимает уже открытое окно, а не открывает второе.
+            _instance = new SingleInstance();
+            if (!_instance.IsFirst)
+            {
+                _instance.SignalExisting();
+                Shutdown(0);
+                return;
+            }
+        }
 
         StartupLog.WriteHeader(
             GetType().Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
@@ -70,6 +91,8 @@ public partial class App : Application
         // Перехватчики ставятся до любой работы: иначе ошибка на старте уносит процесс молча.
         CrashGuard.Install(this);
 
+        ShowSplash();
+
         try
         {
             Build();
@@ -77,6 +100,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
+            HideSplash();
             StartupLog.Problem("Программа не смогла запуститься", ex);
             CrashGuard.Report("Программа не смогла запуститься", ex);
             Environment.Exit(30);
@@ -95,10 +119,10 @@ public partial class App : Application
     /// </summary>
     private void Build()
     {
-        StartupLog.Step("Собираю каталог твиков");
+        Step("Собираю каталог твиков");
         Catalog = new TweakCatalog(new TweakPlatformPorts());
 
-        StartupLog.Step("Читаю настройки");
+        Step("Читаю настройки");
         var dialogs = new WpfDialogs();
         var store = new JsonFileSettingsStore(DefaultSettingsPath());
         AppSettings settings = store.Load();
@@ -109,7 +133,7 @@ public partial class App : Application
             Notify("Custom Tweak By Doxaiz — настройки", problem, MessageBoxImage.Warning);
         }
 
-        StartupLog.Step("Собираю модели представления");
+        Step("Собираю модели представления");
         Engine = new EngineClient(new NamedPipeEngineChannel());
 
         MainScreen = new MainViewModel(Engine, dialogs, runsAsAdministrator: IsAdministrator());
@@ -120,8 +144,16 @@ public partial class App : Application
             TweakRowFactory.BuildPresets(Catalog));
         Journal = new JournalViewModel(Engine, settings.JournalRowsShown);
         Settings = new SettingsViewModel(Engine, store, dialogs);
+        Games = new GameLauncherViewModel(
+            new WindowsGameLocator(),
+            new ProcessGameStarter(),
+            new OpenFileExecutablePicker(),
+            store,
+            MainScreen);
+        Setup = new OnboardingViewModel(store, Tweaks, Settings);
+        Settings.AttachSetup(Setup);
 
-        StartupLog.Step("Строю окно");
+        Step("Строю окно");
         _window = new MainWindow(this);
 
         if (SelfCheckMode)
@@ -130,6 +162,11 @@ public partial class App : Application
             // иначе самопроверка не проверила бы его вовсе.
             _tray = BuildTray();
             return;
+        }
+
+        if (Setup.IsVisible)
+        {
+            StartupLog.Note("Первый запуск: показываю мастер настройки");
         }
 
         if (settings.StartMinimized)
@@ -143,8 +180,105 @@ public partial class App : Application
         }
 
         _window.Show();
+        HideSplash();
 
         _tray = BuildTray();
+        StartListeningForSecondLaunch();
+    }
+
+    /// <summary>
+    /// Ступень сборки: одна и та же строка идёт и в журнал запуска, и на заставку.
+    /// Так человек видит, что программа не «зависла», а работает.
+    /// </summary>
+    private void Step(string text)
+    {
+        StartupLog.Step(text);
+        _splash?.Stage(text);
+    }
+
+    /// <summary>Заставка. Её отсутствие не должно мешать запуску — поэтому всё в перехвате.</summary>
+    private void ShowSplash()
+    {
+        if (SelfCheckMode || QuietMode)
+        {
+            return;
+        }
+
+        try
+        {
+            _splash = new SplashWindow();
+            _splash.Show();
+            _splashShownUtc = DateTime.UtcNow;
+            StartupLog.Note("Показана заставка: программа открывается");
+        }
+        catch (Exception ex)
+        {
+            _splash = null;
+            StartupLog.Problem("Заставка не показалась — работаю без неё", ex);
+        }
+    }
+
+    /// <summary>
+    /// Убрать заставку. Не раньше, чем через 700 мс: мгновенно мигнувшая заставка выглядит как сбой,
+    /// а не как «программа открывается».
+    /// </summary>
+    private void HideSplash()
+    {
+        if (_splash is null)
+        {
+            return;
+        }
+
+        try
+        {
+            TimeSpan shown = DateTime.UtcNow - _splashShownUtc;
+            if (shown < TimeSpan.FromMilliseconds(700))
+            {
+                Thread.Sleep(TimeSpan.FromMilliseconds(700) - shown);
+            }
+
+            _splash.Close();
+        }
+        catch (Exception ex)
+        {
+            StartupLog.Problem("Заставку не удалось закрыть", ex);
+        }
+        finally
+        {
+            _splash = null;
+        }
+    }
+
+    /// <summary>Второй запуск поднимает это окно — так и должно быть, а не «открылось второе».</summary>
+    private void StartListeningForSecondLaunch()
+    {
+        if (_instance is null || _window is null)
+        {
+            return;
+        }
+
+        _instance.ActivateRequested += () => Dispatcher.Invoke(() =>
+        {
+            try
+            {
+                _window.Show();
+                if (_window.WindowState == WindowState.Minimized)
+                {
+                    _window.WindowState = WindowState.Normal;
+                }
+
+                _window.Activate();
+                _window.Topmost = true;
+                _window.Topmost = false;
+                StartupLog.Note("Повторный запуск: поднял уже открытое окно");
+            }
+            catch (InvalidOperationException ex)
+            {
+                StartupLog.Problem("Не удалось поднять окно по повторному запуску", ex);
+            }
+        });
+
+        _instance.Listen();
     }
 
     /// <summary>
@@ -155,7 +289,7 @@ public partial class App : Application
     {
         try
         {
-            StartupLog.Step("Ставлю значок в трее");
+            Step("Ставлю значок в трее");
             return new TrayPresence(this, _window!);
         }
         catch (Exception ex)
@@ -216,6 +350,12 @@ public partial class App : Application
         StartupLog.Note("Выход по команде пользователя");
         _tray?.Dispose();
         Shutdown();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _instance?.Dispose();
+        base.OnExit(e);
     }
 
     private static bool HasArgument(string[] args, string name) =>

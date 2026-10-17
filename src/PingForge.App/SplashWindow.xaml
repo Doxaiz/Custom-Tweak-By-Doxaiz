@@ -1,0 +1,31 @@
+<Window x:Class="PingForge.App.SplashWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Custom Tweak By Doxaiz"
+        Width="460" Height="200"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
+        AllowsTransparency="True" Background="Transparent"
+        WindowStartupLocation="CenterScreen">
+
+  <!-- Заставка: программа распаковывается и строит окно за секунду-две. Раньше это время
+       выглядело как «ничего не произошло» — теперь видно, что программа открывается. -->
+  <Border Background="#0C1220" BorderBrush="#1E2A3F" BorderThickness="1" CornerRadius="14" Padding="22">
+    <StackPanel>
+      <StackPanel Orientation="Horizontal">
+        <Border Width="34" Height="34" CornerRadius="10" Background="#38D39F" Margin="0,0,12,0">
+          <Path Data="M3 17l5-7 4 4 4-8 5 6" Stroke="#04101F" StrokeThickness="2.6"
+                Width="20" Height="20" Stretch="Uniform" />
+        </Border>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="Custom Tweak By Doxaiz" Foreground="#E8EEF7" FontWeight="Bold" FontSize="16" />
+          <TextBlock Text="оптимизация соединения для игр" Foreground="#8FA3BF" FontSize="11.5" Margin="0,2,0,0" />
+        </StackPanel>
+      </StackPanel>
+
+      <TextBlock x:Name="StageText" Text="Загружаюсь…" Foreground="#8FA3BF" FontSize="12" Margin="0,18,0,0" />
+
+      <ProgressBar IsIndeterminate="True" Height="4" Margin="0,8,0,0" Foreground="#38D39F" Background="#16203420"
+                   BorderThickness="0" />
+    </StackPanel>
+  </Border>
+</Window>

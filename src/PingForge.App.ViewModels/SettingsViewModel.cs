@@ -33,9 +33,21 @@ public sealed class SettingsViewModel : ObservableObject
 
         SaveCommand = new AsyncRelayCommand(SaveAsync);
         ApplyProfileCommand = new AsyncRelayCommand(ApplyProfileAsync);
+        ReopenSetupCommand = new RelayCommand(() => Setup?.Reopen());
     }
 
     public AsyncRelayCommand SaveCommand { get; }
+
+    /// <summary>
+    /// «Пройти мастер заново». Мастер показывается один раз, но выбор мог быть случайным —
+    /// поэтому вернуться к нему можно в любой момент, а не переустановкой программы.
+    /// </summary>
+    public RelayCommand ReopenSetupCommand { get; }
+
+    /// <summary>Мастер первого запуска. Появляется здесь, потому что окно решает, когда его показать.</summary>
+    public OnboardingViewModel? Setup { get; private set; }
+
+    public void AttachSetup(OnboardingViewModel setup) => Setup = setup;
 
     public AsyncRelayCommand ApplyProfileCommand { get; }
 
@@ -101,15 +113,20 @@ public sealed class SettingsViewModel : ObservableObject
     /// <summary>Сохранить настройки в файл и честно сказать, сохранилось ли.</summary>
     public async Task SaveAsync()
     {
-        var settings = new AppSettings(
-            EngineNames.ProfileWireName(Profile),
-            OfferRestorePoint,
-            StartMinimized: false,
-            CloseToTray: CloseToTray,
-            JournalRowsShown: 20);
-
         try
         {
+            // Читаем файл заново: в нём могли появиться поля, которые меняет не эта страница
+            // (пройденный мастер первого запуска, запомненные пути к играм). «Собрать с нуля»
+            // означало бы молча стереть их при первом же сохранении настроек.
+            AppSettings settings = _store.Load() with
+            {
+                PerfProfile = EngineNames.ProfileWireName(Profile),
+                OfferRestorePoint = OfferRestorePoint,
+                StartMinimized = false,
+                CloseToTray = CloseToTray,
+                JournalRowsShown = 20,
+            };
+
             _store.Save(settings);
             AppSettings actual = _store.Load();
 
@@ -120,7 +137,6 @@ public sealed class SettingsViewModel : ObservableObject
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             StatusRu = $"Файл настроек не записался: {ex.Message}. Изменения останутся только до перезапуска.";
-            await _dialogs.InformAsync("Настройки не сохранены", StatusRu).ConfigureAwait(true);
         }
     }
 

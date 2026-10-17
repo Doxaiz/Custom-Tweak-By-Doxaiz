@@ -4,10 +4,14 @@
     Что делает скрипт — и только это:
       1) запускает программу так же, как её запускает человек: двойным щелчком, без ключей;
       2) ждёт, пока откроется настоящее окно, и снимает его;
-      3) щёлкает по большой кнопке «Оптимизировать соединение» тем же способом, что и мышью
-         (UI Automation), и снимает результат — в том числе появившееся сообщение;
-      4) проходит по всем пяти разделам меню, снимая каждый;
-      5) проверяет, что программа не упала, и показывает журнал запуска.
+      3) проходит мастер первого запуска так же, как человек: «Начать» → три ответа → «Дальше» →
+         совет → «Позже» (без применения — система сборочной машины не меняется);
+      4) щёлкает по большой кнопке «Оптимизировать соединение» тем же способом, что и мышью
+         (UI Automation), и снимает результат;
+      5) открывает игру в разделе «Игры» — путь подставляется заранее безобидным notepad.exe,
+         чтобы проверить сам механизм запуска, а не наличие игры на сборочной машине;
+      6) проходит по всем шести разделам меню, снимая каждый;
+      7) проверяет, что программа не упала, и показывает журнал запуска.
 
     Чего скрипт не делает: ничего не меняет в настройках системы за человека. Нажатие кнопки
     в программе безопасно по её же правилам: без снапшота и подтверждения она ничего не меняет,
@@ -155,6 +159,13 @@ function Find-ByName($root, [string]$name, [int]$timeoutMs = 8000)
     return $null
 }
 
+function Find-AllByName($root, [string]$name)
+{
+    $condition = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::NameProperty, $name)
+    return @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition))
+}
+
 function Get-TextOfMainScreen($root)
 {
     # Собираем все тексты, которые видит человек: по ним понятно, что программа ответила.
@@ -232,6 +243,24 @@ if (-not (Test-Path $AppPath)) { throw "Нет файла программы: $A
 $log = Join-Path $env:LOCALAPPDATA 'CustomTweakByDoxaiz\app-start.log'
 Remove-Item $log -ErrorAction SilentlyContinue
 
+# Проверка «Открыть игру» без установки игры: заранее записываем путь так, как будто человек
+# однажды указал его сам. Вместо игры — блокнот: проверяется механизм запуска, а не наличие Fortnite.
+$settingsPath = Join-Path $env:ProgramData 'PingForge\settings.json'
+$settingsDir = Split-Path $settingsPath -Parent
+if (-not (Test-Path $settingsDir)) { New-Item -ItemType Directory -Path $settingsDir -Force | Out-Null }
+$notepad = Join-Path $env:WINDIR 'System32\notepad.exe'
+@{
+    PerfProfile = 'balanced'
+    OfferRestorePoint = $true
+    StartMinimized = $false
+    CloseToTray = $true
+    JournalRowsShown = 20
+    SetupCompleted = $false
+    SetupAnswersRu = ''
+    GamePaths = @{ 'fortniteclient-win64-shipping.exe' = $notepad }
+} | ConvertTo-Json -Depth 4 | Set-Content -Path $settingsPath -Encoding UTF8
+Say "подготовлено: путь к «игре» = $notepad (проверка запуска без установки игры)"
+
 # ── 1. Запуск как у человека ────────────────────────────────────────────────────────────────────
 Say '── Шаг 1: запускаю программу без ключей'
 $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -247,12 +276,58 @@ if ($handle -eq [IntPtr]::Zero)
 
 $title = (Get-Process -Id $process.Id).MainWindowTitle
 Say "окно открылось за $([math]::Round($watch.Elapsed.TotalSeconds, 1)) с, заголовок: «$title»"
+
+# ── 2. Мастер первого запуска ───────────────────────────────────────────────────────────────────
+Say ''
+Say '── Шаг 2: мастер первого запуска (как в BoosterX)'
+$mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+$startButton = Find-ByName $mainWindow 'Начать' 8000
+if ($null -ne $startButton)
+{
+    Save-Window $handle 'первый-запуск'
+    Invoke-Element $startButton 'Начать' | Out-Null
+    Start-Sleep -Milliseconds 800
+
+    # Три ответа — так же, как их выбирает человек.
+    foreach ($answer in @('Только игры', 'Средний', 'Высокий пинг'))
+    {
+        $option = Find-ByName $mainWindow $answer 6000
+        if ($null -eq $option) { throw "В мастере нет ответа «$answer» — вопросы не построились" }
+        Invoke-Element $option $answer | Out-Null
+        Start-Sleep -Milliseconds 250
+    }
+
+    Save-Window $handle 'мастер-вопросы'
+
+    $nextButton = Find-ByName $mainWindow 'Дальше' 6000
+    if ($null -eq $nextButton) { throw 'В мастере нет кнопки «Дальше»' }
+    Invoke-Element $nextButton 'Дальше' | Out-Null
+    Start-Sleep -Milliseconds 900
+
+    $adviceText = Get-TextOfMainScreen $mainWindow
+    Save-Window $handle 'мастер-совет'
+    if ($adviceText -notmatch 'Низкий пинг' -and $adviceText -notmatch 'Что предлагаю')
+    {
+        throw 'Мастер не показал совет после трёх ответов — проверьте текст выше'
+    }
+
+    Say 'мастер ответил советом'
+    $laterButton = Find-ByName $mainWindow 'Позже' 6000
+    if ($null -eq $laterButton) { throw 'В мастере нет кнопки «Позже» — выйти без изменений нельзя' }
+    Invoke-Element $laterButton 'Позже' | Out-Null
+    Start-Sleep -Milliseconds 900
+    Say 'мастер закрыт кнопкой «Позже»: ничего не применено'
+}
+else
+{
+    Say 'мастер первого запуска не появился — значит, уже пройден'
+}
+
 Save-Window $handle 'главный-экран'
 
-# ── 2. Нажатие большой кнопки ───────────────────────────────────────────────────────────────────
+# ── 3. Нажатие большой кнопки ───────────────────────────────────────────────────────────────────
 Say ''
-Say '── Шаг 2: нажимаю «Оптимизировать соединение»'
-$mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+Say '── Шаг 3: нажимаю «Оптимизировать соединение»'
 $button = Find-ByName $mainWindow 'Оптимизировать соединение' 10000
 if ($null -eq $button)
 {
@@ -309,16 +384,39 @@ foreach ($line in ($answerText -split "`r?`n" | Where-Object { $_.Trim() } | Sel
     Say "    $($line.Trim())"
 }
 
-# ── 3. Разделы ──────────────────────────────────────────────────────────────────────────────────
+# ── 4. Открытие игры ───────────────────────────────────────────────────────────────────────────
 Say ''
-Say '── Шаг 3: прохожу по разделам'
+Say '── Шаг 4: открываю игру в разделе «Игры»'
+$gamesNav = Find-ByName $mainWindow 'Игры' 8000
+if ($null -eq $gamesNav) { throw 'В меню нет раздела «Игры»' }
+Invoke-Element $gamesNav 'Игры' | Out-Null
+Start-Sleep -Milliseconds 900
+
+$openButtons = Find-AllByName $mainWindow 'Открыть'
+if ($openButtons.Count -eq 0) { throw 'В разделе «Игры» нет ни одной кнопки «Открыть» — список игр не построился' }
+Say "кнопок «Открыть» в списке: $($openButtons.Count)"
+
+# Первая карточка — с заранее подставленным путём (блокнот вместо игры).
+Invoke-Element $openButtons[0] 'Открыть' | Out-Null
+Start-Sleep -Seconds 4
+
+$notepadRunning = @(Get-Process -Name notepad -ErrorAction SilentlyContinue).Count -gt 0
+if (-not $notepadRunning) { throw 'По кнопке «Открыть» игра не запустилась — блокнота в процессах нет' }
+Say 'игра запущена: процесс найден в системе'
+Save-Window $handle 'игра-запущена'
+Get-Process -Name notepad -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# ── 5. Разделы ──────────────────────────────────────────────────────────────────────────────────
+Say ''
+Say '── Шаг 5: прохожу по разделам'
 # Координаты пунктов меню внутри окна — запасной путь, если Windows не отдаёт их через
 # UI Automation (в этом прогоне так и вышло: список радиокнопок приходил пустым).
 $sections = @(
-    @{ Name = 'Твики';       Shot = 'раздел-твики';        X = 120; Y = 159 },
-    @{ Name = 'Журнал';      Shot = 'раздел-журнал';       X = 120; Y = 199 },
-    @{ Name = 'Настройки';   Shot = 'раздел-настройки';    X = 120; Y = 239 },
-    @{ Name = 'О программе'; Shot = 'раздел-о-программе';  X = 120; Y = 279 },
+    @{ Name = 'Игры';        Shot = 'раздел-игры';         X = 120; Y = 159 },
+    @{ Name = 'Твики';       Shot = 'раздел-твики';        X = 120; Y = 199 },
+    @{ Name = 'Журнал';      Shot = 'раздел-журнал';       X = 120; Y = 239 },
+    @{ Name = 'Настройки';   Shot = 'раздел-настройки';    X = 120; Y = 279 },
+    @{ Name = 'О программе'; Shot = 'раздел-о-программе';  X = 120; Y = 319 },
     @{ Name = 'Оптимизация'; Shot = 'раздел-оптимизация';  X = 120; Y = 118 }
 )
 

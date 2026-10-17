@@ -56,7 +56,10 @@ public sealed record AppSettings(
     bool OfferRestorePoint = true,
     bool StartMinimized = false,
     bool CloseToTray = true,
-    int JournalRowsShown = 20);
+    int JournalRowsShown = 20,
+    bool SetupCompleted = false,
+    string SetupAnswersRu = "",
+    IReadOnlyDictionary<string, string>? GamePaths = null);
 
 /// <summary>Память вместо файла: так проверяются «сохранилось / не сохранилось» без диска.</summary>
 public sealed class InMemorySettingsStore : IAppSettingsStore

@@ -187,14 +187,10 @@ public sealed class TweaksViewModel : ObservableObject
                 [("preset", preset.WireName), ("restorePoint", askRestorePoint ? "true" : "false")]).ConfigureAwait(true);
 
             StatusRu = response.MessageRu;
-            await _dialogs.InformAsync(
-                response.Ok ? "Твики применены" : "Применить не удалось",
-                response.MessageRu).ConfigureAwait(true);
         }
         catch (EngineUnavailableException ex)
         {
             StatusRu = ex.Message;
-            await _dialogs.InformAsync("Служба недоступна", ex.Message).ConfigureAwait(true);
         }
         finally
         {
@@ -248,14 +244,10 @@ public sealed class TweaksViewModel : ObservableObject
                 ]).ConfigureAwait(true);
 
             StatusRu = response.MessageRu;
-            await _dialogs.InformAsync(
-                response.Ok ? "Твики применены" : "Применить не удалось",
-                response.MessageRu).ConfigureAwait(true);
         }
         catch (EngineUnavailableException ex)
         {
             StatusRu = ex.Message;
-            await _dialogs.InformAsync("Служба недоступна", ex.Message).ConfigureAwait(true);
         }
         finally
         {
@@ -283,12 +275,10 @@ public sealed class TweaksViewModel : ObservableObject
         {
             EngineResponse response = await _engine.SendAsync(EngineCommandKind.RollbackSnapshot).ConfigureAwait(true);
             StatusRu = response.MessageRu;
-            await _dialogs.InformAsync("Возврат настроек", response.MessageRu).ConfigureAwait(true);
         }
         catch (EngineUnavailableException ex)
         {
             StatusRu = ex.Message;
-            await _dialogs.InformAsync("Служба недоступна", ex.Message).ConfigureAwait(true);
         }
     }
 }

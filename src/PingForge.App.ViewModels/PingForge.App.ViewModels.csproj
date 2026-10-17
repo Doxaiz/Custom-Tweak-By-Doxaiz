@@ -14,6 +14,8 @@
     <ProjectReference Include="..\PingForge.Service\PingForge.Service.csproj" />
     <!-- Каталог твиков читается напрямую: описание и вердикты — те же, что применяет служба. -->
     <ProjectReference Include="..\PingForge.Tweaks\PingForge.Tweaks.csproj" />
+    <!-- Список известных игр — тот же, по которому движок ищет игровой процесс: один источник правды. -->
+    <ProjectReference Include="..\PingForge.Network\PingForge.Network.csproj" />
   </ItemGroup>
 
 </Project>

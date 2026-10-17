@@ -242,7 +242,7 @@ public sealed class MainViewModel : ObservableObject
         catch (EngineUnavailableException ex)
         {
             StatusRu = ex.Message;
-            await _dialogs.InformAsync("Служба недоступна", ex.Message).ConfigureAwait(true);
+            ShowNotice("Служба недоступна", ex.Message);
         }
     }
 
