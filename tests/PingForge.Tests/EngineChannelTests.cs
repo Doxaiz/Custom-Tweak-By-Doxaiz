@@ -230,8 +230,19 @@ public class EngineChannelTests
             () => client.PingAsync());
         await server;
 
-        Assert.Contains("не ответила за", error.Message);
-        Assert.Contains("повторите нажатие", error.Message, StringComparison.OrdinalIgnoreCase);
+        // Два честных исхода одного и того же сценария, и оба — понятный отказ:
+        //   • клиент дождался своего таймаута → «не ответила за N мс»;
+        //   • двойник успел закрыть соединение раньше → «закрыла канал, не ответив».
+        // На сборочной машине побеждает то один, то другой — раньше из-за этого прогон краснел
+        // примерно раз на десять запусков, хотя программа вела себя правильно в обоих случаях.
+        Assert.True(
+            error.Message.Contains("не ответила за", StringComparison.Ordinal) ||
+            error.Message.Contains("не ответив", StringComparison.Ordinal),
+            $"ожидался понятный отказ, а пришло: {error.Message}");
+        Assert.True(
+            error.Message.Contains("повторите нажатие", StringComparison.OrdinalIgnoreCase) ||
+            error.Message.Contains("повторите", StringComparison.OrdinalIgnoreCase),
+            $"в отказе нет совета, что делать: {error.Message}");
     }
 
     [Fact]
