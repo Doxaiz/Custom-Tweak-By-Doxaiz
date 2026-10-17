@@ -54,13 +54,17 @@ jobs:
           $service.WaitForStatus('Running', [TimeSpan]::FromSeconds(90))
           Write-Host "Служба работает: $((Get-Service PingForge).Status)"
 
+      # shell: powershell — это Windows PowerShell 5.1, как у людей. Важно: раннер записывает
+      # встроенный скрипт во временный .ps1 БЕЗ метки UTF-8, и 5.1 читает его как cp1252.
+      # Поэтому здесь, в отличие от самого tools/ui-walkthrough.ps1, кириллицы быть не должно:
+      # она превращается в мусор, а символы вроде длинного тире ломают разбор («missing the terminator»).
       - name: Пройти по программе как человек
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\CustomTweakByDoxaiz.exe'
           & tools/ui-walkthrough.ps1 -AppPath $exe -OutDir 'dist/walkthrough'
-          if (-not $?) { throw 'Проверка программы не прошла: причина — в строках выше' }
+          if (-not $?) { throw 'Walkthrough failed - see the log above' }
 
       - name: Приложить снимки и журналы
         if: always()
