@@ -1,0 +1,101 @@
+# Проверка программы «как человек» на настоящей Windows — по запросу.
+#
+# Локальной виртуальной машины у помощника нет (нет аппаратной виртуализации и памяти),
+# поэтому роль «живой Windows» играет эта сборочная машина: она настоящая, на ней есть
+# рабочий стол, и скрипт tools/ui-walkthrough.ps1 делает то же, что делает человек —
+# запускает программу, нажимает большую кнопку, проходит по разделам и снимает экран.
+#
+# Запуск: Actions → «Проверка программы как человек» → Run workflow.
+# Результат: снимки каждого шага и журнал запуска в артефактах.
+
+name: Проверка программы как человек (Windows)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  walkthrough:
+    name: Запуск, кнопка, разделы (живая Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v7
+
+      - name: Поставить .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Сборка
+        run: dotnet build PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --nologo
+
+      - name: Собрать программу и службу (компактно — для проверки достаточно)
+        run: |
+          dotnet publish src/PingForge.App/PingForge.App.csproj -c Release -r win-x64 --self-contained false -o dist/walk --nologo
+          dotnet publish src/PingForge.Service.Host/PingForge.Service.Host.csproj -c Release -r win-x64 --self-contained false -o dist/walk --nologo
+          Copy-Item scripts/*.ps1 dist/walk -Force
+          Copy-Item docs/УСТАНОВКА.md dist/walk -Force
+          Get-ChildItem dist/walk -Filter *.pdb | Remove-Item -Force
+          Get-ChildItem dist/walk -File | Select-Object Name, @{n='МБ';e={[math]::Round($_.Length / 1MB, 1)}}
+
+      - name: Поставить службу (как это делает установщик)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installDir = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz'
+          & 'dist/walk/install-service.ps1' -InstallDir $installDir -NoShortcut
+          if ($LASTEXITCODE -ne 0) { throw "install-service.ps1 вернул код $LASTEXITCODE" }
+
+          $service = Get-Service -Name PingForge -ErrorAction SilentlyContinue
+          if (-not $service) { throw 'Служба не зарегистрирована' }
+          $service.WaitForStatus('Running', [TimeSpan]::FromSeconds(90))
+          Write-Host "Служба работает: $((Get-Service PingForge).Status)"
+
+      - name: Пройти по программе как человек
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\CustomTweakByDoxaiz.exe'
+          & tools/ui-walkthrough.ps1 -AppPath $exe -OutDir 'dist/walkthrough'
+          if ($LASTEXITCODE -ne 0) { throw "Проверка вернула код $LASTEXITCODE" }
+
+      - name: Приложить снимки и журналы
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: walkthrough-windows
+          path: |
+            dist/walkthrough/*.png
+            dist/walkthrough/*.txt
+          if-no-files-found: warn
+
+      - name: Журналы при отказе
+        if: failure()
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:LOCALAPPDATA 'CustomTweakByDoxaiz\app-start.log'
+          if (Test-Path $log) {
+            Write-Host '── Журнал запуска программы:'
+            Get-Content $log | ForEach-Object { Write-Host $_ }
+            Copy-Item $log 'dist/walkthrough/app-start.log' -Force -ErrorAction SilentlyContinue
+          } else {
+            Write-Host 'Журнала запуска нет'
+          }
+
+          $serviceLog = Join-Path $env:ProgramData 'PingForge\service.log'
+          if (Test-Path $serviceLog) {
+            Write-Host '── Журнал службы:'
+            Get-Content $serviceLog | Select-Object -Last 60 | ForEach-Object { Write-Host $_ }
+          }
+
+      - name: Снять службу
+        if: always()
+        shell: pwsh
+        run: |
+          $script = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\uninstall-service.ps1'
+          if (Test-Path $script) { & $script -KeepFiles -RemoveData 2>&1 | Out-Host }
+          Get-Service -Name PingForge -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue
+          sc.exe delete PingForge | Out-Null
