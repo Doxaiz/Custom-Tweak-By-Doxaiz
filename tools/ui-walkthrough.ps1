@@ -40,6 +40,37 @@ public static class PfWin
     public struct RECT { public int Left, Top, Right, Bottom; }
 
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int max);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+
+    /// Все видимые окна процесса — по ним видно и главное окно, и сообщения.
+    public static System.Collections.Generic.List<IntPtr> WindowsOf(uint pid)
+    {
+        var found = new System.Collections.Generic.List<IntPtr>();
+        EnumWindows((handle, _) =>
+        {
+            uint owner;
+            GetWindowThreadProcessId(handle, out owner);
+            if (owner == pid && IsWindowVisible(handle)) { found.Add(handle); }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    public static string ClassOf(IntPtr handle)
+    {
+        var buffer = new System.Text.StringBuilder(256);
+        GetClassName(handle, buffer, buffer.Capacity);
+        return buffer.ToString();
+    }
+
+    /// Закрыть окно сообщения так же, как это делает нажатие на крестик: WM_CLOSE.
+    public static void Close(IntPtr handle) { PostMessage(handle, 0x0010, IntPtr.Zero, IntPtr.Zero); }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int cmd);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
@@ -136,49 +167,23 @@ function Invoke-Element($element, [string]$what)
     return $false
 }
 
-function Close-Dialogs([int]$processId, [IntPtr]$mainHandle)
+function Close-Dialogs([int]$processId, [IntPtr]$mainHandle, [string]$shotName = 'сообщение')
 {
-    # Сообщения программы — отдельные окна того же процесса (класс #32770). Главное окно
-    # отличается по ОБРАБОТЧИКУ, а не по заголовку: у сообщения заголовок тоже начинается
-    # с названия программы, и первая версия скрипта из-за этого считала сообщение главным
-    # окном, не закрывала его — и дальше не могла найти ни одного раздела.
+    # Сообщения программы — окна класса #32770 того же процесса. Раньше здесь был UI Automation,
+    # и это оказалось ненадёжно: кнопку находили, а нажать её не получалось — модальное окно
+    # оставалось, держало главное окно и растягивало проверку на тринадцать минут.
+    # Теперь закрываем так же, как крестик: WM_CLOSE. Это работает всегда.
     $closed = 0
-    $root = [System.Windows.Automation.AutomationElement]::RootElement
-    $condition = New-Object System.Windows.Automation.PropertyCondition(
-        [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $processId)
-
-    foreach ($window in $root.FindAll([System.Windows.Automation.TreeScope]::Children, $condition))
+    foreach ($window in [PfWin]::WindowsOf([uint32]$processId))
     {
-        if ($window.Current.ClassName -ne '#32770') { continue }
-        if ([IntPtr]$window.Current.NativeWindowHandle -eq $mainHandle) { continue }
+        if ($window -eq $mainHandle) { continue }
+        if ([PfWin]::ClassOf($window) -ne '#32770') { continue }
 
-        $title = $window.Current.Name
-        Say "появилось сообщение: «$title»"
-        Save-Window ([IntPtr]$window.Current.NativeWindowHandle) 'сообщение'
-
-        $pressed = $false
-        foreach ($label in @('ОК', 'OK', 'Да', 'Yes', 'Закрыть', 'Close'))
-        {
-            $button = Find-ByName $window $label 1500
-            if ($null -ne $button)
-            {
-                Invoke-Element $button "«$label» в сообщении" | Out-Null
-                $pressed = $true
-                break
-            }
-        }
-
-        if (-not $pressed)
-        {
-            # Запасной путь: Enter нажимает кнопку по умолчанию в любом сообщении Windows.
-            [PfWin]::SetForegroundWindow([IntPtr]$window.Current.NativeWindowHandle) | Out-Null
-            Start-Sleep -Milliseconds 300
-            [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-            Say 'нажато: Enter в сообщении (кнопка по умолчанию)'
-        }
-
+        Save-Window $window $shotName
+        Say 'закрываю сообщение'
+        [PfWin]::Close($window)
+        Start-Sleep -Milliseconds 400
         $closed++
-        Start-Sleep -Milliseconds 700
     }
 
     return $closed
@@ -225,17 +230,18 @@ Invoke-Element $button 'Оптимизировать соединение' | Out
 
 # Даём время дойти до службы (её ответ — до 10 с) и посмотреть, что вышло.
 $dialogSeen = 0
-$statusText = ''
-for ($i = 0; $i -lt 25; $i++)
+$quiet = 0
+for ($i = 0; $i -lt 30; $i++)
 {
-    Start-Sleep -Milliseconds 800
-    $dialogSeen += Close-Dialogs $process.Id $handle
+    Start-Sleep -Milliseconds 1000
     if ($process.HasExited) { break }
+    $closedNow = Close-Dialogs $process.Id $handle
+    $dialogSeen += $closedNow
+    $quiet = if ($closedNow -gt 0) { 0 } else { $quiet + 1 }
 
-    # Ждём, пока программа закончит отвечать: кнопка снова доступна — значит работа кончилась.
-    $mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
-    $statusText = Get-TextOfMainScreen $mainWindow
-    if ($dialogSeen -gt 0 -and $i -ge 3) { break }
+    # Программа дошла до службы за секунду-две; если три секунды подряд ничего не появляется —
+    # работа закончилась, и ждать впустую незачем.
+    if ($quiet -ge 3) { break }
 }
 
 if ($process.HasExited)
@@ -246,6 +252,9 @@ if ($process.HasExited)
 $handle = (Get-Process -Id $process.Id).MainWindowHandle
 Save-Window $handle 'после-нажатия'
 Say 'программа жива после нажатия'
+
+$mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+$statusText = Get-TextOfMainScreen $mainWindow
 
 # ── 3. Разделы ──────────────────────────────────────────────────────────────────────────────────
 Say ''
@@ -280,7 +289,7 @@ foreach ($section in $sections)
 
     Invoke-Element $element $section.Name | Out-Null
     Start-Sleep -Milliseconds 1200
-    Close-Dialogs $process.Id $handle | Out-Null
+    Close-Dialogs $process.Id $handle ('сообщение-' + $section.Shot) | Out-Null
     Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) $section.Shot
 }
 
