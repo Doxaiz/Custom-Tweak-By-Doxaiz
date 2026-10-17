@@ -5,7 +5,8 @@
 
   <!-- Мастер первого запуска поверх окна: три шага, как в BoosterX.
        Ничего не применяется само — последний шаг показывает, что именно будет изменено. -->
-  <Grid Background="#D9080D18">
+  <!-- Подложка почти непрозрачная: сквозь мастер не должен просвечивать текст страницы. -->
+  <Grid Background="#F5080D18">
     <Border MaxWidth="760" Margin="24" VerticalAlignment="Center"
             Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1"
             CornerRadius="14" Padding="26">
