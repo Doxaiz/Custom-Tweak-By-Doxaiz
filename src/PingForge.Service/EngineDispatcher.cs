@@ -8,6 +8,10 @@ namespace PingForge.Service;
 /// Разбор запроса и вызов нужной операции. Здесь же — единственное место, где проверяются права:
 /// если команда меняет систему, а прав нет, дальше она не проходит. Ошибка никогда не «улетает» в канал:
 /// клиент обязан получить ответ с текстом, который можно показать пользователю.
+///
+/// Проверок прав две, и они не заменяют друг друга: права клиента (у того, кто подключился к каналу,
+/// в его собственном процессе) и права службы. Без первой проверки канал службы — это готовое повышение
+/// привилегий для любого пользователя компьютера: служба работает от LocalSystem и выполнит любую команду.
 /// </summary>
 public sealed class EngineDispatcher
 {
@@ -21,11 +25,38 @@ public sealed class EngineDispatcher
 
     private readonly IEngineOperations _operations;
 
-    public EngineDispatcher(IEngineOperations operations) =>
-        _operations = operations ?? throw new ArgumentNullException(nameof(operations));
+    /// <summary>Какой канал обслуживает этот разборщик: от этого зависит набор доступных команд.</summary>
+    private readonly EngineChannelKind _channelKind;
 
-    /// <summary>Полный путь: JSON по каналу → ответ. Пустой или битый запрос тоже получает ответ с текстом.</summary>
-    public async Task<EngineResponse> HandleJsonAsync(string requestJson, CancellationToken ct = default)
+    public EngineDispatcher(IEngineOperations operations, EngineChannelKind channelKind = EngineChannelKind.Main)
+    {
+        _operations = operations ?? throw new ArgumentNullException(nameof(operations));
+        _channelKind = channelKind;
+    }
+
+    /// <summary>
+    /// Разборщик тех же операций для другого канала (C2). Один и тот же набор действий службы,
+    /// но разные наборы команд: канал чтения не выполняет ничего, что меняет Windows, — даже для
+    /// администратора. Так проверка «что можно через этот канал» не смешивается с проверкой прав.
+    /// </summary>
+    public EngineDispatcher ForChannel(EngineChannelKind channelKind) => new(_operations, channelKind);
+
+    /// <summary>
+    /// Полный путь: JSON по каналу → ответ. Пустой или битый запрос тоже получает ответ с текстом.
+    /// </summary>
+    /// <param name="requestJson">Кадр запроса, пришедший по каналу.</param>
+    /// <param name="clientIsAdministrator">
+    /// Есть ли права администратора у того, кто подключился к каналу, — в его собственном процессе.
+    /// По умолчанию «да» только ради существующих проверок разбора запросов; настоящий канал обязан
+    /// передавать сюда прочитанные права клиента (см. <c>PipeClientInspector</c>).
+    /// </param>
+    /// <param name="onDenialRu">Куда сообщить об отказе по правам: служба пишет это в журнал вместе с именем клиента.</param>
+    /// <param name="ct">Отмена: закрылось окно или останавливается служба.</param>
+    public async Task<EngineResponse> HandleJsonAsync(
+        string requestJson,
+        bool clientIsAdministrator = true,
+        Action<string>? onDenialRu = null,
+        CancellationToken ct = default)
     {
         if (!EngineJson.TryDecodeRequest(requestJson, out EngineRequest? request, out string errorRu))
         {
@@ -33,21 +64,65 @@ public sealed class EngineDispatcher
             return EngineResponse.Failure(string.Empty, errorRu);
         }
 
-        return await HandleAsync(request!, ct).ConfigureAwait(false);
+        return await HandleAsync(request!, clientIsAdministrator, onDenialRu, ct).ConfigureAwait(false);
     }
 
-    public async Task<EngineResponse> HandleAsync(EngineRequest request, CancellationToken ct = default)
+    public async Task<EngineResponse> HandleAsync(
+        EngineRequest request,
+        bool clientIsAdministrator = true,
+        Action<string>? onDenialRu = null,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
         EngineCommandDescriptor descriptor = EngineCommandCatalog.Get(request.Command);
 
-        if (descriptor.NeedsElevation && !_operations.IsElevationAvailable)
+        // C2: канал только для чтения не выполняет команды, меняющие систему, — и это отдельная
+        // проверка от прав клиента. Даже администратор, подключившийся к каналу чтения, получит
+        // отказ и подсказку идти в основной канал: изменения должны проходить через место, где
+        // работают все проверки, а не через «удобную лазейку» рядом.
+        if (_channelKind == EngineChannelKind.ReadOnly && !EngineCommandCatalog.IsAllowedOnReadOnlyChannel(descriptor))
         {
-            return EngineResponse.Failure(
-                request.Id,
-                $"Команда «{descriptor.WireName}» меняет настройки Windows, а сейчас нет прав администратора. " +
-                "Запустите приложение от имени администратора или проверьте, что служба PingForge запущена.");
+            string denial =
+                $"Команда «{descriptor.WireName}» недоступна: этот канал службы открыт только для чтения. " +
+                $"Отсюда доступны {EngineCommandCatalog.ReadOnlyChannelWireNamesRu()} — посмотреть состояние, " +
+                "прочитать журнал и убрать свои изменения. Чтобы менять настройки Windows, запустите программу " +
+                "от имени администратора: тогда она подключится к основному каналу, где такие команды выполняются.";
+            onDenialRu?.Invoke(denial);
+            return EngineResponse.Failure(request.Id, denial);
+        }
+
+        if (descriptor.NeedsElevation)
+        {
+            // Две независимые проверки, и первая из них — про КЛИЕНТА, а не про службу.
+            //
+            // Служба идёт от LocalSystem, поэтому её собственные права есть всегда: если проверять
+            // только их, любой пользователь этого компьютера (второй профиль, гость, любой скрипт
+            // от имени вошедшего пользователя) мог бы отправить «применить твики» по каналу и получить
+            // изменение настроек Windows от имени системы — без единого запроса UAC.
+            // Канал при этом открыт для интерактивного входа на чтение и запись: смотреть состояние
+            // можно всем, а менять — только тому, у кого права есть в его собственном процессе.
+            if (!clientIsAdministrator)
+            {
+                string denial =
+                    $"Команда «{descriptor.WireName}» меняет настройки Windows и выполняется только для администратора этого компьютера. " +
+                    "У процесса, который её прислал, прав администратора нет. Права службы здесь не помогают: она работает " +
+                    "от имени системы, поэтому проверяется именно ваша учётная запись. Закройте программу и запустите её " +
+                    "от имени администратора — тогда изменение настроек станет доступным. Смотреть состояние, журнал и " +
+                    "останавливать свои изменения можно и без прав.";
+                onDenialRu?.Invoke(denial);
+                return EngineResponse.Failure(request.Id, denial);
+            }
+
+            if (!_operations.IsElevationAvailable)
+            {
+                string denial =
+                    $"Команда «{descriptor.WireName}» меняет настройки Windows, а у службы PingForge сейчас нет прав администратора. " +
+                    "Проверьте, что служба запущена от имени системы, или переустановите её скриптом install-service.ps1 " +
+                    "от имени администратора.";
+                onDenialRu?.Invoke(denial);
+                return EngineResponse.Failure(request.Id, denial);
+            }
         }
 
         var args = new EngineArgs(request.Args, descriptor.WireName);

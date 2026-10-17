@@ -1,6 +1,6 @@
 using System.IO;
 using System.Text.Json;
-using System.Text.Json.Nodes;
+using PingForge.Core.Security;
 using PingForge.Orchestration.Realtime;
 using PingForge.Service.Protocol;
 
@@ -11,27 +11,37 @@ namespace PingForge.Service.Host;
 ///
 /// Почему отдельный маленький класс, а не общая модель: служба не должна зависеть от WPF-проекта
 /// (и от его библиотек), а файл — общий. Читаем его терпимо: нет файла или он битый — берём «обычный»
-/// профиль и говорим об этом в журнале; чужие поля не трогаем, при записи меняем только свой.
+/// профиль; чужие поля не трогаем, при записи меняем только свой.
+///
+/// Файл общий, и писателей двое (окно и служба), поэтому чтение и запись идут через
+/// <see cref="SharedSettingsFileWriter"/> — под общим для обоих процессов мьютексом. Раньше служба
+/// делала «прочитать весь файл → заменить свой ключ → записать», и при одновременном сохранении
+/// в окне последний записавший затирал чужие поля: человек терял пути к играм или пройденный мастер
+/// первого запуска, а программа об этом не сообщала.
 /// </summary>
 internal static class ServiceSettings
 {
-    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
-
     public static string FilePath(string dataDirectory) => Path.Combine(dataDirectory, "settings.json");
+
+    /// <summary>Писатель общего файла: тот же путь и то же имя блокировки, что у окна программы.</summary>
+    private static SharedSettingsFileWriter Writer(string dataDirectory) => new(FilePath(dataDirectory));
 
     /// <summary>Профиль из файла. Непрочитанный профиль — «обычно», а не «экономно»: не выдумываем.</summary>
     public static PerfProfile ReadProfile(string dataDirectory)
     {
-        string path = FilePath(dataDirectory);
-
         try
         {
-            if (!File.Exists(path))
+            if (!Writer(dataDirectory).TryRead(out string json, out _))
             {
                 return PerfProfile.Balanced;
             }
 
-            string json = File.ReadAllText(path);
+            if (json.Length == 0)
+            {
+                // Файла ещё нет: первый запуск службы до первого сохранения в окне.
+                return PerfProfile.Balanced;
+            }
+
             string? wire = ReadStringIgnoreCase(json, "PerfProfile");
 
             return wire is not null && EngineNames.TryParseProfile(wire, out PerfProfile profile)
@@ -45,37 +55,27 @@ internal static class ServiceSettings
     }
 
     /// <summary>
-    /// Записать профиль, не затирая остального: мастер первого запуска и пути к играм лежат в том же файле.
-    /// Запись через временный файл — как в окне программы: половины файла не бывает.
+    /// Записать профиль, не затирая остального: мастер первого запуска, пути к играм и свои игры лежат
+    /// в том же файле и принадлежат окну программы.
     /// </summary>
     public static bool TryWriteProfile(string dataDirectory, PerfProfile profile)
     {
-        string path = FilePath(dataDirectory);
+        SharedFileWriteResult result = Writer(dataDirectory).Update(
+            root =>
+            {
+                // Сохраняем чужой регистр ключа, если он уже есть: файл принадлежит не службе.
+                string key = root.Select(pair => pair.Key)
+                    .FirstOrDefault(name => string.Equals(name, "PerfProfile", StringComparison.OrdinalIgnoreCase))
+                    ?? "PerfProfile";
 
-        try
-        {
-            Directory.CreateDirectory(dataDirectory);
+                root[key] = EngineNames.ProfileWireName(profile);
+                return root;
+            },
+            // Битый файл служба не затирает и не переименовывает: это файл окна, и решение о том,
+            // что с ним делать, принимает окно. Служба просто честно не пишет.
+            quarantineBroken: false);
 
-            JsonObject root = File.Exists(path)
-                ? JsonNode.Parse(File.ReadAllText(path)) as JsonObject ?? new JsonObject()
-                : new JsonObject();
-
-            // Сохраняем чужой регистр ключа, если он уже есть: файл принадлежит не службе.
-            string key = root.Select(pair => pair.Key)
-                .FirstOrDefault(name => string.Equals(name, "PerfProfile", StringComparison.OrdinalIgnoreCase))
-                ?? "PerfProfile";
-
-            root[key] = EngineNames.ProfileWireName(profile);
-
-            string temp = path + ".tmp";
-            File.WriteAllText(temp, root.ToJsonString(Options));
-            File.Move(temp, path, overwrite: true);
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-        {
-            return false;
-        }
+        return result.Written;
     }
 
     private static string? ReadStringIgnoreCase(string json, string property)

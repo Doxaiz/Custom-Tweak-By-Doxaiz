@@ -329,6 +329,152 @@ public class ServiceDispatcherTests
         Assert.Equal("""{"optimizing":false,"probes":360}""", response.DataJson);
     }
 
+    // ── права клиента канала (C1: служба от LocalSystem не делает администратором того, кто подключился) ──
+
+    /// <summary>Команды, которые меняют систему: каждой из них клиент без прав обязан получить отказ.</summary>
+    public static TheoryData<string, string> МеняющиеКоманды => new()
+    {
+        { "apply-preset", """{"id":"1","command":"apply-preset","args":{"preset":"low-latency"}}""" },
+        { "apply-tweaks", """{"id":"2","command":"apply-tweaks","args":{"tweaks":"TCP_NO_DELAY"}}""" },
+        { "rollback", """{"id":"3","command":"rollback"}""" },
+        { "repair-network", """{"id":"4","command":"repair-network"}""" },
+        { "realtime-start", """{"id":"5","command":"realtime-start"}""" },
+    };
+
+    [Theory]
+    [MemberData(nameof(МеняющиеКоманды))]
+    public async Task Клиент_без_прав_администратора_получает_отказ_а_служба_ничего_не_выполняет(string wire, string json)
+    {
+        var ops = new FakeEngineOperations();
+
+        EngineResponse response = await Dispatcher(ops).HandleJsonAsync(json, clientIsAdministrator: false);
+
+        Assert.False(response.Ok);
+        Assert.Contains("администратора", response.MessageRu);
+        Assert.Contains(wire, response.MessageRu);
+
+        // Главное: операция не вызвана вовсе. Отказ «на словах» при выполненном изменении был бы хуже дыры.
+        Assert.Empty(ops.AppliedPresets);
+        Assert.Empty(ops.AppliedTweakSets);
+        Assert.False(ops.RollbackCalled);
+        Assert.Equal(0, ops.RepairNetworkCalls);
+        Assert.False(ops.RealtimeRunning);
+    }
+
+    [Fact]
+    public async Task Отказ_по_правам_клиента_объясняет_что_права_службы_здесь_не_помогают()
+    {
+        // Служба идёт от LocalSystem: её права есть всегда. Раньше проверялись только они —
+        // и любой пользователь компьютера мог менять Windows через канал без единого запроса UAC.
+        var ops = new FakeEngineOperations { IsElevationAvailable = true };
+
+        EngineResponse response = await Dispatcher(ops)
+            .HandleJsonAsync("""{"id":"1","command":"apply-preset","args":{"preset":"low-latency"}}""", clientIsAdministrator: false);
+
+        Assert.False(response.Ok);
+        Assert.Contains("от имени системы", response.MessageRu);
+        Assert.Contains("ваша учётная запись", response.MessageRu);
+        Assert.Contains("от имени администратора", response.MessageRu);
+        Assert.Empty(ops.AppliedPresets);
+    }
+
+    [Fact]
+    public async Task Чтение_и_остановка_своих_изменений_работают_у_клиента_без_прав()
+    {
+        var ops = new FakeEngineOperations();
+        var dispatcher = Dispatcher(ops);
+
+        EngineResponse ping = await dispatcher.HandleJsonAsync("""{"id":"1","command":"ping"}""", clientIsAdministrator: false);
+        EngineResponse capabilities = await dispatcher.HandleJsonAsync("""{"id":"2","command":"capabilities"}""", clientIsAdministrator: false);
+        EngineResponse status = await dispatcher.HandleJsonAsync("""{"id":"3","command":"status"}""", clientIsAdministrator: false);
+        EngineResponse journal = await dispatcher.HandleJsonAsync("""{"id":"4","command":"journal-tail"}""", clientIsAdministrator: false);
+        EngineResponse state = await dispatcher.HandleJsonAsync("""{"id":"5","command":"system-state"}""", clientIsAdministrator: false);
+        EngineResponse stop = await dispatcher.HandleJsonAsync("""{"id":"6","command":"realtime-stop"}""", clientIsAdministrator: false);
+
+        Assert.True(ping.Ok);
+        Assert.True(capabilities.Ok);
+        Assert.True(status.Ok);
+        Assert.True(journal.Ok);
+        Assert.True(state.Ok);
+
+        // «Вернуть как было» нельзя отбирать у обычного пользователя: иначе снять изменения
+        // сможет только тот, кто их и не делал.
+        Assert.True(stop.Ok);
+        Assert.False(ops.RealtimeRunning);
+    }
+
+    [Fact]
+    public async Task Клиент_с_правами_получает_прежнее_поведение()
+    {
+        var ops = new FakeEngineOperations();
+
+        EngineResponse response = await Dispatcher(ops)
+            .HandleJsonAsync("""{"id":"1","command":"apply-preset","args":{"preset":"low-latency"}}""", clientIsAdministrator: true);
+
+        Assert.True(response.Ok);
+        Assert.Single(ops.AppliedPresets);
+    }
+
+    [Fact]
+    public async Task Права_службы_проверяются_отдельно_от_прав_клиента()
+    {
+        // Клиент — администратор, а у службы прав нет (её запустили руками без повышения).
+        // Это другой отказ: про службу, а не про учётную запись пользователя.
+        var ops = new FakeEngineOperations { IsElevationAvailable = false };
+
+        EngineResponse response = await Dispatcher(ops)
+            .HandleJsonAsync("""{"id":"1","command":"apply-preset","args":{"preset":"low-latency"}}""", clientIsAdministrator: true);
+
+        Assert.False(response.Ok);
+        Assert.Contains("у службы PingForge", response.MessageRu);
+        Assert.DoesNotContain("ваша учётная запись", response.MessageRu);
+        Assert.Empty(ops.AppliedPresets);
+    }
+
+    [Fact]
+    public async Task Отказ_по_правам_виден_в_журнале_службы()
+    {
+        var denials = new List<string>();
+
+        EngineResponse response = await Dispatcher()
+            .HandleJsonAsync(
+                """{"id":"1","command":"repair-network"}""",
+                clientIsAdministrator: false,
+                onDenialRu: denials.Add);
+
+        Assert.False(response.Ok);
+        string logged = Assert.Single(denials);
+        Assert.Contains("repair-network", logged);
+    }
+
+    [Fact]
+    public async Task Отказа_по_правам_нет_в_журнале_когда_команда_разрешена()
+    {
+        var denials = new List<string>();
+
+        await Dispatcher().HandleJsonAsync("""{"id":"1","command":"status"}""", clientIsAdministrator: false, onDenialRu: denials.Add);
+
+        Assert.Empty(denials);
+    }
+
+    [Fact]
+    public void Список_меняющих_команд_в_тесте_совпадает_с_таблицей_службы()
+    {
+        // Сторож: добавят новую команду, меняющую систему, — тест напомнит проверить её права.
+        string[] expected = EngineCommandCatalog.All
+            .Where(item => item.NeedsElevation)
+            .Select(item => item.WireName)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        string[] covered = МеняющиеКоманды
+            .Select(row => (string)row[0])
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(expected, covered);
+    }
+
     /// <summary>Двойник операций: запоминает, что у него просили, и умеет падать по заказу теста.</summary>
     private sealed class FakeEngineOperations : IEngineOperations
     {
@@ -339,6 +485,8 @@ public class ServiceDispatcherTests
         public List<IReadOnlyList<string>> AppliedTweakSets { get; } = [];
 
         public bool RollbackCalled { get; private set; }
+
+        public int RepairNetworkCalls { get; private set; }
 
         public string? LastSnapshotId { get; private set; }
 
@@ -383,8 +531,11 @@ public class ServiceDispatcherTests
             return Task.FromResult(EngineOperationResult.Success("Прежние настройки возвращены."));
         }
 
-        public Task<EngineOperationResult> RepairNetworkAsync(CancellationToken ct = default) =>
-            Task.FromResult(EngineOperationResult.Success("Остатков после аварии не найдено."));
+        public Task<EngineOperationResult> RepairNetworkAsync(CancellationToken ct = default)
+        {
+            RepairNetworkCalls++;
+            return Task.FromResult(EngineOperationResult.Success("Остатков после аварии не найдено."));
+        }
 
         public Task<EngineOperationResult> JournalTailAsync(int limit, CancellationToken ct = default)
         {

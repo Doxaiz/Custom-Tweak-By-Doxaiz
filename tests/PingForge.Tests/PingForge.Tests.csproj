@@ -23,6 +23,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Файлы, которые тесты проверяют текстом: манифест окна, проект окна (чтобы манифест был
+         подключён) и место, где собираются права канала. Копируются в вывод теста, потому что
+         сборка идёт с artifacts-path вне папки решения — искать их обходом каталогов вверх нельзя.
+         Как None, а не как Compile: исходник чужого проекта не должен компилироваться здесь. -->
+    <None Include="..\..\src\PingForge.App\app.manifest" Link="checked-app.manifest" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\PingForge.App.csproj" Link="checked-PingForge.App.csproj" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.Service.Windows\PipeAclFactory.cs" Link="checked-PipeAclFactory.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\КАНАЛЫ-СЛУЖБЫ.md" Link="checked-pipes-doc.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Манифест окна программы «Custom Tweak By Doxaiz».
+
+  Два объявления, и оба — про доверие, а не про удобство:
+
+  1) asInvoker. Программа НЕ просит прав администратора при запуске. Это правило продукта:
+     при запуске ничего не меняется, а изменение настроек Windows делает служба — и только для
+     клиента, у которого права администратора есть в его собственном процессе. Без явного asInvoker
+     поведение зависит от настроек системы и от того, как именно запущен файл (двойной щелчок,
+     «Запуск от имени администратора», ярлык с флагом совместимости) — то есть права оказываются
+     подразумеваемыми, а не объявленными.
+
+  2) PerMonitorV2. Без объявленной поддержки DPI Windows сама растягивает растровое изображение
+     окна при масштабе 125/150 %: текст мылится, а человек с ноутбуком видит программу хуже,
+     чем она нарисована. PerMonitorV2 означает, что окно перерисовывается само и остаётся чётким
+     при смене масштаба и при перетаскивании на другой монитор.
+
+  longPathAware — длинные пути к играм («C:\Program Files (x86)\Steam\steamapps\common\...»)
+  не обрезаются на 260 символах.
+-->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="CustomTweakByDoxaiz.app" />
+
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 и 11: без этого объявления система может включить режим совместимости. -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+</assembly>

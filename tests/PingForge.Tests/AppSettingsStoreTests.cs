@@ -90,7 +90,12 @@ public sealed class AppSettingsStoreTests : IDisposable
         Assert.Contains(path, store.LastLoadProblemRu);
 
         // Важно: битый файл не перезаписывается молча — иначе жалко потерять то, что там уцелело.
-        Assert.Contains("не json", File.ReadAllText(path));
+        // Он убирается в сторону с меткой времени: содержимое остаётся на диске и его можно разобрать,
+        // а следующая запись начинается с чистого файла вместо решения «что делать с мусором».
+        Assert.False(File.Exists(path), "битый файл обязан быть убран в сторону, а не оставлен на месте записи");
+        string broken = Assert.Single(Directory.GetFiles(_directory, "settings.json.broken-*"));
+        Assert.Contains("не json", File.ReadAllText(broken));
+        Assert.Contains(broken, store.LastLoadProblemRu);
     }
 
     [Fact]

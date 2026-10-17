@@ -12,6 +12,10 @@
     <!-- Имя изделия в интерфейсе, в свойствах файла и в окне «О программе». -->
     <Product>Custom Tweak By Doxaiz</Product>
     <AssemblyTitle>Custom Tweak By Doxaiz</AssemblyTitle>
+    <!-- Манифест указан явно, а не «SDK сам подхватит»: asInvoker (программа не просит прав при
+         запуске — это правило продукта) и PerMonitorV2 (чёткий текст при масштабе 125/150 %).
+         Проверка содержимого — в тесте AppManifestAndSecurityGuardTests. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>

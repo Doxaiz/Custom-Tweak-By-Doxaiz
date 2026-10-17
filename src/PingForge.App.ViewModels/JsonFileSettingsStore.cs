@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using PingForge.Core.Security;
 
 namespace PingForge.App.ViewModels;
 
@@ -6,15 +8,29 @@ namespace PingForge.App.ViewModels;
 /// Настройки на диске: обычный JSON рядом с базой службы. Лежит здесь, а не в слое Windows, по одной
 /// причине — так их можно проверить тестами: и удачную запись, и битый файл, и отсутствие папки.
 ///
-/// Запись идёт через временный файл: если питание выключится в момент сохранения, настройки не
-/// превратятся в мусор — либо прежние, либо новые, но не половина.
+/// Этот файл общий с службой Windows: служба пишет в него свой профиль потребления. Поэтому чтение
+/// и запись идут через <see cref="SharedSettingsFileWriter"/> — под общим мьютексом, с копией прежней
+/// версии в <c>.bak</c> и с сохранением битого файла в сторону вместо молчаливого затирания.
+/// Без этого последний записавший затирал поле первого: человек терял пути к играм или пройденный
+/// мастер, и программа об этом не сообщала.
 /// </summary>
 public sealed class JsonFileSettingsStore : IAppSettingsStore
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
-    public JsonFileSettingsStore(string path) =>
+    private readonly SharedSettingsFileWriter _writer;
+
+    public JsonFileSettingsStore(string path)
+        : this(path, new SharedSettingsFileWriter(path ?? throw new ArgumentNullException(nameof(path))))
+    {
+    }
+
+    /// <summary>Своя блокировка — для тестов: два писателя в одном процессе должны спорить по-настоящему.</summary>
+    public JsonFileSettingsStore(string path, SharedSettingsFileWriter writer)
+    {
         SettingsFilePath = path ?? throw new ArgumentNullException(nameof(path));
+        _writer = writer ?? throw new ArgumentNullException(nameof(writer));
+    }
 
     public string SettingsFilePath { get; }
 
@@ -32,14 +48,20 @@ public sealed class JsonFileSettingsStore : IAppSettingsStore
     {
         LastLoadProblemRu = null;
 
+        if (!_writer.TryRead(out string json, out string problem))
+        {
+            LastLoadProblemRu = $"Файл настроек не прочитался ({problem}). Взяты обычные значения. Путь: {SettingsFilePath}";
+            return new AppSettings();
+        }
+
+        if (json.Length == 0)
+        {
+            // Файла ещё нет — это первый запуск, а не поломка.
+            return new AppSettings();
+        }
+
         try
         {
-            if (!File.Exists(SettingsFilePath))
-            {
-                return new AppSettings();
-            }
-
-            string json = File.ReadAllText(SettingsFilePath);
             AppSettings? settings = JsonSerializer.Deserialize<AppSettings>(json, Options);
             if (settings is null)
             {
@@ -51,12 +73,12 @@ public sealed class JsonFileSettingsStore : IAppSettingsStore
         }
         catch (JsonException ex)
         {
-            LastLoadProblemRu = $"Файл настроек повреждён ({ex.Message}). Взяты обычные значения, файл не перезаписан. Путь: {SettingsFilePath}";
-            return new AppSettings();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            LastLoadProblemRu = $"Файл настроек не прочитался ({ex.Message}). Взяты обычные значения. Путь: {SettingsFilePath}";
+            // Битый файл убирается в сторону: причина потери настроек должна остаться на диске,
+            // а следующая запись не обязана решать, что делать с мусором.
+            string broken = _writer.QuarantineIfBroken(ex.Message);
+            LastLoadProblemRu = broken.Length == 0
+                ? $"Файл настроек повреждён ({ex.Message}). Взяты обычные значения. Путь: {SettingsFilePath}"
+                : $"Файл настроек повреждён ({ex.Message}). Взяты обычные значения, а битый файл сохранён рядом для разбора: {broken}";
             return new AppSettings();
         }
     }
@@ -67,19 +89,18 @@ public sealed class JsonFileSettingsStore : IAppSettingsStore
 
         try
         {
-            string? directory = Path.GetDirectoryName(SettingsFilePath);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
+            string json = JsonSerializer.Serialize(settings, Options);
+            SharedFileWriteResult result = _writer.Update(_ => JsonNode.Parse(json)!.AsObject());
 
-            string temp = SettingsFilePath + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(settings, Options));
-            File.Move(temp, SettingsFilePath, overwrite: true);
+            if (!result.Written)
+            {
+                LastSaveProblemRu = $"Настройки не сохранились: {result.ProblemRu}. Путь: {SettingsFilePath}";
+                throw new IOException(result.ProblemRu);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            LastSaveProblemRu = $"Настройки не сохранились: {ex.Message}. Путь: {SettingsFilePath}";
+            LastSaveProblemRu ??= $"Настройки не сохранились: {ex.Message}. Путь: {SettingsFilePath}";
             throw;
         }
     }

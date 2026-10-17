@@ -120,6 +120,7 @@ public sealed class LiveEngineOperations : IEngineOperations
 
         string data = Encode(new StatusData(
             _productName,
+            _appVersion,
             EngineProtocol.Version,
             IsElevationAvailable,
             _catalog.GetAllTweaks().Count,
@@ -547,6 +548,7 @@ public sealed class LiveEngineOperations : IEngineOperations
 
     private sealed record StatusData(
         string Product,
+        string AppVersion,
         int ProtocolVersion,
         bool IsElevationAvailable,
         int TweakCount,

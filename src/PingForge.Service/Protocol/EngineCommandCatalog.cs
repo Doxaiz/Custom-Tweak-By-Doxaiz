@@ -154,6 +154,36 @@ public static class EngineCommandCatalog
     /// <summary>Все команды в порядке объявления — он же порядок вывода в интерфейсе.</summary>
     public static IReadOnlyList<EngineCommandDescriptor> All { get; } = Items;
 
+    /// <summary>
+    /// Команды, доступные в канале только для чтения (C2). Единственное определение в коде: имена
+    /// по каналу считаются отсюда, описание в документах сверяется с этим списком тестом, и диспетчер
+    /// проверяет по нему же. Всё, чего здесь нет, канал чтения не выполняет — даже для администратора:
+    /// изменения делаются через основной канал, где действуют проверки прав.
+    ///
+    /// <c>realtime-stop</c> здесь намеренно: он ничего не настраивает, а снимает СВОИ изменения —
+    /// «убрать за собой» должно работать без прав.
+    /// </summary>
+    public static IReadOnlyList<EngineCommandKind> ReadOnlyChannelKinds { get; } =
+    [
+        EngineCommandKind.Ping,
+        EngineCommandKind.Capabilities,
+        EngineCommandKind.Status,
+        EngineCommandKind.JournalTail,
+        EngineCommandKind.ReadSystemState,
+        EngineCommandKind.RealtimeStop,
+    ];
+
+    /// <summary>Имена тех же команд по каналу — для сверки с документами и текстов отказов.</summary>
+    public static IReadOnlyList<string> ReadOnlyChannelWireNames { get; } =
+        ReadOnlyChannelKinds.Select(kind => Get(kind).WireName).ToArray();
+
+    /// <summary>Разрешена ли команда в канале только для чтения.</summary>
+    public static bool IsAllowedOnReadOnlyChannel(EngineCommandDescriptor descriptor) =>
+        ReadOnlyChannelKinds.Contains(descriptor.Kind);
+
+    /// <summary>Список команд канала чтения обычным текстом — для отказов и описания правил.</summary>
+    public static string ReadOnlyChannelWireNamesRu() => string.Join(", ", ReadOnlyChannelWireNames);
+
     public static EngineCommandDescriptor? Find(string? wireName)
     {
         if (string.IsNullOrWhiteSpace(wireName))

@@ -69,10 +69,12 @@ public sealed class FakeEngineChannel : IEngineChannel
     /// <summary>Ответы исправной службы: состояние, запуск, откат, журнал.</summary>
     public EngineResponse DefaultAnswer(EngineRequest request) => request.Command switch
     {
+        // Версия «здоровой» службы — та же, что у окна: двойник играет исправную установку,
+        // а не старую службу. Для проверки расхождений есть отдельные двойники в VersionCheckTests.
         EngineCommandKind.Ping => EngineResponse.Success(
             request.Id,
             "Служба жива.",
-            """{"product":"Custom Tweak By Doxaiz","appVersion":"0.1.0","protocolVersion":1,"tweakCount":47,"isElevationAvailable":true,"commandCount":11}"""),
+            $$"""{"product":"Custom Tweak By Doxaiz","appVersion":"{{EngineClient.SelfAppVersion}}","protocolVersion":{{EngineClient.SelfProtocolVersion}},"tweakCount":47,"isElevationAvailable":true,"commandCount":11}"""),
 
         EngineCommandKind.Capabilities => EngineResponse.Success(request.Id, "Список команд.", """{"commands":[]}"""),
 
