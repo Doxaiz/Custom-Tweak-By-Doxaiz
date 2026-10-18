@@ -313,7 +313,7 @@ public sealed class RoutingServersTests
         // Каждый замер через узел — это add + delete, и ни одного следа в таблице.
         Assert.Contains($"route add {GameServer} mask 255.255.255.255 10.8.0.1 metric 1", system.Command.Invocations);
         Assert.Contains($"route delete {GameServer} mask 255.255.255.255", system.Command.Invocations);
-        Assert.Empty(system.Table.Entries);
+        Assert.Empty(system.Table);
 
         // Замеров было ровно три: прямой путь и два узла.
         Assert.Equal(3, probe.Count);
@@ -356,7 +356,7 @@ public sealed class RoutingServersTests
         Assert.True(report.TableRestored);
 
         // Сравнение не оставляет изменений: таблица пуста, как была до замеров.
-        Assert.Empty(system.Table.Entries);
+        Assert.Empty(system.Table);
     }
 
     [Fact]
@@ -377,7 +377,7 @@ public sealed class RoutingServersTests
         int deletes = system.Command.Invocations.Count(line => line.StartsWith("route delete", StringComparison.Ordinal));
         Assert.Equal(1, adds);
         Assert.Equal(adds, deletes);
-        Assert.Empty(system.Table.Entries);
+        Assert.Empty(system.Table);
     }
 
     [Fact]
@@ -394,7 +394,7 @@ public sealed class RoutingServersTests
         Assert.False(report.HasWinner);
         Assert.Contains("не измерился", report.VerdictRu, StringComparison.Ordinal);
         Assert.Contains("не выбираю", report.VerdictRu, StringComparison.Ordinal);
-        Assert.Empty(system.Table.Entries);
+        Assert.Empty(system.Table);
     }
 
     [Fact]
@@ -407,7 +407,7 @@ public sealed class RoutingServersTests
         RoutePathComparisonReport report = await service.CompareAsync(GameServer, 0, [Node("10.8.0.1", "падение")]);
 
         // Замер упал — временный /32 снят в finally, в таблице чисто, вердикт не притворяется победой.
-        Assert.Empty(system.Table.Entries);
+        Assert.Empty(system.Table);
         Assert.True(report.TableRestored);
         Assert.False(report.HasWinner);
         Assert.Contains(report.ViaNodes, result => result.ProblemRu is not null && result.ProblemRu.Contains("замер упал", StringComparison.Ordinal));
@@ -426,7 +426,7 @@ public sealed class RoutingServersTests
         Assert.False(report.HasWinner);
         Assert.Equal(1, probe.Count); // через несостоявшийся маршрут не мерим
         Assert.Contains(report.ViaNodes, result => result.ProblemRu is not null && result.ProblemRu.Contains("не появился", StringComparison.Ordinal));
-        Assert.Empty(system.Table.Entries);
+        Assert.Empty(system.Table);
     }
 
     [Fact]
@@ -441,15 +441,15 @@ public sealed class RoutingServersTests
         Assert.False(report.HasWinner);
         Assert.Contains(report.ViaNodes, result => result.ProblemRu is not null && result.ProblemRu.Contains("права администратора", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(1, probe.Count);
-        Assert.Empty(system.Table.Entries);
+        Assert.Empty(system.Table);
     }
 
     [Fact]
     public async Task Чужой_slash32_к_адресу_не_перезаписывается_сравнение_его_не_трогает()
     {
         FakeRouteSystem system = new();
-        system.Table.Entries.Add(new RouteTableEntry(GameServer, "255.255.255.255", "172.16.0.1", "192.168.1.50", 7));
-        string foreignKey = system.Table.Entries[0].Key;
+        system.Table.Add(new RouteTableEntry(GameServer, "255.255.255.255", "172.16.0.1", "192.168.1.50", 7));
+        string foreignKey = system.Table[0].Key;
 
         ScriptedMeasurement probe = new(system, _ => Window(40));
         var service = new RoutePathComparisonService(system.Command, system.Reader, probe);
@@ -462,14 +462,14 @@ public sealed class RoutingServersTests
         Assert.DoesNotContain(system.Command.Invocations, line => line.StartsWith("route delete", StringComparison.Ordinal));
 
         // Чужая строка стоит нетронутой.
-        Assert.Equal(foreignKey, Assert.Single(system.Table.Entries).Key);
+        Assert.Equal(foreignKey, Assert.Single(system.Table).Key);
     }
 
     [Fact]
     public async Task Узел_равный_текущему_шлюзу_это_прямой_путь_и_таблицу_не_трогаем()
     {
         FakeRouteSystem system = new();
-        system.Table.Entries.Add(new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25));
+        system.Table.Add(new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25));
         ScriptedMeasurement probe = new(system, _ => Window(40));
 
         var service = new RoutePathComparisonService(system.Command, system.Reader, probe);
@@ -482,7 +482,7 @@ public sealed class RoutingServersTests
         Assert.Contains(report.ViaNodes, result => result.ProblemRu is not null && result.ProblemRu.Contains("тот же прямой путь", StringComparison.Ordinal));
 
         // Маршрут по умолчанию, который был до замера, стоит на месте.
-        Assert.Single(system.Table.Entries);
+        Assert.Single(system.Table);
     }
 
     [Fact]
@@ -593,7 +593,7 @@ public sealed class RoutingServersTests
         Assert.False(refusal.Succeeded);
         Assert.StartsWith("Маршрут не изменён", refusal.MessageRu, StringComparison.Ordinal);
         Assert.Contains("Прямой путь короче", refusal.MessageRu, StringComparison.Ordinal); // факт замера, а не отговорка «узла нет»
-        Assert.Empty(system.Table.Entries);
+        Assert.Empty(system.Table);
     }
 
     [Fact]
@@ -625,7 +625,7 @@ public sealed class RoutingServersTests
         Assert.True(probe.Count > probesAfterStart);
 
         // И после всего таблица такая же, какой была (пустой).
-        Assert.Empty(system.Table.Entries);
+        Assert.Empty(system.Table);
     }
 
     [Fact]
