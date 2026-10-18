@@ -1,3 +1,4 @@
+using PingForge.Network;
 using PingForge.Service.Protocol;
 
 namespace PingForge.App.ViewModels;
@@ -63,7 +64,8 @@ public sealed record AppSettings(
     int JournalRowsShown = 20,
     bool SetupCompleted = false,
     string SetupAnswersRu = "",
-    IReadOnlyDictionary<string, string>? GamePaths = null);
+    IReadOnlyDictionary<string, string>? GamePaths = null,
+    IReadOnlyList<CustomGameEntry>? CustomGames = null);
 
 /// <summary>Память вместо файла: так проверяются «сохранилось / не сохранилось» без диска.</summary>
 public sealed class InMemorySettingsStore : IAppSettingsStore

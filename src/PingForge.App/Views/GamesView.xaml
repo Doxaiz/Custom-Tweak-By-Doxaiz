@@ -18,9 +18,14 @@
                      Text="Программа ищет игры только в известных местах (библиотеки Steam и обычные папки) и никогда не запускает игру сама: только по нажатию «Открыть»." />
         </StackPanel>
 
-        <Button Grid.Column="1" Style="{StaticResource GhostButton}" Content="Найти игры заново"
-                Command="{Binding FindGamesCommand}" VerticalAlignment="Center"
-                ToolTip="Переискать библиотеки Steam и обычные папки" />
+        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+          <Button Style="{StaticResource GhostButton}" Content="Найти игры заново"
+                  Command="{Binding FindGamesCommand}"
+                  ToolTip="Переискать библиотеки Steam и обычные папки" />
+          <Button Style="{StaticResource GhostButton}" Content="Добавить игру" Margin="0,8,0,0"
+                  Command="{Binding AddGameCommand}"
+                  ToolTip="Добавить .exe игры, которой нет в списке известных. Анти-чит у своей игры неизвестен." />
+        </StackPanel>
       </Grid>
     </Border>
 
@@ -55,6 +60,12 @@
                         Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" />
                 <Button Style="{StaticResource GhostButton}" Content="Указать .exe" Margin="0,8,0,0"
                         Command="{Binding ChoosePathCommand}" HorizontalAlignment="Stretch" />
+                <Button Style="{StaticResource GhostButton}" Content="Переименовать" Margin="0,8,0,0"
+                        Visibility="{Binding IsCustom, Converter={StaticResource BoolToVisibility}}"
+                        Click="RenameCustomClick" HorizontalAlignment="Stretch" />
+                <Button Style="{StaticResource GhostButton}" Content="Удалить свою игру" Margin="0,8,0,0"
+                        Visibility="{Binding IsCustom, Converter={StaticResource BoolToVisibility}}"
+                        Click="RemoveCustomClick" HorizontalAlignment="Stretch" />
               </StackPanel>
             </Grid>
           </Border>
