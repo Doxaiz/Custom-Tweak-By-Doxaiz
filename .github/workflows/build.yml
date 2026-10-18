@@ -434,48 +434,57 @@ jobs:
       - name: B - routing nodes live check via service pipe
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
-          $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
-          $smoke = "${{ runner.temp }}/art/bin/PingForge.EngineSmoke/release/PingForge.EngineSmoke.exe"
-          if (-not (Test-Path $setup)) { throw "No setup file: $setup" }
-          if (-not (Test-Path $smoke)) { throw "No smoke file: $smoke" }
-          New-Item -ItemType Directory -Force test-results | Out-Null
-
+          $ErrorActionPreference = 'Continue'
+          $ann = 'file=tools/c7-live-checks.ps1,line=1'
           try {
+            $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+            $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
+            $smoke = "${{ runner.temp }}/art/bin/PingForge.EngineSmoke/release/PingForge.EngineSmoke.exe"
+            Write-Host "::notice $ann::routing-live pre: setup=$(Test-Path $setup) smoke=$(Test-Path $smoke)"
+            if (-not (Test-Path $smoke)) { throw "no smoke file at $smoke" }
+
             $svc = Get-Service -Name PingForge -ErrorAction SilentlyContinue
-            if ($svc is $null) {
+            Write-Host "::notice $ann::routing-live service: exists=$($svc -ne $null) status=$($svc.Status)"
+            if ($svc -eq $null) {
+              if (-not (Test-Path $setup)) { throw "no service and no setup at $setup" }
               $install = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
-              if ($install.ExitCode -ne 0) { throw "Setup exit $($install.ExitCode)" }
-              Write-Host "::notice file=tools/c7-live-checks.ps1,line=1::routing-live: setup installed for the check"
+              if ($install.ExitCode -ne 0) { throw "setup exit $($install.ExitCode)" }
+            } elseif ($svc.Status -ne 'Running') {
+              Start-Service PingForge -ErrorAction SilentlyContinue
             }
             (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(90))
             Start-Sleep -Seconds 4
 
-            # Native stderr lines are not failures; capture all output, keep exit code honest.
-            # One retry: right after a fresh install the pipe may open a beat later than the service.
             $code = 1
             $out = ''
             foreach ($attempt in 1..2) {
-              $ErrorActionPreference = 'Continue'
               $out = & $smoke 2>&1 | Out-String
               $code = $LASTEXITCODE
-              $ErrorActionPreference = 'Stop'
               if ($code -eq 0) { break }
-              if ($attempt -eq 1) { Start-Sleep -Seconds 6 }
+              Start-Sleep -Seconds 6
             }
+            New-Item -ItemType Directory -Force test-results | Out-Null
             $out | Set-Content test-results\routing-live.log -Encoding utf8
 
-            $tail = (($out -split "`n" | Where-Object { $_.Trim().Length -gt 0 } | Select-Object -Last 12) -join ' // ') -replace '%', '%25'
-            Write-Host "::notice file=tools/c7-live-checks.ps1,line=1::routing-live exit=$code tail: $tail"
-          } catch {
-            Write-Host "::error file=tools/c7-live-checks.ps1,line=1::routing-live step failed: $($_.Exception.Message)"
-            throw
-          }
+            $routeLine = (($out -split "`n" | Select-String -SimpleMatch '[6/6]') -join '').Trim()
+            $checks = (($out -split "`n" | Where-Object { $_ -match 'x1b|\[\d/\d\]' -or $_ -match '[0-9]/[0-9]' }) -join ' | ').Trim()
+            $checks = $checks -replace '%','%25' -replace "`r",''
+            Write-Host "::notice $ann::routing-live exit=$code; checks: $checks"
 
-          $routeLine = (($out -split "`n" | Select-String -SimpleMatch '[6/6]') -join '').Trim()
-          if ($code -ne 0) { throw "EngineSmoke exit $code (output is in the notice annotation above and in test-results/routing-live.log)" }
-          if ($routeLine -notmatch '6/6') { throw "routing check line [6/6] missing from smoke output" }
+            if ($code -ne 0) {
+              $last = (($out -split "`n" | Where-Object { $_.Trim().Length -gt 0 } | Select-Object -Last 8) -join ' | ') -replace '%','%25' -replace "`r",''
+              Write-Host "::error $ann::routing-live tail: $last"
+              throw "EngineSmoke exit $code"
+            }
+            if ($routeLine -notmatch '6/6') { throw 'line [6/6] missing from smoke output' }
+
+            $uninstaller = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\Uninstall.exe'
+            if (Test-Path $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait | Out-Null }
+            Write-Host "::notice $ann::routing-live OK: $routeLine"
+          } catch {
+            Write-Host "::error $ann::routing-live failed: $($_.Exception.Message -replace '%','%25')"
+            exit 1
+          }
 
       - name: Готовые .exe и контрольные суммы
         run: |
