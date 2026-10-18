@@ -22,9 +22,9 @@ namespace PingForge.Service.Windows;
 ///     (сервер спрашивает именно про клиента; обратная функция вернула бы PID самой службы);
 ///   • <c>OpenProcessToken(TOKEN_QUERY = 0x0008)</c> — его токен; права на сам процесс при этом
 ///     минимальны (PROCESS_QUERY_LIMITED_INFORMATION), их хватает, чтобы спросить токен;
-///   • <c>WindowsPrincipal.IsInRole(Administrator)</c> — по токену видно, включена ли группа
-///     администраторов: у процесса без повышения она есть, но помечена «только запрет»
-///     (deny-only), и роль не подтверждается.
+///   • <c>GetTokenInformation</c> — из токена читаются его владелец (SID и имя) и группы:
+///     администратор — это включённая, а не «только запрет» (deny-only), группа администраторов.
+///     У процесса без повышения та же группа есть, но помечена deny-only, и права не даёт.
 ///
 /// Любая ошибка чтения трактуется как «прав нет»: отказать безопаснее, чем разрешить.
 /// </remarks>
@@ -80,35 +80,14 @@ public static class PipeClientInspector
                 return PipeClientIdentity.Unknown(problem ?? "не удалось открыть токен процесса клиента");
             }
 
-            using var identity = new WindowsIdentity(token.DangerousGetHandle());
-            var principal = new WindowsPrincipal(identity);
+            // Сведения о клиенте читаются прямо из токена через GetTokenInformation — для этого
+            // хватает TOKEN_QUERY, с которым токен и открывался. Собирать WindowsIdentity из
+            // первичного токена чужого процесса нельзя: ей нужно олицетворение, и на живом
+            // раннере это честно падало с «Access is denied» — личность не читалась ни у кого.
+            string sid = ReadUserSid(token) ?? "SID не прочитан";
+            string name = TranslateName(sid);
+            bool isAdmin = ReadIsAdministrator(token);
 
-            string name;
-            try
-            {
-                name = string.IsNullOrWhiteSpace(identity.Name) ? "имя не прочитано" : identity.Name;
-            }
-            catch (Exception ex) when (ex is SystemException or UnauthorizedAccessException)
-            {
-                // Имя требует обращения к базе учётных записей; его отсутствие не повод терять права.
-                name = $"имя не прочитано ({ex.GetType().Name})";
-            }
-
-            string sid;
-            bool isAdmin;
-            try
-            {
-                sid = identity.User?.Value ?? "SID не прочитан";
-                isAdmin = principal.IsInRole(WindowsBuiltInRole.Administrator);
-            }
-            catch (Exception ex) when (ex is SystemException or UnauthorizedAccessException)
-            {
-                // SID и роль читаются из того же токена: не прочитались — это «прав нет»,
-                // а не падение канала. Служба обязана пережить любого клиента.
-                return PipeClientIdentity.Unknown($"токен клиента открыт, но не прочитался ({ex.GetType().Name}: {ex.Message})");
-            }
-
-            // Имя, SID и роль прочитаны до закрытия дескрипторов: токен живёт только внутри этого блока.
             return new PipeClientIdentity(isAdmin, name, sid, processId, null);
         }
         catch (Exception ex)
@@ -150,6 +129,121 @@ public static class PipeClientInspector
         return opened;
     }
 
+    /// <summary>SID владельца токена — то, что служба пишет в журнал и отдаёт в ping.</summary>
+    private static string? ReadUserSid(SafeTokenHandle token)
+    {
+        IntPtr buffer = GetTokenBuffer(token, TokenUser);
+        if (buffer == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            IntPtr sidPtr = Marshal.ReadIntPtr(buffer, 0);
+            return sidPtr == IntPtr.Zero ? null : new SecurityIdentifier(sidPtr).Value;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    /// <summary>
+    /// Администратор ли клиент: группа администраторов (S-1-5-32-544) присутствует в токене
+    /// и включена. У процесса без повышения та же группа помечена «только запрет» (deny-only) —
+    /// это НЕ права, и WindowsPrincipal ответил бы так же.
+    /// </summary>
+    private static bool ReadIsAdministrator(SafeTokenHandle token)
+    {
+        IntPtr buffer = GetTokenBuffer(token, TokenGroups);
+        if (buffer == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        try
+        {
+            int count = Marshal.ReadInt32(buffer, 0);
+            int stride = IntPtr.Size == 8 ? 16 : 8;
+            int offset = IntPtr.Size == 8 ? 8 : 4;
+
+            for (int i = 0; i < count; i++)
+            {
+                int entry = offset + (i * stride);
+                IntPtr sidPtr = Marshal.ReadIntPtr(buffer, entry);
+                if (sidPtr == IntPtr.Zero)
+                {
+                    continue;
+                }
+
+                string groupSid = new SecurityIdentifier(sidPtr).Value;
+                uint attributes = unchecked((uint)Marshal.ReadInt32(buffer, entry + IntPtr.Size));
+
+                bool enabled = (attributes & GroupEnabled) != 0;
+                bool denyOnly = (attributes & GroupUseForDenyOnly) != 0;
+                if (groupSid == AdministratorsSid && enabled && !denyOnly)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    /// <summary>Имя учётной записи по SID. Не перевелось — честно «не прочитано», а не падение.</summary>
+    private static string TranslateName(string sid)
+    {
+        if (sid == "SID не прочитан")
+        {
+            return "имя не прочитано";
+        }
+
+        try
+        {
+            string name = new SecurityIdentifier(sid).Translate(typeof(NTAccount)).Value;
+            return string.IsNullOrWhiteSpace(name) ? "имя не прочитано" : name;
+        }
+        catch (Exception ex) when (ex is SystemException or UnauthorizedAccessException)
+        {
+            return "имя не прочитано";
+        }
+    }
+
+    /// <summary>Буфер сведений о токене: размер спрашивается у системы, а не угадывается.</summary>
+    private static IntPtr GetTokenBuffer(SafeTokenHandle token, int informationClass)
+    {
+        GetTokenInformation(token, informationClass, IntPtr.Zero, 0, out int length);
+        if (length <= 0)
+        {
+            return IntPtr.Zero;
+        }
+
+        IntPtr buffer = Marshal.AllocHGlobal(length);
+        if (!GetTokenInformation(token, informationClass, buffer, length, out _))
+        {
+            Marshal.FreeHGlobal(buffer);
+            return IntPtr.Zero;
+        }
+
+        return buffer;
+    }
+
+    private const int TokenUser = 1;
+
+    private const int TokenGroups = 2;
+
+    private const uint GroupEnabled = 0x00000004;
+
+    private const uint GroupUseForDenyOnly = 0x00000010;
+
+    private const string AdministratorsSid = "S-1-5-32-544";
+
     private static bool TryGetClientProcessId(NamedPipeServerStream pipe, out int processId)
     {
         // Win32 отдаёт PID беззнаковым DWORD: читаем как uint и только потом приводим к int,
@@ -175,6 +269,10 @@ public static class PipeClientInspector
 
     [DllImport("advapi32.dll", SetLastError = true)]
     private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out SafeTokenHandle tokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool GetTokenInformation(
+        SafeTokenHandle tokenHandle, int tokenInformationClass, IntPtr tokenInformation, int tokenInformationLength, out int returnLength);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, int processId);
