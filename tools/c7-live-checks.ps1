@@ -14,6 +14,7 @@ $pfPassword = $null
 function Note-Failure([string]$text) {
     $script:failures += $text
     Write-Host "FAIL: $text"
+    Ann 'error' "FAIL: $text"
 }
 
 function Ann([string]$level, [string]$text) {
@@ -73,11 +74,13 @@ try {
     & net user $pfUser $pfPassword /add | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'net user pfcheck /add failed' }
     $pfCreated = $true
+    Ann 'notice' 'pfcheck user created'
 
     $publicSmokeDir = Join-Path $env:PUBLIC 'PingForgeSmoke'
     New-Item -ItemType Directory -Force $publicSmokeDir | Out-Null
     Copy-Item (Join-Path (Split-Path $SmokePath) '*') $publicSmokeDir -Force
     $publicSmoke = Join-Path $publicSmokeDir (Split-Path $SmokePath -Leaf)
+    Ann 'notice' "smoke copied to $publicSmoke"
 
     $asUser = Run-AsUser $publicSmoke @('--expect-identity') $pfUser $pfPassword
     Write-Host "-- pfcheck --expect-identity exit: $($asUser.Code)"
@@ -124,6 +127,7 @@ try {
     }
 }
 catch {
+    Ann 'error' "catch at line $($_.InvocationInfo.ScriptLineNumber): $($_.Exception.GetType().Name): $($_.Exception.Message)"
     Note-Failure $_.Exception.Message
 }
 finally {
