@@ -376,18 +376,31 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          function Show-Tail([string]$title, [string]$path, [int]$count = 60) {
-            Write-Host "== $title : $path"
-            if (-not (Test-Path $path)) { Write-Host "::warning file=.github/workflows/build.yml,line=1::no file $title"; return }
-            Get-Content $path -Tail $count | ForEach-Object {
-              $safe = $_ -replace '%', '%25' -replace "`r", '%0D' -replace '::', ';'
-              Write-Host "::error file=.github/workflows/build.yml,line=1::$title : $safe"
+          function Show-Tail([string]$title, [string]$path, [int]$count = 50) {
+            if (-not (Test-Path $path)) {
+              Write-Host "::warning file=.github/workflows/build.yml,line=1::no file $title ($path)"
+              return
             }
+            $lines = Get-Content $path -Tail $count | ForEach-Object { $_ -replace '%', '%25' -replace "`r", '' }
+            $body = [string]::Join('%0A', $lines)
+            Write-Host "::error file=.github/workflows/build.yml,line=1::$title : $body"
           }
           $svc = Get-Service -Name PingForge -ErrorAction SilentlyContinue
-          Write-Host "::notice file=.github/workflows/build.yml,line=1::service state: $($svc.Status)"
-          Show-Tail 'service.log' (Join-Path $env:ProgramData 'PingForge\service.log')
-          Show-Tail 'install-service.log' (Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\install-service.log')
+          $installDir = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz'
+          $state = @()
+          $state += "service=$($svc.Status)"
+          foreach ($name in @('CustomTweakByDoxaiz.exe', 'CustomTweakByDoxaiz.Service.exe', 'Uninstall.exe', 'install-service.ps1')) {
+            $state += "$name=$(Test-Path (Join-Path $installDir $name))"
+          }
+          $state += "arp=$(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CustomTweakByDoxaiz')"
+          $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Custom Tweak By Doxaiz\Custom Tweak By Doxaiz.lnk'
+          $state += "shortcut=$(Test-Path $shortcut)"
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::install state: $($state -join '; ')"
+          New-Item -ItemType Directory -Force test-results | Out-Null
+          $svcLog = Join-Path $env:ProgramData 'PingForge\service.log'
+          if (Test-Path $svcLog) { Copy-Item $svcLog test-results\service.log -Force }
+          Show-Tail 'service.log' $svcLog
+          Show-Tail 'install-service.log' (Join-Path $installDir 'install-service.log')
           Show-Tail 'app-start.log' (Join-Path $env:LOCALAPPDATA 'CustomTweakByDoxaiz\app-start.log')
 
       - name: C7 - live identity checks on Windows
@@ -487,5 +500,5 @@ jobs:
             dist/app-window.png
             dist/app-start.log
             dist/install-service.log
-            C:\ProgramData\PingForge\service.log
+            test-results/service.log
           if-no-files-found: warn
