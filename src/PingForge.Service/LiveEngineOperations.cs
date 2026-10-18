@@ -584,7 +584,7 @@ public sealed class LiveEngineOperations : IEngineOperations
             open = pendingOps.Count;
         }
 
-        int snapshots = (await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false)).Count;
+        int snapshots = (await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false)).Count(s => !s.WasRolledBack);
         RealtimeOptimizationState realtimeState = _realtime?.State ?? RealtimeOptimizationState.Idle;
         UninstallState state = new(applied, open, snapshots, realtimeState != RealtimeOptimizationState.Idle);
 

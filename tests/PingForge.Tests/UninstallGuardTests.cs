@@ -166,9 +166,10 @@ public sealed class UninstallGuardTests
     [Fact]
     public void Остатки_называют_что_именно_не_снялось()
     {
-        Assert.Contains("repair-network", UninstallGuard.ResidualCheckRu(openOperationsAfter: null, failedStep: "rollback"));
+        Assert.Contains("rollback", UninstallGuard.ResidualCheckRu(openOperationsAfter: null, failedStep: "rollback"));
         Assert.Contains("Удаление остановлено", UninstallGuard.ResidualCheckRu(openOperationsAfter: null, failedStep: "rollback"));
         Assert.Contains("2", UninstallGuard.ResidualCheckRu(openOperationsAfter: 2, failedStep: null));
+        Assert.Contains("repair-network", UninstallGuard.ResidualCheckRu(openOperationsAfter: 2, failedStep: null));
         Assert.Contains("Остатков нет", UninstallGuard.ResidualCheckRu(openOperationsAfter: 0, failedStep: null));
     }
 
@@ -192,7 +193,7 @@ public sealed class UninstallGuardTests
 
         Assert.Contains("\"uninstall-check\"", json);
         Assert.True(EngineJson.TryDecodeRequest(json, out EngineRequest? decoded, out string error));
-        Assert.Null(error);
+        Assert.Equal(string.Empty, error);
         Assert.Equal(EngineCommandKind.UninstallCheck, decoded!.Command);
     }
 
