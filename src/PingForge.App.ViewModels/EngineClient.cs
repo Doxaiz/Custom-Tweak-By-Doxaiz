@@ -240,6 +240,14 @@ public sealed class EngineClient
         try
         {
             using var document = System.Text.Json.JsonDocument.Parse(dataJson);
+
+            // Ответ службы бывает и массивом (список узлов маршрутизации) — у чисел версии это не
+            // берётся, и спрашивать у массива свойства, которую TryGetProperty не любит, незачем.
+            if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                return null;
+            }
+
             return document.RootElement.TryGetProperty(name, out System.Text.Json.JsonElement value)
                 && value.TryGetInt32(out int number)
                 ? number
@@ -247,6 +255,11 @@ public sealed class EngineClient
         }
         catch (System.Text.Json.JsonException)
         {
+            return null;
+        }
+        catch (System.InvalidOperationException)
+        {
+            // Форма ответа не та — «версии не названы», а не падение окна.
             return null;
         }
     }
@@ -261,12 +274,21 @@ public sealed class EngineClient
         try
         {
             using var document = System.Text.Json.JsonDocument.Parse(dataJson);
+            if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                return null;
+            }
+
             return document.RootElement.TryGetProperty(name, out System.Text.Json.JsonElement value)
                 && value.ValueKind == System.Text.Json.JsonValueKind.String
                 ? value.GetString()
                 : null;
         }
         catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+        catch (System.InvalidOperationException)
         {
             return null;
         }

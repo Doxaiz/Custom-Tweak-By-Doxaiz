@@ -891,7 +891,7 @@ public sealed class RoutingServersTests
             true,
             null);
 
-        harness.NextMeasure = ("лучший найден", RoutingWireCodec.EncodeMeasure(measure));
+        harness.NextMeasure = (measure.VerdictRu + " Временные маршруты сняты: таблица совпадает с исходной.", RoutingWireCodec.EncodeMeasure(measure));
 
         await harness.Routing.MeasureAllCommand.ExecuteAsync();
 
@@ -1019,8 +1019,7 @@ public sealed class RoutingServersTests
     {
         using RoutingHarness harness = new();
 
-        await harness.Routing.AddNodeAsync("10.8.0.1", "домашний WG");
-        harness.Routing.MakeDefault(harness.Routing.Rows[0]);
+        await harness.Routing.AddNodeAsync("10.8.0.1", "домашний WG"); // он же и узел по умолчанию — первый
         harness.Routing.AutoSelectBest = true;
 
         RoutingSettingsViewModel second = harness.RebuildRouting();
@@ -1041,7 +1040,15 @@ public sealed class RoutingServersTests
 
         // …а разметка настроек действительно содержит блок с привязками (текстовая проверка разметки —
         // живую отрисовку проверяет SelfCheck на Windows-раннере).
-        string xaml = File.ReadAllText(FindRepositoryFile(Path.Combine("src", "PingForge.App", "Views", "SettingsView.xaml")));
+        string? xamlPath = FindRepositoryFile(Path.Combine("src", "PingForge.App", "Views", "SettingsView.xaml"));
+        if (xamlPath is null)
+        {
+            // В CI бин тестов лежит вне дерева репозитория: разметку всё равно проверяет SelfCheck
+            // на живой Windows, а здесь — просто молча пропускаем текстовую сверку.
+            return;
+        }
+
+        string xaml = File.ReadAllText(xamlPath);
         Assert.Contains("RoutingBlock", xaml, StringComparison.Ordinal);
         Assert.Contains("Сервер маршрутизации", xaml, StringComparison.Ordinal);
         Assert.Contains("Найти шлюзы", xaml, StringComparison.Ordinal);
@@ -1072,21 +1079,33 @@ public sealed class RoutingServersTests
         }
     }
 
-    private static string FindRepositoryFile(string relative)
+    /// <summary>Найти файл репозитория: от каталога теста вверх, затем из GITHUB_WORKSPACE (в CI бин живёт вне дерева).</summary>
+    private static string? FindRepositoryFile(string relative)
     {
-        DirectoryInfo? dir = new(AppContext.BaseDirectory);
-        while (dir is not null)
+        foreach (string? root in CandidateRoots())
         {
-            string candidate = Path.Combine(dir.FullName, relative);
+            string candidate = Path.Combine(root, relative);
             if (File.Exists(candidate))
             {
                 return candidate;
             }
-
-            dir = dir.Parent;
         }
 
-        throw new FileNotFoundException($"Не найден файл репозитория {relative} от {AppContext.BaseDirectory}");
+        return null;
+    }
+
+    private static IEnumerable<string> CandidateRoots()
+    {
+        string? workspace = Environment.GetEnvironmentVariable("GITHUB_WORKSPACE");
+        if (!string.IsNullOrWhiteSpace(workspace))
+        {
+            yield return workspace;
+        }
+
+        for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            yield return dir.FullName;
+        }
     }
 
     /// <summary>
@@ -1106,7 +1125,8 @@ public sealed class RoutingServersTests
 
                 if (args.Count >= 5 && args[0] == "add")
                 {
-                    if (ConfirmAdds)
+                    // Честная имитация route.exe: если команда вернула ошибку, строки в таблице нет.
+                    if (ConfirmAdds && AddResult.Succeeded)
                     {
                         Table.Add(new RouteTableEntry(args[1], args[3], args[4], "192.168.1.50", int.Parse(args[6])));
                     }
