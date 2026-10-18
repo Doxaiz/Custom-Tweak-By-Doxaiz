@@ -29,6 +29,58 @@
         <GradientStop Color="{StaticResource Accent2Color}" Offset="1" />
       </LinearGradientBrush>
 
+      <!-- Логотип: неоновая монограмма D с мотивом сетевого маршрута (узлы и путь пинга),
+           циан → электрический голубой → умеренный фиолетовый. Локальный векторный ресурс:
+           ни внешних картинок, ни шрифтов, ни сети; DrawingImage масштабируется под HiDPI
+           без мыла. Используется в шапке окна и на заставке — бренд-зона, интерфейс не тронут. -->
+      <DrawingImage x:Key="LogoImage">
+        <DrawingImage.Drawing>
+          <DrawingGroup>
+            <GeometryDrawing>
+              <GeometryDrawing.Brush>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                  <GradientStop Color="#22D3EE" Offset="0" />
+                  <GradientStop Color="#38BDF8" Offset="0.55" />
+                  <GradientStop Color="#A78BFA" Offset="1" />
+                </LinearGradientBrush>
+              </GeometryDrawing.Brush>
+              <GeometryDrawing.Geometry>
+                <PathGeometry FillRule="EvenOdd"
+                              Figures="M13,4 H27 C39,4 45,13 45,24 C45,35 39,44 27,44 H13 Z M21,13 V35 H26 C33,35 37,30 37,24 C37,18 33,13 26,13 Z" />
+              </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+            <GeometryDrawing>
+              <GeometryDrawing.Pen>
+                <Pen Brush="#0B1120" Thickness="2.6" StartLineCap="Round" EndLineCap="Round" LineJoin="Round" />
+              </GeometryDrawing.Pen>
+              <GeometryDrawing.Geometry>
+                <PathGeometry Figures="M7,35 L19,26 L29,30 L42,15" />
+              </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+            <GeometryDrawing Brush="#E0F2FE">
+              <GeometryDrawing.Geometry>
+                <EllipseGeometry Center="7,35" RadiusX="3" RadiusY="3" />
+              </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+            <GeometryDrawing Brush="#22D3EE">
+              <GeometryDrawing.Geometry>
+                <EllipseGeometry Center="19,26" RadiusX="3" RadiusY="3" />
+              </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+            <GeometryDrawing Brush="#A78BFA">
+              <GeometryDrawing.Geometry>
+                <EllipseGeometry Center="29,30" RadiusX="3" RadiusY="3" />
+              </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+            <GeometryDrawing Brush="#E0F2FE">
+              <GeometryDrawing.Geometry>
+                <EllipseGeometry Center="42,15" RadiusX="3.4" RadiusY="3.4" />
+              </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+          </DrawingGroup>
+        </DrawingImage.Drawing>
+      </DrawingImage>
+
       <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource Text}" />
         <Setter Property="FontSize" Value="13" />
