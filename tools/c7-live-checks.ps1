@@ -1,0 +1,142 @@
+﻿param(
+    [Parameter(Mandatory = $true)][string]$SetupPath,
+    [Parameter(Mandatory = $true)][string]$SmokePath
+)
+
+$ErrorActionPreference = 'Stop'
+$installDir = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz'
+$serviceLog = Join-Path $env:ProgramData 'PingForge\service.log'
+$failures = @()
+$pfUser = 'pfcheck'
+$pfCreated = $false
+$pfPassword = $null
+
+function Note-Failure([string]$text) {
+    $script:failures += $text
+    Write-Host "FAIL: $text"
+}
+
+function Run-Smoke([string[]]$arguments, [string]$title) {
+    Write-Host "-- $title"
+    & $SmokePath @arguments
+    $code = $LASTEXITCODE
+    Write-Host "   exit: $code"
+    return $code
+}
+
+function Run-AsUser([string]$exe, [string[]]$arguments, [string]$user, [string]$password) {
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = $exe
+    $info.Arguments = ($arguments -join ' ')
+    $info.UseShellExecute = $false
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $info.CreateNoWindow = $true
+    $info.WorkingDirectory = Split-Path $exe
+    $info.UserName = $user
+    $info.Domain = $env:COMPUTERNAME
+    $secure = ConvertTo-SecureString $password -AsPlainText -Force
+    $info.Password = $secure
+    $process = [System.Diagnostics.Process]::Start($info)
+    $out = $process.StandardOutput.ReadToEnd()
+    $err = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    Write-Host $out
+    if ($err) { Write-Host $err }
+    return @{ Code = $process.ExitCode; Output = $out + $err }
+}
+
+try {
+    Write-Host '-- Silent install'
+    $install = Start-Process $SetupPath -ArgumentList '/S' -Wait -PassThru
+    if ($install.ExitCode -ne 0) { throw "Setup exit $($install.ExitCode)" }
+    (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(90))
+    Write-Host 'Service: Running'
+
+    # 1) Administrator identity: service must name THIS process, not SYSTEM.
+    if ((Run-Smoke @('--expect-identity') 'Admin --expect-identity') -ne 0) {
+        Note-Failure 'admin --expect-identity'
+    }
+
+    # 2) Temporary non-admin user pfcheck (password is generated, never printed).
+    $pfPassword = [Guid]::NewGuid().ToString('N') + 'Aa1!'
+    & net user $pfUser $pfPassword /add | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw 'net user pfcheck /add failed' }
+    $pfCreated = $true
+
+    $publicSmokeDir = Join-Path $env:PUBLIC 'PingForgeSmoke'
+    New-Item -ItemType Directory -Force $publicSmokeDir | Out-Null
+    Copy-Item (Join-Path (Split-Path $SmokePath) '*') $publicSmokeDir -Force
+    $publicSmoke = Join-Path $publicSmokeDir (Split-Path $SmokePath -Leaf)
+
+    $asUser = Run-AsUser $publicSmoke @('--expect-identity') $pfUser $pfPassword
+    Write-Host "-- pfcheck --expect-identity exit: $($asUser.Code)"
+    if ($asUser.Code -ne 0) { Note-Failure 'pfcheck --expect-identity' }
+    if ($asUser.Output -match 'clientIsAdmin=True') { Note-Failure 'pfcheck reported clientIsAdmin=True' }
+
+    $sidMatch = [regex]::Match($asUser.Output, 'S-1-5-21-[0-9-]+')
+    if (-not $sidMatch.Success) {
+        Note-Failure 'pfcheck SID not found in smoke output'
+        $pfSid = $null
+    } else {
+        $pfSid = $sidMatch.Value
+        Write-Host "pfcheck SID: $pfSid"
+    }
+
+    # 3) pfcheck tries to apply: denial must come BEFORE any tweak lookup/application.
+    $tryApply = Run-AsUser $publicSmoke @('--try-apply') $pfUser $pfPassword
+    Write-Host "-- pfcheck --try-apply exit: $($tryApply.Code)"
+    if ($tryApply.Code -ne 0) { Note-Failure 'pfcheck --try-apply (denial before apply expected)' }
+
+    # Same attempt against the MAIN pipe: ACL refusal is also a valid C2-layer proof.
+    $tryMain = Run-AsUser $publicSmoke @('PingForge.Engine.v1', '--try-apply') $pfUser $pfPassword
+    Write-Host "-- pfcheck main-pipe --try-apply exit: $($tryMain.Code) (0 = dispatcher denial, 1 = ACL/unavailable)"
+
+    # The denial must be written to service.log with pfcheck SID, not SYSTEM.
+    Start-Sleep -Seconds 1
+    if ($pfSid) {
+        if (-not (Test-Path $serviceLog)) {
+            Note-Failure "service log not found: $serviceLog"
+        } elseif (-not (Select-String -Path $serviceLog -SimpleMatch $pfSid -Quiet)) {
+            Note-Failure "pfcheck SID not found in service.log"
+        } else {
+            Write-Host 'service.log contains pfcheck SID'
+        }
+    }
+
+    # 4) Administrator really can apply one harmless tweak and roll it back.
+    if ((Run-Smoke @('--apply-and-rollback') 'Admin --apply-and-rollback MENU_SHOW_DELAY_ZERO') -ne 0) {
+        Note-Failure 'admin --apply-and-rollback'
+    }
+}
+catch {
+    Note-Failure $_.Exception.Message
+}
+finally {
+    # Safety rollback and account cleanup always run.
+    try {
+        if (Test-Path $SmokePath) {
+            & $SmokePath --rollback-only
+            Write-Host "safety --rollback-only exit: $LASTEXITCODE (non-zero is expected when the snapshot is already rolled back)"
+        }
+    } catch { Write-Host "safety rollback note: $($_.Exception.Message)" }
+
+    if ($pfCreated) {
+        & net user $pfUser /delete | Out-Host
+        Write-Host 'pfcheck deleted'
+    }
+
+    try {
+        $uninstaller = Join-Path $installDir 'Uninstall.exe'
+        if (Test-Path $uninstaller) {
+            $remove = Start-Process $uninstaller -ArgumentList '/S' -Wait -PassThru
+            Write-Host "uninstall exit: $($remove.ExitCode)"
+        }
+    } catch { Write-Host "uninstall note: $($_.Exception.Message)" }
+}
+
+if ($failures.Count -gt 0) {
+    throw ("C7 live checks failed: " + ($failures -join '; '))
+}
+
+Write-Host 'C7 live checks: all passed.'

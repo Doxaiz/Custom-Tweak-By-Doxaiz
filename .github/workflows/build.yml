@@ -72,7 +72,7 @@ jobs:
         run: dotnet build PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --nologo
 
       - name: Тесты
-        run: dotnet test PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --no-build --nologo
+        run: dotnet test PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --no-build --nologo --logger "trx;LogFileName=test-results.trx" --results-directory "${{ runner.temp }}/test-results"
 
       # Витрины собираются из того же каталога, что применяет служба: если данные каталога разойдутся
       # с разметкой витрины, проверки упадут прямо здесь.
@@ -359,6 +359,18 @@ jobs:
           Write-Host 'Установщик проверен: ставит, запускает службу, удаляется без следов.'
         shell: pwsh
 
+      - name: C7 - live identity checks on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+          $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
+          $smoke = "${{ runner.temp }}/art/bin/PingForge.EngineSmoke/release/PingForge.EngineSmoke.exe"
+          if (-not (Test-Path $setup)) { throw "No setup file: $setup" }
+          if (-not (Test-Path $smoke)) { throw "No smoke file: $smoke" }
+          & tools\c7-live-checks.ps1 -SetupPath $setup -SmokePath $smoke
+          if ($LASTEXITCODE -ne 0) { throw "C7 live checks exit $LASTEXITCODE" }
+
       - name: Готовые .exe и контрольные суммы
         run: |
           $ErrorActionPreference = 'Stop'
@@ -433,3 +445,16 @@ jobs:
             dist/*.exe
             dist/*.zip
             dist/SHA256SUMS.txt
+
+      - name: Журналы и результаты тестов (всегда)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-and-logs
+          path: |
+            ${{ runner.temp }}/test-results/**/*.trx
+            dist/app-window.png
+            dist/app-start.log
+            dist/install-service.log
+            C:\ProgramData\PingForge\service.log
+          if-no-files-found: warn
