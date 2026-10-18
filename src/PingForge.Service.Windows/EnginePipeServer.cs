@@ -88,6 +88,13 @@ public sealed class EnginePipeServer
                 _log($"Связь оборвалась: {ex.Message}");
                 pipe.Dispose();
             }
+            catch (Exception ex)
+            {
+                // Одно неудачное подключение не закрывает канал для всех остальных:
+                // записываем причину и слушаем дальше.
+                _log($"Подключение не обслужилось ({ex.GetType().Name}: {ex.Message}): слушаю дальше.");
+                pipe.Dispose();
+            }
         }
 
         _log($"Канал {pipeName} закрыт: служба останавливается.");

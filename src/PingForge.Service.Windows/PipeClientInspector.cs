@@ -94,15 +94,29 @@ public static class PipeClientInspector
                 name = $"имя не прочитано ({ex.GetType().Name})";
             }
 
-            string sid = identity.User?.Value ?? "SID не прочитан";
-            bool isAdmin = principal.IsInRole(WindowsBuiltInRole.Administrator);
+            string sid;
+            bool isAdmin;
+            try
+            {
+                sid = identity.User?.Value ?? "SID не прочитан";
+                isAdmin = principal.IsInRole(WindowsBuiltInRole.Administrator);
+            }
+            catch (Exception ex) when (ex is SystemException or UnauthorizedAccessException)
+            {
+                // SID и роль читаются из того же токена: не прочитались — это «прав нет»,
+                // а не падение канала. Служба обязана пережить любого клиента.
+                return PipeClientIdentity.Unknown($"токен клиента открыт, но не прочитался ({ex.GetType().Name}: {ex.Message})");
+            }
 
             // Имя, SID и роль прочитаны до закрытия дескрипторов: токен живёт только внутри этого блока.
             return new PipeClientIdentity(isAdmin, name, sid, processId, null);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception
-            or InvalidOperationException or ObjectDisposedException or NotSupportedException)
+        catch (Exception ex)
         {
+            // Контракт метода — не бросать исключений вообще. Любая неудача (включая те типы,
+            // что здесь не перечислить заранее: SystemException от чтения токена, ошибки
+            // маршалинга дескрипторов) превращается в «прав нет» с объяснением. Один странный
+            // клиент не должен стоить службе канала.
             return PipeClientIdentity.Unknown($"{ex.GetType().Name}: {ex.Message}");
         }
     }
