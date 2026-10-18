@@ -62,4 +62,11 @@ public interface IEngineOperations
     /// <summary>Измерить пути до игрового сервера через сохранённые узлы (задача B). Отказ по умолчанию — тот же честный.</summary>
     Task<EngineOperationResult> MeasureRoutingPathsAsync(CancellationToken ct = default) =>
         Task.FromResult(EngineOperationResult.Failure("Слой маршрутизации не подключён: измерять пути нечем."));
+
+    /// <summary>
+    /// Проверка следов перед удалением (задача T): что программа меняла, не осталось ли незакрытых
+    /// операций и есть ли снапшоты для отката. Без журнала — честный отказ, а не пустой ответ.
+    /// </summary>
+    Task<EngineOperationResult> UninstallCheckAsync(CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Журнал изменений не подключён: проверить следы перед удалением нечем."));
 }

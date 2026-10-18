@@ -102,6 +102,21 @@ public sealed class ReadOnlyChannelTests
     }
 
     [Fact]
+    public async Task Следы_перед_удалением_видно_в_канале_чтения_без_прав()
+    {
+        // Задача T: скрипт снятия спрашивает службу ДО удаления. Ответ должен приходить и тогда,
+        // когда администратор не в деле, — иначе удаление «не видит» следы и молча их бросает.
+        var ops = new RecordingEngineOperations();
+
+        EngineResponse response = await ReadOnlyDispatcher(ops)
+            .HandleJsonAsync("""{"id":"1","command":"uninstall-check"}""", clientIsAdministrator: false);
+
+        Assert.True(response.Ok, response.MessageRu);
+        Assert.Contains("удалять спокойно", response.MessageRu);
+        Assert.Contains(ops.Calls, call => call == "uninstall-check");
+    }
+
+    [Fact]
     public async Task Основной_канал_работает_как_прежде()
     {
         // Сторож на то, что сужение канала чтения не задело основной: там меняющие команды выполняются
@@ -126,7 +141,7 @@ public sealed class ReadOnlyChannelTests
 
         Assert.Equal(wireNames.Count, wireNames.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.All(wireNames, name => Assert.NotNull(EngineCommandCatalog.Find(name)));
-        Assert.Equal("ping, capabilities, status, journal-tail, system-state, route-discover, realtime-stop",
+        Assert.Equal("ping, capabilities, status, journal-tail, system-state, route-discover, realtime-stop, uninstall-check",
             EngineCommandCatalog.ReadOnlyChannelWireNamesRu());
     }
 
@@ -208,6 +223,11 @@ public sealed class ReadOnlyChannelTests
 
         public Task<EngineOperationResult> ReadSystemStateAsync(CancellationToken ct = default) =>
             Record("system-state", EngineOperationResult.Success("прочитано"));
+
+        public Task<EngineOperationResult> UninstallCheckAsync(CancellationToken ct = default) =>
+            Record("uninstall-check", EngineOperationResult.Success(
+                "Применённых изменений нет — можно удалять спокойно.",
+                """{"appliedChanges":0,"openOperations":0,"snapshots":0,"optimizationRunning":false,"mustAsk":false,"optionsRu":[],"questionRu":"Применённых изменений нет.","warningRu":""}"""));
 
         private Task<EngineOperationResult> Record(string call, EngineOperationResult result)
         {

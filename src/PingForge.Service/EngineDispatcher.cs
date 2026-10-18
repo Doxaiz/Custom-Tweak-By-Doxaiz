@@ -174,6 +174,8 @@ public sealed class EngineDispatcher
 
                 EngineCommandKind.RouteMeasure => await _operations.MeasureRoutingPathsAsync(ct).ConfigureAwait(false),
 
+                EngineCommandKind.UninstallCheck => await _operations.UninstallCheckAsync(ct).ConfigureAwait(false),
+
                 _ => EngineOperationResult.Failure($"Команда «{descriptor.WireName}» объявлена, но не подключена."),
             };
 

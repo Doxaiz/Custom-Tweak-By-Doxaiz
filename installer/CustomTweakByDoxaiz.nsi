@@ -132,7 +132,11 @@ Section "Программа (обязательно)" SEC_APP
 
   DetailPrint "Закрываю программу, если она запущена…"
   nsExec::ExecToLog 'taskkill /IM "${APP_EXE}" /F'
-
+  ; Обновление поверх работыющей службы (задача T): бинарник службы занят процессом, и File
+  ; молча оставил бы старый exe. Сначала останавливаем — install-service.ps1 ниже перерегистрирует
+  ; и запустит уже новый. Ошибки нет, если службы ещё нет: net stop это просто заметит.
+  DetailPrint "Останавливаю службу ${SERVICE_NAME}, чтобы заменить её файл…"
+  nsExec::ExecToLog 'net stop ${SERVICE_NAME}'
   DetailPrint "Копирую файлы в $INSTDIR"
   File "${SOURCE_DIR}\${APP_EXE}"
   File "${SOURCE_DIR}\${SERVICE_EXE}"
@@ -187,9 +191,8 @@ Section "Служба PingForge (регистрируется и запуска�
   ; Тот же скрипт, что лежит в архиве: одна логика на всех, а не две разные.
   ; Вывод уходит в файл рядом с программой: если служба не встанет, будет что показать
   ; человеку и проверке на сборочной машине, а не пустое окно.
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Transcript -Path $\'$INSTDIR\install-service.log$\' -Force | Out-Null; try { & $\'$INSTDIR\install-service.ps1$\' -NoShortcut; $code = $LASTEXITCODE } catch { $_ | Out-String | Write-Host; $code = 1 } finally { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }; exit $code"'
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Transcript -Path $\'$INSTDIR\install-service.log$\' -Force | Out-Null; try { & $\'$INSTDIR\install-service.ps1$\' -NoShortcut -Force; $code = $LASTEXITCODE } catch { $_ | Out-String | Write-Host; $code = 1 } finally { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }; exit $code"'
   Pop $0
-
   ${If} $0 != "0"
     DetailPrint "Служба не зарегистрировалась, код возврата: $0"
     ${IfNot} ${Silent}
@@ -231,9 +234,21 @@ Section "Uninstall"
 
   DetailPrint "Снимаю службу ${SERVICE_NAME}…"
   ; -KeepFiles: файлы удалит сам установщик, а данные (журнал и снапшоты) не трогаем.
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Transcript -Path $\'$INSTDIR\uninstall-service.log$\' -Force | Out-Null; try { & $\'$INSTDIR\uninstall-service.ps1$\' -KeepFiles; $code = $LASTEXITCODE } catch { $_ | Out-String | Write-Host; $code = 1 } finally { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }; exit $code"'
+  ; -RollbackAndRemove: это вариант по умолчанию из вопроса удаления (задача T) — вернуть настройки
+  ; Windows как было до снятия. В тихом режиме спросить некого, поэтому спрашиваем право: если в
+  ; системе остались применённые изменения и откат не прошёл, скрипт выйдет с ненулевым кодом,
+  ; а установщик остановится и всё оставит — файлы и данные на месте, лог рядом с программой.
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Transcript -Path $\'$INSTDIR\uninstall-service.log$\' -Force | Out-Null; try { & $\'$INSTDIR\uninstall-service.ps1$\' -KeepFiles -RollbackAndRemove; $code = $LASTEXITCODE } catch { $_ | Out-String | Write-Host; $code = 1 } finally { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }; exit $code"'
   Pop $0
-
+  ${If} $0 != "0"
+    DetailPrint "Удаление остановлено: скрипт снятия вернул код $0"
+    ${IfNot} ${Silent}
+      MessageBox MB_OK|MB_ICONEXCLAMATION \
+        "Удаление прервано (код $0).$\r$\n$\r$\nПрограмма не стала сносить себя, пока не удалось вернуть применённые изменения. Файлы и данные на месте.$\r$\nЧто именно не снялось — в файле uninstall-service.log рядом с программой."
+    ${EndIf}
+    SetErrors
+    Abort
+  ${EndIf}
   DetailPrint "Удаляю файлы программы…"
   Delete "$INSTDIR\${APP_EXE}"
   Delete "$INSTDIR\${SERVICE_EXE}"
