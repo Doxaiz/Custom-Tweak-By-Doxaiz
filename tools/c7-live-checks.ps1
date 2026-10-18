@@ -71,8 +71,16 @@ try {
 
     # 2) Temporary non-admin user pfcheck (password is generated, never printed).
     $pfPassword = [Guid]::NewGuid().ToString('N') + 'Aa1!'
-    & net user $pfUser $pfPassword /add | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw 'net user pfcheck /add failed' }
+    try {
+        $securePf = ConvertTo-SecureString $pfPassword -AsPlainText -Force
+        New-LocalUser -Name $pfUser -Password $securePf -Description 'C7 live check (temporary)' | Out-Null
+    } catch {
+        Ann 'error' "New-LocalUser failed: $($_.Exception.Message); trying net user"
+        $netOut = & net user $pfUser $pfPassword /add 2>&1 | Out-String
+        Ann 'error' "net user exit=$LASTEXITCODE : $netOut"
+        if ($LASTEXITCODE -ne 0) { throw 'user pfcheck was not created' }
+    }
+    if (-not (Get-LocalUser -Name $pfUser -ErrorAction SilentlyContinue)) { throw 'user pfcheck was not created' }
     $pfCreated = $true
     Ann 'notice' 'pfcheck user created'
 
