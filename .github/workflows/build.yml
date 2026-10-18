@@ -488,6 +488,8 @@ jobs:
 
       - name: T - uninstall leaves nothing and update keeps state (live)
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = 'Continue'
           $ann = 'file=scripts/uninstall-service.ps1,line=1'
