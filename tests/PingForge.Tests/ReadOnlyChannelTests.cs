@@ -176,7 +176,7 @@ public sealed class ReadOnlyChannelTests
 
         public bool IsElevationAvailable => true;
 
-        public Task<EngineOperationResult> PingAsync(CancellationToken ct = default) =>
+        public Task<EngineOperationResult> PingAsync(EnginePeerIdentity? peer = null, CancellationToken ct = default) =>
             Record("ping", EngineOperationResult.Success("жива"));
 
         public Task<EngineOperationResult> CapabilitiesAsync(CancellationToken ct = default) =>

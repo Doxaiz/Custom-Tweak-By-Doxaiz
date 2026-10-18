@@ -18,8 +18,10 @@ namespace PingForge.Service.Windows;
 /// код выполняется в контексте самого сервера, то есть службы от LocalSystem. Проверка
 /// «администратор ли клиент» в этом случае отвечает «да» всегда — и дыра остаётся открытой,
 /// только теперь её не видно. Поэтому права берутся не через олицетворение, а по процессу клиента:
-///   • <c>GetNamedPipeServerProcessId</c> — идентификатор процесса на другом конце канала;
-///   • <c>OpenProcessToken(QUERY_LIMITED_INFORMATION)</c> — его токен, без прав на чужой процесс;
+///   • <c>GetNamedPipeClientProcessId</c> — идентификатор процесса клиента на другом конце канала
+///     (сервер спрашивает именно про клиента; обратная функция вернула бы PID самой службы);
+///   • <c>OpenProcessToken(TOKEN_QUERY = 0x0008)</c> — его токен; права на сам процесс при этом
+///     минимальны (PROCESS_QUERY_LIMITED_INFORMATION), их хватает, чтобы спросить токен;
 ///   • <c>WindowsPrincipal.IsInRole(Administrator)</c> — по токену видно, включена ли группа
 ///     администраторов: у процесса без повышения она есть, но помечена «только запрет»
 ///     (deny-only), и роль не подтверждается.
@@ -124,7 +126,7 @@ public static class PipeClientInspector
 
         // Дескриптор процесса нужен только на время запроса токена: сам токен живёт своей жизнью.
         using var process = new SafeProcessHandle(raw, ownsHandle: true);
-        if (!OpenProcessToken(process.DangerousGetHandle(), TokenQueryLimited, out SafeTokenHandle opened) || opened.IsInvalid)
+        if (!OpenProcessToken(process.DangerousGetHandle(), TokenQuery, out SafeTokenHandle opened) || opened.IsInvalid)
         {
             problem = $"токен процесса {processId} не открылся (ошибка {Marshal.GetLastWin32Error()})";
             opened?.Dispose();
@@ -136,18 +138,26 @@ public static class PipeClientInspector
 
     private static bool TryGetClientProcessId(NamedPipeServerStream pipe, out int processId)
     {
-        processId = 0;
-        return GetNamedPipeServerProcessId(pipe.SafePipeHandle.DangerousGetHandle(), ref processId);
+        // Win32 отдаёт PID беззнаковым DWORD: читаем как uint и только потом приводим к int,
+        // чтобы широкий PID не превратился в отрицательное число на полпути.
+        uint rawProcessId = 0;
+        bool ok = GetNamedPipeClientProcessId(pipe.SafePipeHandle.DangerousGetHandle(), ref rawProcessId);
+        processId = ok ? unchecked((int)rawProcessId) : 0;
+        return ok;
     }
 
-    /// <summary>QUERY_LIMITED_INFORMATION: достаточно, чтобы спросить токен, и недостаточно, чтобы влезть в процесс.</summary>
-    private const uint TokenQueryLimited = 0x1000;
+    /// <summary>
+    /// TOKEN_QUERY (0x0008) — право спросить сведения о токене (кто владелец, какие группы включены).
+    /// Это право на ТОКЕН, а не на процесс: 0x1000 в маску прав токена не входит, и с ним
+    /// OpenProcessToken честно завершается с ERROR_ACCESS_DENIED — токен не открывается ни у кого.
+    /// </summary>
+    private const uint TokenQuery = 0x0008;
 
     /// <summary>Тот же минимум прав, но на сам процесс: спросить его токен.</summary>
     private const uint ProcessQueryLimitedInformation = 0x1000;
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool GetNamedPipeServerProcessId(IntPtr pipe, ref int clientProcessId);
+    private static extern bool GetNamedPipeClientProcessId(IntPtr pipe, ref uint clientProcessId);
 
     [DllImport("advapi32.dll", SetLastError = true)]
     private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out SafeTokenHandle tokenHandle);

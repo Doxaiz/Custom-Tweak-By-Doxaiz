@@ -500,9 +500,14 @@ public class ServiceDispatcherTests
 
         public Exception? ThrowOnStatus { get; set; }
 
-        public Task<EngineOperationResult> PingAsync(CancellationToken ct = default) =>
-            Task.FromResult(EngineOperationResult.Success(
+        public EnginePeerIdentity? LastPeer { get; private set; }
+
+        public Task<EngineOperationResult> PingAsync(EnginePeerIdentity? peer = null, CancellationToken ct = default)
+        {
+            LastPeer = peer;
+            return Task.FromResult(EngineOperationResult.Success(
                 $"Служба жива, версия протокола {EngineProtocol.Version}."));
+        }
 
         public Task<EngineOperationResult> CapabilitiesAsync(CancellationToken ct = default) =>
             Task.FromResult(EngineOperationResult.Success("Список команд.", EngineCommandCatalog.DescribeRu()));

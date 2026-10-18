@@ -123,12 +123,22 @@ public sealed class EnginePipeServer
                     break;
                 }
 
+                // Личность уходит в разборщик целиком, а не одним флагом: ответ ping назовёт
+                // имя и SID клиента, и живая проверка сможет сличить их с процессом проверяющего.
+                var peer = new EnginePeerIdentity(
+                    client.NameRu,
+                    client.Sid,
+                    client.IsAdministrator,
+                    client.ProcessId,
+                    client.ProblemRu);
+
                 EngineResponse response = await dispatcher
                     .HandleJsonAsync(
                         frame,
                         client.IsAdministrator,
                         denialRu => _log($"ОТКАЗ ПО ПРАВАМ ({client.DescribeRu()}): {denialRu}"),
-                        ct)
+                        ct,
+                        peer)
                     .ConfigureAwait(false);
                 if (!await TryWriteAsync(pipe, response, ct).ConfigureAwait(false))
                 {

@@ -56,7 +56,8 @@ public sealed class EngineDispatcher
         string requestJson,
         bool clientIsAdministrator = true,
         Action<string>? onDenialRu = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        EnginePeerIdentity? peer = null)
     {
         if (!EngineJson.TryDecodeRequest(requestJson, out EngineRequest? request, out string errorRu))
         {
@@ -64,16 +65,25 @@ public sealed class EngineDispatcher
             return EngineResponse.Failure(string.Empty, errorRu);
         }
 
-        return await HandleAsync(request!, clientIsAdministrator, onDenialRu, ct).ConfigureAwait(false);
+        return await HandleAsync(request!, clientIsAdministrator, onDenialRu, ct, peer).ConfigureAwait(false);
     }
 
     public async Task<EngineResponse> HandleAsync(
         EngineRequest request,
         bool clientIsAdministrator = true,
         Action<string>? onDenialRu = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        EnginePeerIdentity? peer = null)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // C7: если канал передал прочитанную личность клиента, флаг прав берётся ИЗ НЕЁ, а не
+        // из параметра по умолчанию. Именно здесь раньше терялся смысл проверки: тесты и канал
+        // могли подставить «администратор: да» руками, и диспетчер честно верил подставленному.
+        if (peer is not null)
+        {
+            clientIsAdministrator = peer.ClientIsAdmin;
+        }
 
         EngineCommandDescriptor descriptor = EngineCommandCatalog.Get(request.Command);
 
@@ -131,7 +141,7 @@ public sealed class EngineDispatcher
         {
             EngineOperationResult result = request.Command switch
             {
-                EngineCommandKind.Ping => await _operations.PingAsync(ct).ConfigureAwait(false),
+                EngineCommandKind.Ping => await _operations.PingAsync(peer, ct).ConfigureAwait(false),
 
                 EngineCommandKind.Capabilities => await _operations.CapabilitiesAsync(ct).ConfigureAwait(false),
 

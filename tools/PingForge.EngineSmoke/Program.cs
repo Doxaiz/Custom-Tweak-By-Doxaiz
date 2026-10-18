@@ -32,7 +32,12 @@ internal static class Program
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-        string? pipeName = args.Length > 0 ? args[0] : null;
+        // Режимы живой проверки C7 задаются флагами; первый аргумент без «--» — по-прежнему
+        // имя канала. Без флагов поведение прежнее: пять читающих проверок, ничего не меняем.
+        var flags = new HashSet<string>(args.Where(a => a.StartsWith("--", StringComparison.Ordinal)), StringComparer.Ordinal);
+        string? pipeName = args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
+        bool specialMode = flags.Contains("--expect-identity") || flags.Contains("--try-apply")
+            || flags.Contains("--apply-and-rollback") || flags.Contains("--rollback-only");
         Console.WriteLine("Custom Tweak By Doxaiz — живая проверка службы");
 
         using var channel = new NamedPipeEngineChannel(pipeName, TimeSpan.FromSeconds(30));
@@ -43,6 +48,11 @@ internal static class Program
             : $"Канал: {pipeName} (задан аргументом)");
         Console.WriteLine();
         var client = new EngineClient(channel);
+
+        if (specialMode)
+        {
+            return await RunSpecialModeAsync(client, flags);
+        }
 
         try
         {
@@ -115,6 +125,164 @@ internal static class Program
             Console.WriteLine("Проверьте, что служба PingForge установлена и запущена: Get-Service PingForge");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// Режимы C7: проверка личности, попытка применения без прав и применение с откатом.
+    /// Каждый режим печатает то, что прислала служба, дословно — журнал прогона и есть доказательство.
+    /// </summary>
+    private static async Task<int> RunSpecialModeAsync(EngineClient client, HashSet<string> flags)
+    {
+        try
+        {
+            if (flags.Contains("--rollback-only"))
+            {
+                EngineResponse rollback = await client.SendAsync(EngineCommandKind.RollbackSnapshot);
+                Console.WriteLine($"Откат последнего снапшота: {(rollback.Ok ? rollback.MessageRu : "ОТКАЗ: " + rollback.MessageRu)}");
+                return rollback.Ok ? 0 : 2;
+            }
+
+            // Во всех остальных режимах сначала — ping: служба называет, кого она видит.
+            EngineResponse ping = await client.SendAsync(EngineCommandKind.Ping);
+            Console.WriteLine($"Связь: {(ping.Ok ? ping.MessageRu : "ОТКАЗ: " + ping.MessageRu)}");
+            if (!ping.Ok)
+            {
+                return 2;
+            }
+
+            (string clientName, string clientSid, bool clientIsAdmin) = ReadIdentity(ping.DataJson);
+            Console.WriteLine($"Служба видит клиента: clientName={clientName}; clientSid={clientSid}; clientIsAdmin={clientIsAdmin}");
+
+            if (flags.Contains("--expect-identity"))
+            {
+                return CheckIdentity(clientName, clientSid, clientIsAdmin);
+            }
+
+            if (flags.Contains("--try-apply"))
+            {
+                // Несуществующий твик нарочно: если проверка прав работает, отказ придёт ДО
+                // поиска твика. Ответ «твик не найден» означал бы, что до применения дошло.
+                EngineResponse attempt = await client.SendAsync(
+                    EngineCommandKind.ApplyTweaks,
+                    new Dictionary<string, string> { ["tweaks"] = "C7_NO_SUCH_TWEAK", ["restorePoint"] = "false" });
+                Console.WriteLine($"Попытка применения: {(attempt.Ok ? attempt.MessageRu : "ОТКАЗ: " + attempt.MessageRu)}");
+                if (attempt.Ok)
+                {
+                    Console.WriteLine("ПРОВАЛ: применение несуществующего твика вдруг удалось.");
+                    return 2;
+                }
+
+                if (attempt.MessageRu.Contains("в каталоге нет", StringComparison.Ordinal))
+                {
+                    Console.WriteLine("ПРОВАЛ: отказ — «твик не найден», значит проверка прав пройдена или пропущена, а не сработала.");
+                    return 2;
+                }
+
+                string layer = attempt.MessageRu.Contains("только для чтения", StringComparison.Ordinal)
+                    ? "C2 (канал только для чтения)"
+                    : attempt.MessageRu.Contains("прав администратора нет", StringComparison.Ordinal)
+                        ? "C1 (права клиента в диспетчере)"
+                        : "канал/ACL (подключение или диспетчер)";
+                Console.WriteLine($"Итог: отказ пришёл до применения, слой: {layer}. Ничего не изменено.");
+                return 0;
+            }
+
+            if (flags.Contains("--apply-and-rollback"))
+            {
+                EngineResponse apply = await client.SendAsync(
+                    EngineCommandKind.ApplyTweaks,
+                    new Dictionary<string, string> { ["tweaks"] = "MENU_SHOW_DELAY_ZERO", ["restorePoint"] = "true" });
+                Console.WriteLine($"Применение MENU_SHOW_DELAY_ZERO: {(apply.Ok ? apply.MessageRu : "ОТКАЗ: " + apply.MessageRu)}");
+                if (!apply.Ok)
+                {
+                    return 2;
+                }
+
+                EngineResponse rollback = await client.SendAsync(EngineCommandKind.RollbackSnapshot);
+                Console.WriteLine($"Откат: {(rollback.Ok ? rollback.MessageRu : "ОТКАЗ: " + rollback.MessageRu)}");
+                return rollback.Ok ? 0 : 2;
+            }
+
+            return 0;
+        }
+        catch (EngineUnavailableException ex)
+        {
+            Console.WriteLine($"Служба недоступна: {ex.Message}");
+            return 1;
+        }
+    }
+
+    private static (string Name, string Sid, bool IsAdmin) ReadIdentity(string? dataJson)
+    {
+        if (string.IsNullOrWhiteSpace(dataJson))
+        {
+            return (string.Empty, string.Empty, false);
+        }
+
+        try
+        {
+            using JsonDocument data = JsonDocument.Parse(dataJson);
+            JsonElement root = data.RootElement;
+            string name = root.TryGetProperty("clientName", out JsonElement n) && n.ValueKind == JsonValueKind.String ? n.GetString() ?? string.Empty : string.Empty;
+            string sid = root.TryGetProperty("clientSid", out JsonElement s) && s.ValueKind == JsonValueKind.String ? s.GetString() ?? string.Empty : string.Empty;
+            bool admin = root.TryGetProperty("clientIsAdmin", out JsonElement a) && a.ValueKind == JsonValueKind.True;
+            return (name, sid, admin);
+        }
+        catch (JsonException)
+        {
+            return (string.Empty, string.Empty, false);
+        }
+    }
+
+    /// <summary>
+    /// Сличить личность от службы с токеном ЭТОГО процесса. Ловит обе ошибки C7 сразу:
+    /// чужая функция дала бы SYSTEM/S-1-5-18, чужое право на токен — «не определён»/false.
+    /// </summary>
+    private static int CheckIdentity(string clientName, string clientSid, bool clientIsAdmin)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.WriteLine("ПРОВАЛ: --expect-identity имеет смысл только на Windows.");
+            return 2;
+        }
+
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        var principal = new System.Security.Principal.WindowsPrincipal(identity);
+        string expectedName = identity.Name;
+        string expectedSid = identity.User?.Value ?? string.Empty;
+        bool expectedAdmin = principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        Console.WriteLine($"Этот процесс: name={expectedName}; sid={expectedSid}; isAdmin={expectedAdmin}");
+
+        var problems = new List<string>();
+        if (!string.Equals(clientName, expectedName, StringComparison.OrdinalIgnoreCase))
+        {
+            problems.Add($"имя не совпало: служба назвала «{clientName}»");
+        }
+
+        if (!string.Equals(clientSid, expectedSid, StringComparison.OrdinalIgnoreCase))
+        {
+            problems.Add($"SID не совпал: служба назвала «{clientSid}»");
+        }
+
+        if (string.Equals(clientSid, "S-1-5-18", StringComparison.OrdinalIgnoreCase)
+            || clientName.Contains("SYSTEM", StringComparison.OrdinalIgnoreCase))
+        {
+            problems.Add("служба назвала клиентом саму себя (SYSTEM)");
+        }
+
+        if (clientIsAdmin != expectedAdmin)
+        {
+            problems.Add($"флаг администратора не совпал: служба сказала {clientIsAdmin}, у процесса {expectedAdmin}");
+        }
+
+        if (problems.Count > 0)
+        {
+            Console.WriteLine("ПРОВАЛ личности: " + string.Join("; ", problems));
+            return 2;
+        }
+
+        Console.WriteLine("Итог: служба видит именно этот процесс — имя, SID и флаг администратора совпали.");
+        return 0;
     }
 
     /// <summary>

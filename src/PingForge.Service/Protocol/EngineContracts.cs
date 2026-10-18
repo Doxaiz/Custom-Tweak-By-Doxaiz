@@ -70,6 +70,25 @@ public sealed record EngineResponse(string Id, bool Ok, string MessageRu, string
     public static EngineResponse Failure(string id, string messageRu) => new(id, false, messageRu);
 }
 
+/// <summary>
+/// Кто подключился к каналу — по его собственному процессу, а не по токену службы (C7).
+/// Заполняется на стороне службы из <c>PipeClientInspector</c> и едет в ответе <c>ping</c>
+/// полями <c>clientName</c>, <c>clientSid</c> и <c>clientIsAdmin</c>: так живая проверка на
+/// раннере может сличить то, что видит служба, с токеном самого проверяющего процесса.
+/// Ошибка чтения — это «не определён» и «прав нет», а не «наверное администратор».
+/// </summary>
+public sealed record EnginePeerIdentity(
+    string ClientName,
+    string ClientSid,
+    bool ClientIsAdmin,
+    int ClientProcessId = 0,
+    string? ProblemRu = null)
+{
+    /// <summary>Личность не прочитана: имени и SID нет, прав администратора нет.</summary>
+    public static EnginePeerIdentity Unknown(string problemRu) =>
+        new("не определён", "не определён", false, 0, problemRu);
+}
+
 /// <summary>Результат работы самой операции — то же, что ответ, но без номера запроса.</summary>
 public sealed record EngineOperationResult(bool Ok, string MessageRu, string? DataJson = null)
 {

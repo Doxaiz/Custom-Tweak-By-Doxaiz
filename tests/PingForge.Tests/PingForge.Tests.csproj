@@ -30,6 +30,7 @@
     <None Include="..\..\src\PingForge.App\app.manifest" Link="checked-app.manifest" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\PingForge.App.csproj" Link="checked-PingForge.App.csproj" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeAclFactory.cs" Link="checked-PipeAclFactory.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.Service.Windows\PipeClientInspector.cs" Link="checked-PipeClientInspector.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\КАНАЛЫ-СЛУЖБЫ.md" Link="checked-pipes-doc.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
