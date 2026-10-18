@@ -86,12 +86,14 @@ public class ServiceSecurityTests
     public void Обычному_пользователю_не_дают_полный_доступ()
     {
         // В основном канале для него нет вообще никакого правила — то есть и двери тоже нет.
-        // В канале чтения — только чтение.
+        // В канале чтения — байты в обе стороны (без этого соединение не открывается вовсе,
+        // доказано живым pfcheck), но не полный доступ: создавать экземпляры канала и менять
+        // его права обычному пользователю нельзя, а команды ограничивает диспетчер.
         Assert.DoesNotContain(ServiceSecurityPlan.Grants, g => g.Sid == ServiceSecurityPlan.InteractiveSid);
 
         PipeAccessGrant user = Assert.Single(ServiceSecurityPlan.ReadOnlyGrants, g => g.Sid == ServiceSecurityPlan.InteractiveSid);
         Assert.NotEqual(PipeAccessRight.FullControl, user.Right);
-        Assert.NotEqual(PipeAccessRight.ReadWrite, user.Right);
+        Assert.Equal(PipeAccessRight.ReadWrite, user.Right);
 
         Assert.Contains("администратора", user.WhyRu + ServiceSecurityPlan.DescribeRu());
     }
