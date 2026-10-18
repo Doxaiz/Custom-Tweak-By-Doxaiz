@@ -466,7 +466,7 @@ jobs:
             New-Item -ItemType Directory -Force test-results | Out-Null
             $out | Set-Content test-results\routing-live.log -Encoding utf8
 
-            $routeLine = (($out -split "`n" | Select-String -SimpleMatch '[6/6]') -join '').Trim()
+            $routeLine = (($out -split "`n" | Select-String -SimpleMatch '[6/7]') -join '').Trim()
             $checks = (($out -split "`n" | Where-Object { $_ -match 'x1b|\[\d/\d\]' -or $_ -match '[0-9]/[0-9]' }) -join ' | ').Trim()
             $checks = $checks -replace '%','%25' -replace "`r",''
             Write-Host "::notice $ann::routing-live exit=$code; checks: $checks"
@@ -476,13 +476,173 @@ jobs:
               Write-Host "::error $ann::routing-live tail: $last"
               throw "EngineSmoke exit $code"
             }
-            if ($routeLine -notmatch '6/6') { throw 'line [6/6] missing from smoke output' }
+            if ($routeLine -notmatch '6/7') { throw 'line [6/7] missing from smoke output' }
 
             $uninstaller = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\Uninstall.exe'
             if (Test-Path $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait | Out-Null }
             Write-Host "::notice $ann::routing-live OK: $routeLine"
           } catch {
             Write-Host "::error $ann::routing-live failed: $($_.Exception.Message -replace '%','%25')"
+            exit 1
+          }
+
+      - name: T - uninstall leaves nothing and update keeps state (live)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $ann = 'file=scripts/uninstall-service.ps1,line=1'
+
+          function Query-Engine {
+              param([string]$Pipe, [string]$Command, [hashtable]$CmdArgs)
+              $p = New-Object System.IO.Pipes.NamedPipeClientStream('.', $Pipe, [System.IO.Pipes.PipeDirection]::InOut)
+              try {
+                  try { $p.Connect(8000) } catch { return $null }
+                  $req = [ordered]@{ id = [Guid]::NewGuid().ToString('N'); command = $Command }
+                  if ($CmdArgs) { $req['args'] = $CmdArgs }
+                  $b = [Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $req -Compress))
+                  $p.Write([BitConverter]::GetBytes([int32]$b.Length), 0, 4)
+                  $p.Write($b, 0, $b.Length)
+                  $p.Flush()
+                  $h = New-Object byte[] 4
+                  for ($i = 0; $i -lt 4; ) { $n = $p.Read($h, $i, 4 - $i); if ($n -le 0) { return $null }; $i += $n }
+                  $len = [BitConverter]::ToInt32($h, 0)
+                  if ($len -le 0 -or $len -gt 1048576) { return $null }
+                  $body = New-Object byte[] $len
+                  for ($i = 0; $i -lt $len; ) { $n = $p.Read($body, $i, $len - $i); if ($n -le 0) { return $null }; $i += $n }
+                  return [Text.Encoding]::UTF8.GetString($body) | ConvertFrom-Json
+              } finally { $p.Dispose() }
+          }
+
+          function Clean-Answer([string]$text) {
+              if (-not $text) { return '' }
+              ($text -replace '[\r\n]+', ' ' -replace '%', '%25').Trim()
+          }
+
+          try {
+            Write-Host "::notice $ann::T start: live cycles of task T"
+            New-Item -ItemType Directory -Force test-results | Out-Null
+            Start-Transcript -Path test-results\t-uninstall.log -Force | Out-Null
+
+            $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+            $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
+            $installDir = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz'
+            $dataDir = Join-Path $env:ProgramData 'PingForge'
+            $mainPipe = 'PingForge.Engine.v1'
+            $roPipe = 'PingForge.Engine.ReadOnly.v1'
+
+            function Purge-All {
+                Get-Service PingForge -ErrorAction SilentlyContinue | ForEach-Object {
+                    sc.exe stop PingForge | Out-Null; Start-Sleep -Seconds 2
+                    sc.exe delete PingForge | Out-Null; Start-Sleep -Seconds 2
+                }
+                if (Test-Path $dataDir) { Remove-Item $dataDir -Recurse -Force -ErrorAction SilentlyContinue }
+                if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue }
+            }
+
+            function Install-Quiet([string]$Setup) {
+                $proc = Start-Process $Setup -ArgumentList '/S' -Wait -PassThru
+                if ($proc.ExitCode -ne 0) { throw "setup /S exit $($proc.ExitCode)" }
+                (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(90))
+                Start-Sleep -Seconds 3
+            }
+
+            # ── цикл A: установка → применение → удаление с откатом (требование 1 и 5) ─────────
+            Purge-All
+            Install-Quiet $setup
+
+            $apply = Query-Engine $mainPipe 'apply-tweaks' @{ tweaks = 'TCP_NO_DELAY' }
+            Write-Host "::notice $ann::T apply ok=$($apply.ok) msg=$(Clean-Answer $apply.messageRu)"
+            if (-not $apply -or -not $apply.ok) { throw 'T: apply-tweaks (safe TCP_NODELAY) failed on cycle A' }
+
+            # Скрипт снятия лежит ВНЕ папки установки на время своего запуска: иначе он удалит сам себя на ходу.
+            $scriptTmp = Join-Path $env:RUNNER_TEMP 't-uninstall-service.ps1'
+            Copy-Item (Join-Path $installDir 'uninstall-service.ps1') $scriptTmp -Force
+
+            & $scriptTmp -NonInteractive
+            $refusalCode = $LASTEXITCODE
+            Write-Host "::notice $ann::T refusal-exit=$refusalCode (ожидался 2: есть применённые изменения, выбор не задан)"
+            if ($refusalCode -ne 2) { throw "T: uninstall without choice must exit 2, got $refusalCode" }
+            if (-not (Get-Service PingForge -ErrorAction SilentlyContinue)) { throw 'T: refusal path deleted the service' }
+
+            & $scriptTmp -RollbackAndRemove -RemoveData
+            $cleanCode = $LASTEXITCODE
+            Write-Host "::notice $ann::T rollback+remove exit=$cleanCode"
+            if ($cleanCode -ne 0) { throw "T: uninstall with rollback exit $cleanCode" }
+            if (Get-Service PingForge -ErrorAction SilentlyContinue) { throw 'T: service left behind' }
+            if (Test-Path $dataDir) { throw 'T: data left behind after -RemoveData' }
+            if (Test-Path $installDir) { throw 'T: install dir left behind' }
+            Write-Host '::notice T-cycleA OK: applied tweak -> refusal -> rollback + clean removal'
+
+            # ── цикл B: установка поверх работыющей службы (требование 3) ─────────────────────
+            Install-Quiet $setup
+            $apply2 = Query-Engine $mainPipe 'apply-tweaks' @{ tweaks = 'TCP_NO_DELAY' }
+            if (-not $apply2 -or -not $apply2.ok) { throw 'T: apply-tweaks failed on cycle B' }
+            $settingsFile = Join-Path $dataDir 'settings.json'
+            $settingsHash = if (Test-Path $settingsFile) { (Get-FileHash $settingsFile).Hash } else { 'absent' }
+            $dbBefore = (Get-Item (Join-Path $dataDir 'pingforge.db')).Length
+
+            # Тот же установщик поверх работыющей службы — проверка, что занятый бинарник службы
+            # заменяется (net stop в секции установки), а данные и журнал остаются.
+            Install-Quiet $setup
+            $ping = Query-Engine $roPipe 'ping'
+            $pd = $null
+            if ($ping -and $ping.dataJson) { $pd = $ping.dataJson | ConvertFrom-Json }
+            $svcVersion = if ($pd) { [string]$pd.appVersion } else { 'unknown' }
+            Write-Host "::notice $ann::T upgraded service version=$svcVersion expected=$version"
+            if ($svcVersion -ne $version) { throw "T: version after upgrade is $svcVersion, expected $version" }
+
+            $settingsHash2 = if (Test-Path $settingsFile) { (Get-FileHash $settingsFile).Hash } else { 'absent' }
+            if ($settingsHash2 -ne $settingsHash) { throw 'T: update touched settings.json' }
+            $dbAfter = (Get-Item (Join-Path $dataDir 'pingforge.db')).Length
+            if ($dbAfter -lt $dbBefore) { throw "T: database shrank during update ($dbBefore -> $dbAfter)" }
+            $journal = Query-Engine $roPipe 'journal-tail' @{ limit = '50' }
+            if (-not $journal -or -not $journal.ok) { throw 'T: journal unreadable after update' }
+            if ($journal.dataJson -notmatch 'TCP_NO_DELAY' -and $journal.messageRu -notmatch 'TCP_NO_DELAY') {
+                throw 'T: applied tweak entry disappeared from journal during update'
+            }
+            $rb = Query-Engine $mainPipe 'rollback'
+            Write-Host "::notice $ann::T rollback-from-old-snapshot ok=$($rb.ok) msg=$(Clean-Answer $rb.messageRu)"
+            if (-not $rb -or -not $rb.ok) { throw 'T: rollback from pre-update snapshot failed' }
+            Write-Host '::notice T-cycleB OK: over-install kept settings/journal/snapshot, version updated, rollback works'
+
+            # ── цикл C: апгрейд поверх ПОСЛЕДНЕЙ подтверждённой стабильной версии ────────────
+            # Базу не выдумываем и не хардкодим: просим GitHub API. Если latest — это уже текущая
+            # собираемая версия (релизный тег гонится за кодом), берём предыдущий релиз списка.
+            try {
+                Purge-All
+                $hdr = @{ Accept = 'application/vnd.github+json'; Authorization = "Bearer $env:GITHUB_TOKEN" }
+                $rels = Invoke-RestMethod "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases?per_page=5" -Headers $hdr
+                $baseRelease = $rels | Where-Object { -not $_.prerelease -and $_.tag_name -ne "v$version" } | Select-Object -First 1
+                if (-not $baseRelease) { throw 'нет предыдущего стабильного релиза для базового сравнения' }
+                Write-Host "::notice $ann::T upgrade baseline = $($baseRelease.tag_name) (latest stable, confirmed by API)"
+                $asset = $baseRelease.assets | Where-Object { $_.name -like '*Setup*.exe' } | Select-Object -First 1
+                if (-not $asset) { throw "у $($baseRelease.tag_name) нет Setup-ассета" }
+                $oldSetup = Join-Path $env:RUNNER_TEMP ('setup-' + $baseRelease.tag_name + '.exe')
+                Invoke-WebRequest -Uri $asset.url -Headers @{ Accept = 'application/octet-stream'; Authorization = "Bearer $env:GITHUB_TOKEN" } -OutFile $oldSetup
+                Install-Quiet $oldSetup
+                $oldApply = Query-Engine $mainPipe 'apply-tweaks' @{ tweaks = 'TCP_NO_DELAY' }
+                Write-Host "::notice $ann::T $($baseRelease.tag_name) apply ok=$($oldApply.ok) msg=$(Clean-Answer $oldApply.messageRu)"
+                if (-not $oldApply -or -not $oldApply.ok) { throw "базовый релиз отклонил безопасный твик" }
+                Install-Quiet $setup
+                $ping3 = Query-Engine $roPipe 'ping'
+                $pd3 = if ($ping3 -and $ping3.dataJson) { $ping3.dataJson | ConvertFrom-Json } else { $null }
+                $v3 = if ($pd3) { [string]$pd3.appVersion } else { 'unknown' }
+                if ($v3 -ne $version) { throw "T: after upgrade over $($baseRelease.tag_name) version is $v3, expected $version" }
+                $journal3 = Query-Engine $roPipe 'journal-tail' @{ limit = '100' }
+                if (-not $journal3 -or -not $journal3.ok) { throw "T: journal from $($baseRelease.tag_name) unreadable after upgrade" }
+                $rb3 = Query-Engine $mainPipe 'rollback'
+                if (-not $rb3 -or -not $rb3.ok) { throw "T: rollback of $($baseRelease.tag_name)-era snapshot failed" }
+                Write-Host "::notice T-cycleC OK: $($baseRelease.tag_name) -> $version, journal kept, rollback works"
+            } catch {
+                Write-Host "::notice $ann::T baseline-release stage did not run: $(Clean-Answer $_.Exception.Message)"
+            }
+
+            Purge-All
+            Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
+            Write-Host '::notice T-live OK: uninstall asks and reverts, update keeps everything'
+          } catch {
+            Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "::error $ann::T failed: $(($_.Exception.Message -replace '[\r\n]+',' ') -replace '%','%25')"
             exit 1
           }
 
@@ -584,4 +744,5 @@ jobs:
             test-results/service.log
             test-results/routing-live.log
             test-results/c7-live-checks.log
+            test-results/t-uninstall.log
           if-no-files-found: warn

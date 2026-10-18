@@ -566,11 +566,66 @@ public sealed class LiveEngineOperations : IEngineOperations
         return await _routing.MeasureAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Следы перед удалением (задача T). Считаем по фактическим хранилищам: журнал изменений,
+    /// незакрытые операции, список снапшотов, состояние живой оптимизации. Врём цифрам ровно
+    /// ничего: нет журнала — в ответе нули и честная оговорка, а не выдуманное «всё чисто».
+    /// </summary>
+    public async Task<EngineOperationResult> UninstallCheckAsync(CancellationToken ct = default)
+    {
+        int applied = 0;
+        int open = 0;
+        bool journalAvailable = _journal is not null;
+        if (_journal is not null)
+        {
+            applied = await _journal.CountModificationLogEntriesAsync(ct).ConfigureAwait(false);
+            IReadOnlyList<PendingOperationRecord> pendingOps =
+                await _journal.GetPendingOperationsAsync(ct).ConfigureAwait(false);
+            open = pendingOps.Count;
+        }
+
+        int snapshots = (await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false)).Count;
+        RealtimeOptimizationState realtimeState = _realtime?.State ?? RealtimeOptimizationState.Idle;
+        UninstallState state = new(applied, open, snapshots, realtimeState != RealtimeOptimizationState.Idle);
+
+        bool ask = UninstallGuard.MustAsk(state);
+        string options = ask
+            ? " Варианты: " + string.Join("; ", UninstallGuard.OptionsRu
+                .Select((option, index) => $"{index + 1}) {option}")) + $". По умолчанию — {UninstallGuard.OptionsRu[0].ToLowerInvariant()}."
+            : string.Empty;
+        string caveat = journalAvailable
+            ? string.Empty
+            : " Журнал изменений к этой службе не подключён: чисел по нему нет, есть только снапшоты.";
+
+        return EngineOperationResult.Success(
+            UninstallGuard.QuestionRu(state) + options +
+            (ask ? " " + UninstallGuard.KeepChangesWarningRu(state) + "." : string.Empty) + caveat,
+            Encode(new UninstallCheckData(
+                state.AppliedChanges,
+                state.OpenOperations,
+                state.Snapshots,
+                state.OptimizationRunning,
+                ask,
+                ask ? UninstallGuard.OptionsRu : Array.Empty<string>(),
+                UninstallGuard.QuestionRu(state),
+                ask ? UninstallGuard.KeepChangesWarningRu(state) : string.Empty)));
+    }
+
     private static string FormatMs(double? value) => value is null ? "не измерено" : $"{value.Value:0.#} мс";
 
     private static string Encode<T>(T payload) => JsonSerializer.Serialize(payload, EngineJson.Options);
 
     // ── то, что служба отдаёт в поле данных: интерфейс читает это как есть, без догадок ─────────
+
+    private sealed record UninstallCheckData(
+        int AppliedChanges,
+        int OpenOperations,
+        int Snapshots,
+        bool OptimizationRunning,
+        bool MustAsk,
+        IReadOnlyList<string> OptionsRu,
+        string QuestionRu,
+        string WarningRu);
 
     private sealed record PingData(
         string Product,

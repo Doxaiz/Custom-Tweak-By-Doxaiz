@@ -32,6 +32,7 @@
     <None Include="..\..\src\PingForge.Service.Windows\PipeAclFactory.cs" Link="checked-PipeAclFactory.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeClientInspector.cs" Link="checked-PipeClientInspector.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\КАНАЛЫ-СЛУЖБЫ.md" Link="checked-pipes-doc.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\scripts\uninstall-service.ps1" Link="checked-uninstall-service.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

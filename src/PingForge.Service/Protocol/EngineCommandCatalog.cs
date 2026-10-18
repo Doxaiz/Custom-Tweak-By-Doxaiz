@@ -175,6 +175,18 @@ public static class EngineCommandCatalog
             OptionalArgs: [],
             ExampleRu: """{"id":"14","command":"route-measure"}""",
             TimeoutSeconds: 240),
+
+        new(
+            EngineCommandKind.UninstallCheck,
+            "uninstall-check",
+            "Проверить следы перед удалением",
+            "Считает применённые изменения, незакрытые операции и снапшоты и отвечает, надо ли спрашивать " +
+            "«вернуть настройки как было» до удаления программы. Только чтение: ничего не снимает и не удаляет.",
+            NeedsElevation: false,
+            RequiredArgs: [],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"15","command":"uninstall-check"}""",
+            TimeoutSeconds: 20),
     ];
 
     /// <summary>Все команды в порядке объявления — он же порядок вывода в интерфейсе.</summary>
@@ -198,6 +210,7 @@ public static class EngineCommandCatalog
         EngineCommandKind.ReadSystemState,
         EngineCommandKind.RouteDiscover,
         EngineCommandKind.RealtimeStop,
+        EngineCommandKind.UninstallCheck,
     ];
 
     /// <summary>Имена тех же команд по каналу — для сверки с документами и текстов отказов.</summary>
