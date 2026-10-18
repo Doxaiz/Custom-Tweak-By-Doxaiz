@@ -16,10 +16,20 @@ function Note-Failure([string]$text) {
     Write-Host "FAIL: $text"
 }
 
+function Ann([string]$level, [string]$text) {
+    $safe = $text -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+    Write-Host "::$level file=tools/c7-live-checks.ps1,line=1::$safe"
+}
+
 function Run-Smoke([string[]]$arguments, [string]$title) {
     Write-Host "-- $title"
-    & $SmokePath @arguments
+    $tmp = [System.IO.Path]::GetTempFileName()
+    & $SmokePath @arguments > $tmp 2>&1
     $code = $LASTEXITCODE
+    $out = Get-Content $tmp -Raw
+    Remove-Item $tmp -ErrorAction SilentlyContinue
+    Write-Host $out
+    Ann $(if ($code -eq 0) { 'notice' } else { 'error' }) "$title exit=$code : $out"
     Write-Host "   exit: $code"
     return $code
 }
@@ -71,6 +81,7 @@ try {
 
     $asUser = Run-AsUser $publicSmoke @('--expect-identity') $pfUser $pfPassword
     Write-Host "-- pfcheck --expect-identity exit: $($asUser.Code)"
+    Ann $(if ($asUser.Code -eq 0) { 'notice' } else { 'error' }) "pfcheck --expect-identity exit=$($asUser.Code) : $($asUser.Output)"
     if ($asUser.Code -ne 0) { Note-Failure 'pfcheck --expect-identity' }
     if ($asUser.Output -match 'clientIsAdmin=True') { Note-Failure 'pfcheck reported clientIsAdmin=True' }
 
@@ -86,11 +97,13 @@ try {
     # 3) pfcheck tries to apply: denial must come BEFORE any tweak lookup/application.
     $tryApply = Run-AsUser $publicSmoke @('--try-apply') $pfUser $pfPassword
     Write-Host "-- pfcheck --try-apply exit: $($tryApply.Code)"
+    Ann $(if ($tryApply.Code -eq 0) { 'notice' } else { 'error' }) "pfcheck --try-apply exit=$($tryApply.Code) : $($tryApply.Output)"
     if ($tryApply.Code -ne 0) { Note-Failure 'pfcheck --try-apply (denial before apply expected)' }
 
     # Same attempt against the MAIN pipe: ACL refusal is also a valid C2-layer proof.
     $tryMain = Run-AsUser $publicSmoke @('PingForge.Engine.v1', '--try-apply') $pfUser $pfPassword
     Write-Host "-- pfcheck main-pipe --try-apply exit: $($tryMain.Code) (0 = dispatcher denial, 1 = ACL/unavailable)"
+    Ann 'notice' "pfcheck main-pipe --try-apply exit=$($tryMain.Code) : $($tryMain.Output)"
 
     # The denial must be written to service.log with pfcheck SID, not SYSTEM.
     Start-Sleep -Seconds 1
@@ -101,6 +114,7 @@ try {
             Note-Failure "pfcheck SID not found in service.log"
         } else {
             Write-Host 'service.log contains pfcheck SID'
+            Ann 'notice' "service.log contains pfcheck SID $pfSid"
         }
     }
 
