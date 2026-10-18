@@ -693,32 +693,24 @@ internal static class SelfCheck
         }
 
         const double MinCardWidth = 110;
-        string[] cards = ["StatPing", "StatBetter", "StatBefore", "StatQuality"];
-        var squeezed = new List<string>();
 
-        foreach (string name in cards)
+        // Задача F: четыре статичные карточки показателей (StatPing…StatQuality) заменены
+        // графиком сети. Сжатая карточка графика — это нечитаемые оси и легенда, поэтому
+        // проверяется она: ширина не меньше порога, тем же правилом, что и старые карточки.
+        if (view.FindName("ChartCard") is not FrameworkElement chart)
         {
-            if (view.FindName(name) is not FrameworkElement card)
-            {
-                problems.Add($"в окне нет карточки показателя «{name}»");
-                continue;
-            }
-
-            System.Diagnostics.Debug.WriteLine($"{name}: {card.ActualWidth}×{card.ActualHeight}");
-            if (card.ActualWidth + 0.5 < MinCardWidth)
-            {
-                squeezed.Add($"{name} — {Math.Round(card.ActualWidth)} точек");
-            }
-        }
-
-        if (squeezed.Count > 0)
-        {
-            problems.Add($"карточки показателей сжаты: {string.Join("; ", squeezed)}");
-            StartupLog.Warn($"Раскладка: карточки показателей сжаты — {string.Join("; ", squeezed)}");
+            problems.Add("в окне нет карточки показателя «ChartCard»");
             return;
         }
 
-        StartupLog.Note($"Раскладка: карточки показателей не сжаты (проверено {cards.Length} штук)");
+        if (chart.ActualWidth + 0.5 < MinCardWidth)
+        {
+            problems.Add($"карточки показателей сжаты: график сети — {Math.Round(chart.ActualWidth)} точек");
+            StartupLog.Warn($"Раскладка: карточка графика сети сжата — {Math.Round(chart.ActualWidth)} точек");
+            return;
+        }
+
+        StartupLog.Note($"Раскладка: карточка графика сети не сжата ({Math.Round(chart.ActualWidth)} точек)");
     }
 
     /// <summary>
