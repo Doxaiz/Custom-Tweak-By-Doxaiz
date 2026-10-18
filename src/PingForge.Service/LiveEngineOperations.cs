@@ -30,6 +30,7 @@ public sealed class LiveEngineOperations : IEngineOperations
     private readonly string _productName;
     private readonly string _appVersion;
     private readonly ISystemStateReader? _stateReader;
+    private readonly IRoutingService? _routing;
 
     public LiveEngineOperations(
         ITweakCatalog catalog,
@@ -42,7 +43,8 @@ public sealed class LiveEngineOperations : IEngineOperations
         Action<PerfProfile>? applyProfile = null,
         string productName = "Custom Tweak By Doxaiz",
         string? appVersion = null,
-        ISystemStateReader? stateReader = null)
+        ISystemStateReader? stateReader = null,
+        IRoutingService? routing = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
@@ -54,6 +56,7 @@ public sealed class LiveEngineOperations : IEngineOperations
         _productName = productName;
         _appVersion = appVersion ?? typeof(LiveEngineOperations).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
         _stateReader = stateReader;
+        _routing = routing;
         IsElevationAvailable = isElevationAvailable;
     }
 
@@ -538,6 +541,29 @@ public sealed class LiveEngineOperations : IEngineOperations
             reading.UnresolvedFields));
 
         return EngineOperationResult.Success(message, data);
+    }
+
+    public async Task<EngineOperationResult> DiscoverRoutingNodesAsync(CancellationToken ct = default)
+    {
+        if (_routing is null)
+        {
+            return EngineOperationResult.Failure(
+                "Слой маршрутизации не подключён: это сборка службы без сетевого слоя. Окно покажет узлы, " +
+                "которые сохранены в настройках, а найти новые нечем.");
+        }
+
+        return await _routing.DiscoverAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task<EngineOperationResult> MeasureRoutingPathsAsync(CancellationToken ct = default)
+    {
+        if (_routing is null)
+        {
+            return EngineOperationResult.Failure(
+                "Слой маршрутизации не подключён: измерять пути нечем. Остальные команды службы работают как обычно.");
+        }
+
+        return await _routing.MeasureAsync(ct).ConfigureAwait(false);
     }
 
     private static string FormatMs(double? value) => value is null ? "не измерено" : $"{value.Value:0.#} мс";

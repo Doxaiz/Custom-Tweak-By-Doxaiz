@@ -426,6 +426,22 @@ jobs:
           & tools\c7-live-checks.ps1 -SetupPath $setup -SmokePath $smoke
           if ($LASTEXITCODE -ne 0) { throw "C7 live checks exit $LASTEXITCODE" }
 
+      # Задача B: узлы маршрутизации на живой Windows через канал службы. Только чтение
+      # (route print + Get-NetAdapter). На раннере нет второго канала — и ответ обязан быть
+      # честным: «кандидатов кроме текущего шлюза нет». Вывод — в артефакты как доказательство.
+      - name: B - routing nodes live check via service pipe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $smoke = "${{ runner.temp }}/art/bin/PingForge.EngineSmoke/release/PingForge.EngineSmoke.exe"
+          if (-not (Test-Path $smoke)) { throw "No smoke file: $smoke" }
+          New-Item -ItemType Directory -Force test-results | Out-Null
+          $out = & $smoke 2>&1 | Tee-Object -FilePath test-results\routing-live.log
+          $code = $LASTEXITCODE
+          $routeLine = ($out | Select-String -SimpleMatch '[6/6]') -join ''
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::routing-live: $routeLine"
+          if ($code -ne 0) { throw "EngineSmoke exit $code (see test-results/routing-live.log)" }
+
       - name: Готовые .exe и контрольные суммы
         run: |
           $ErrorActionPreference = 'Stop'
@@ -444,7 +460,11 @@ jobs:
           Get-Content dist\SHA256SUMS.txt
         shell: pwsh
 
+      # Тяжёлые dist-артефакты (.exe/.zip) грузятся только на релизных тегах: там же эти файлы
+      # едут и в ассеты релиза. На каждый push ~280 МБ artifact выжимали квоту хранилища Actions
+      # в ноль, и с 18 октября загрузка журналов падала молча — это и чиним.
       - name: Приложить к сборке
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v7
         continue-on-error: true
         with:
@@ -502,16 +522,22 @@ jobs:
             dist/*.zip
             dist/SHA256SUMS.txt
 
+      # Только доказательства: TRX, журнал службы, вывод живых проверок и один снимок окна.
+      # Никаких bin/, obj/ и многосотмегабайтных слепков — retention 3 дня, чтобы следы прогонов
+      # не съедали квоту, которую и так превысили старые dist-артефакты.
       - name: Журналы и результаты тестов (всегда)
         if: always()
         uses: actions/upload-artifact@v7
         continue-on-error: true
         with:
           name: test-results-and-logs
+          retention-days: 3
           path: |
             test-results/**/*.trx
             dist/app-window.png
             dist/app-start.log
             dist/install-service.log
             test-results/service.log
+            test-results/routing-live.log
+            test-results/c7-live-checks.log
           if-no-files-found: warn

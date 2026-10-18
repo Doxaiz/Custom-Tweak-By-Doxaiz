@@ -170,6 +170,10 @@ public sealed class EngineDispatcher
 
                 EngineCommandKind.ReadSystemState => await _operations.ReadSystemStateAsync(ct).ConfigureAwait(false),
 
+                EngineCommandKind.RouteDiscover => await _operations.DiscoverRoutingNodesAsync(ct).ConfigureAwait(false),
+
+                EngineCommandKind.RouteMeasure => await _operations.MeasureRoutingPathsAsync(ct).ConfigureAwait(false),
+
                 _ => EngineOperationResult.Failure($"Команда «{descriptor.WireName}» объявлена, но не подключена."),
             };
 

@@ -55,6 +55,7 @@ internal static class SelfCheck
         CheckNotice(app, problems);
         CheckLauncherAndSetup(app, problems);
         CheckCustomGames(app, problems);
+        CheckRoutingServers(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -324,6 +325,108 @@ internal static class SelfCheck
         {
             problems.Add($"свои игры: проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"СВОИ ИГРЫ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Сервер маршрутизации (задача B) на живой Windows: блок в «Настройках» собран, честный текст
+    /// на месте, и автопоиск шлюзов читает настоящую таблицу маршрутов через разборчик продукта.
+    ///
+    /// Живой тест ровно тот, что можно честно провести на сборочной машине: здесь нет второго
+    /// канала или VPN — и программа обязана сказать об этом прямо, а не выдумать кандидатов.
+    /// Ничего не меняется: route print — чтение. Применение маршрутов остаётся за службой и
+    /// кнопкой «Оптимизировать», и самопроверка её не трогает.
+    /// </summary>
+    private static void CheckRoutingServers(App app, List<string> problems)
+    {
+        try
+        {
+            RoutingSettingsViewModel routing = app.Settings.Routing;
+            if (routing.Rows is null)
+            {
+                problems.Add("серверы маршрутизации: блок настроек не собран");
+                StartupLog.Note("СЕРВЕРЫ МАРШРУТИЗАЦИИ: НЕ работает — модель блока не собрана");
+                return;
+            }
+
+            // const — статический член, читаем его от класса, не от экземпляра.
+            if (!RoutingSettingsViewModel.WarningRu.Contains("Destiny 2", StringComparison.Ordinal)
+                || !RoutingSettingsViewModel.WarningRu.Contains("третью сторону", StringComparison.Ordinal))
+            {
+                problems.Add("серверы маршрутизации: честное предупреждение о третьей стороне потерялось из блока");
+            }
+
+            // Предупреждение и кнопки обязаны доходить до разметки: именованный блок в SettingsView.
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement settingsRoot)
+                {
+                    settingsRoot.UpdateLayout();
+                    if (FindNamed<FrameworkElement>(settingsRoot, "RoutingBlock") is null)
+                    {
+                        problems.Add("серверы маршрутизации: блок «Сервер маршрутизации» не найден в окне настроек");
+                    }
+                }
+            }
+
+            string routePrint = RunRoutePrint();
+            if (routePrint.Length == 0)
+            {
+                StartupLog.Note("СЕРВЕРЫ МАРШРУТИЗАЦИИ: таблица маршрутов не прочиталась (route print) — это среда, а не дефект программы");
+                return;
+            }
+
+            var routes = PingForge.Network.Routes.RouteTableParser.Parse(routePrint);
+            var found = PingForge.Network.Routes.RoutingNodeDiscovery.Discover(routes, Array.Empty<PingForge.Network.Routes.AdapterInfo>());
+            int alternatives = found.Count(node => node.SourceRu != PingForge.Network.Routes.RoutingNodeSourceRu.CurrentGateway);
+            bool sourcesHonest = found.All(node => PingForge.Network.Routes.RoutingNodeSourceRu.IsHonest(node.SourceRu));
+            bool noInvented = found.All(node => routes.Any(route =>
+                route.NextHop.Equals(node.Address, StringComparison.OrdinalIgnoreCase)));
+
+            if (!sourcesHonest || !noInvented)
+            {
+                problems.Add("серверы маршрутизации: поиск выдал узел с нечестным источником — так не должно быть никогда");
+                StartupLog.Note("СЕРВЕРЫ МАРШРУТИЗАЦИИ: НЕ работает — источник узла не из таблицы маршрутов");
+                return;
+            }
+
+            StartupLog.Note($"СЕРВЕРЫ МАРШРУТИЗАЦИИ: блок в окне есть, честный текст на месте; живой поиск шлюзов — работает, " +
+                $"узлов {found.Count} (альтернатив текущему шлюзу: {alternatives}; " +
+                $"{(alternatives == 0 ? "кандидатов кроме текущего шлюза нет — сравнивать пути не среди чего, это правда этой машины" : "есть с чем сравнивать")})");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"серверы маршрутизации: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"СЕРВЕРЫ МАРШРУТИЗАЦИИ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// route print -4 руками: ровно та команда, чей вывод показывает и служба, — человек может
+    /// сравнить таблицу в консоли с тем, что увидела программа. При ошибке — пустая строка: «не
+    /// прочитали» не превращаем в «маршрутов нет».
+    /// </summary>
+    private static string RunRoutePrint()
+    {
+        try
+        {
+            var start = new System.Diagnostics.ProcessStartInfo("route", "print -4")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            using System.Diagnostics.Process process = System.Diagnostics.Process.Start(start)!;
+            string output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit(5000);
+            return process.HasExited && process.ExitCode == 0 ? output : string.Empty;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            return string.Empty;
         }
     }
 

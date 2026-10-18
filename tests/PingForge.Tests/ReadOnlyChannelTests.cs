@@ -126,7 +126,7 @@ public sealed class ReadOnlyChannelTests
 
         Assert.Equal(wireNames.Count, wireNames.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.All(wireNames, name => Assert.NotNull(EngineCommandCatalog.Find(name)));
-        Assert.Equal("ping, capabilities, status, journal-tail, system-state, realtime-stop",
+        Assert.Equal("ping, capabilities, status, journal-tail, system-state, route-discover, realtime-stop",
             EngineCommandCatalog.ReadOnlyChannelWireNamesRu());
     }
 

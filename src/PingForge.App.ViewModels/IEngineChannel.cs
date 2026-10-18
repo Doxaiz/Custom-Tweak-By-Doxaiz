@@ -1,4 +1,5 @@
 using PingForge.Network;
+using PingForge.Network.Routes;
 using PingForge.Service.Protocol;
 
 namespace PingForge.App.ViewModels;
@@ -55,7 +56,12 @@ public interface IAppSettingsStore
     void Save(AppSettings settings);
 }
 
-/// <summary>Настройки, которые пользователь меняет в окне. Всё остальное — в каталоге твиков и профилях потребления.</summary>
+/// <summary>
+/// Настройки, которые пользователь меняет в окне. Всё остальное — в каталоге твиков и профилях потребления.
+///
+/// Узлы маршрутизации (задача B) живут здесь же, в общем settings.json: файл один на окно и службу,
+/// служба читает его терпимо. Пустой список — честный отказ действия «маршрут для игры», а не догадка.
+/// </summary>
 public sealed record AppSettings(
     string PerfProfile = "balanced",
     bool OfferRestorePoint = true,
@@ -65,7 +71,10 @@ public sealed record AppSettings(
     bool SetupCompleted = false,
     string SetupAnswersRu = "",
     IReadOnlyDictionary<string, string>? GamePaths = null,
-    IReadOnlyList<CustomGameEntry>? CustomGames = null);
+    IReadOnlyList<CustomGameEntry>? CustomGames = null,
+    IReadOnlyList<RoutingNodeEntry>? RoutingNodes = null,
+    string? RoutingDefaultNode = null,
+    bool RoutingAutoSelect = false);
 
 /// <summary>Память вместо файла: так проверяются «сохранилось / не сохранилось» без диска.</summary>
 public sealed class InMemorySettingsStore : IAppSettingsStore

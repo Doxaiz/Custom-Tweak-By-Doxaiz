@@ -19,7 +19,7 @@ public sealed class SettingsViewModel : ObservableObject
     private bool _closeToTray;
     private string _statusRu;
 
-    public SettingsViewModel(EngineClient engine, IAppSettingsStore store, IUserDialogs dialogs)
+    public SettingsViewModel(EngineClient engine, IAppSettingsStore store, IUserDialogs dialogs, RoutingSettingsViewModel? routing = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _store = store ?? throw new ArgumentNullException(nameof(dialogs));
@@ -34,7 +34,14 @@ public sealed class SettingsViewModel : ObservableObject
         SaveCommand = new AsyncRelayCommand(SaveAsync);
         ApplyProfileCommand = new AsyncRelayCommand(ApplyProfileAsync);
         ReopenSetupCommand = new RelayCommand(() => Setup?.Reopen());
+
+        // Блок «Сервер маршрутизации» (задача B) живёт здесь, в «Настройках»: узлы, поиск шлюзов,
+        // измерение путей и выбор узла по умолчанию. Двойник передаётся в тестах — в бою свой.
+        Routing = routing ?? new RoutingSettingsViewModel(engine, store, dialogs);
     }
+
+    /// <summary>Узлы маршрутизации: список, поиск шлюзов, замер путей. Ничего не меняет сама по себе.</summary>
+    public RoutingSettingsViewModel Routing { get; }
 
     public AsyncRelayCommand SaveCommand { get; }
 

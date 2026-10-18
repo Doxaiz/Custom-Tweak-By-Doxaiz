@@ -149,6 +149,32 @@ public static class EngineCommandCatalog
             OptionalArgs: [],
             ExampleRu: """{"id":"12","command":"system-state"}""",
             TimeoutSeconds: 30),
+
+        new(
+            EngineCommandKind.RouteDiscover,
+            "route-discover",
+            "Найти узлы маршрутизации",
+            "Смотрит таблицу маршрутов и список адаптеров и называет реальные шлюзы: текущий, второй канал, " +
+            "VPN-адаптер — с именем адаптера и честным источником. Плюс узлы, добавленные вручную. Своей сети " +
+            "узлов у программы нет, и выдуманных «серверов PingForge» в ответе не бывает. Только чтение.",
+            NeedsElevation: false,
+            RequiredArgs: [],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"13","command":"route-discover"}""",
+            TimeoutSeconds: 30),
+
+        new(
+            EngineCommandKind.RouteMeasure,
+            "route-measure",
+            "Измерить пути до игрового сервера",
+            "Меряет RTT до адреса сервера запущенной игры напрямую и через каждый сохранённый узел: временный " +
+            "маршрут /32 на адрес сервера, тот же замер, снятие в любом случае и сверка таблицы с исходной. " +
+            "Побеждает только измеренный выигрыш; без него вердикт «прямой путь не хуже, ничего не меняем».",
+            NeedsElevation: true,
+            RequiredArgs: [],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"14","command":"route-measure"}""",
+            TimeoutSeconds: 240),
     ];
 
     /// <summary>Все команды в порядке объявления — он же порядок вывода в интерфейсе.</summary>
@@ -170,6 +196,7 @@ public static class EngineCommandCatalog
         EngineCommandKind.Status,
         EngineCommandKind.JournalTail,
         EngineCommandKind.ReadSystemState,
+        EngineCommandKind.RouteDiscover,
         EngineCommandKind.RealtimeStop,
     ];
 
