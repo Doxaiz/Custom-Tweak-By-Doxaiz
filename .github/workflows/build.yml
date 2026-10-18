@@ -86,6 +86,12 @@ jobs:
           Write-Host $line
           Write-Host "::notice file=.github/workflows/build.yml,line=1::$line"
           $line >> $env:GITHUB_STEP_SUMMARY
+          foreach ($result in $doc.TestRun.Results.UnitTestResult) {
+            if ($result.resultType -eq 'Failed' -or $result.outcome -eq 'Failed') {
+              $msg = $result.Output.ErrorInfo.Message -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+              Write-Host "::error file=.github/workflows/build.yml,line=1::FAILED TEST $($result.testName) : $msg"
+            }
+          }
 
       # Витрины собираются из того же каталога, что применяет служба: если данные каталога разойдутся
       # с разметкой витрины, проверки упадут прямо здесь.
