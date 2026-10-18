@@ -53,11 +53,18 @@ public class ServiceSecurityTests
     }
 
     [Fact]
-    public void Канал_чтения_даёт_интерактиву_только_чтение()
+    public void Канал_чтения_даёт_интерактиву_байты_в_обе_стороны_а_команды_ограничивает_диспетчер()
     {
+        // Живая проверка C7 на раннере (пользователь pfcheck, SID интерактивного входа на месте)
+        // показала: права «только чтение» на канале не хватает даже на подключение — клиент
+        // открывает соединение сразу на запрос и ответ. Поэтому право канала — чтение и запись
+        // байтов, а «только чтение» — это набор команд, и его держит диспетчер (ReadOnlyChannelTests).
         PipeAccessGrant user = Assert.Single(ServiceSecurityPlan.ReadOnlyGrants, g => g.Sid == ServiceSecurityPlan.InteractiveSid);
 
-        Assert.Equal(PipeAccessRight.ReadOnly, user.Right);
+        Assert.Equal(PipeAccessRight.ReadWrite, user.Right);
+
+        // Основной канал при этом для интерактивного входа по-прежнему закрыт полностью.
+        Assert.DoesNotContain(ServiceSecurityPlan.Grants, g => g.Sid == ServiceSecurityPlan.InteractiveSid);
     }
 
     [Fact]
