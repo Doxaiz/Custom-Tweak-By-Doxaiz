@@ -399,6 +399,11 @@ jobs:
           New-Item -ItemType Directory -Force test-results | Out-Null
           $svcLog = Join-Path $env:ProgramData 'PingForge\service.log'
           if (Test-Path $svcLog) { Copy-Item $svcLog test-results\service.log -Force }
+          $hits = Select-String -Path $svcLog -Pattern 'Слушаю канал|Подключился|ОТКАЗ|Команда|ошиб|Клиент отключился' -ErrorAction SilentlyContinue | Select-Object -Last 30 | ForEach-Object { $_.Line -replace '%', '%25' }
+          if ($hits) { Write-Host "::error file=.github/workflows/build.yml,line=1::service.log hits : $([string]::Join('%0A', $hits))" }
+          $proc = Get-Process -Name 'CustomTweakByDoxaiz.Service' -ErrorAction SilentlyContinue
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::service process: $($proc.Id -join ',') path=$($proc.Path -join ',')"
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::service.log length=$((Get-Item $svcLog -ErrorAction SilentlyContinue).Length) modified=$((Get-Item $svcLog -ErrorAction SilentlyContinue).LastWriteTime)"
           Show-Tail 'service.log' $svcLog
           Show-Tail 'install-service.log' (Join-Path $installDir 'install-service.log')
           Show-Tail 'app-start.log' (Join-Path $env:LOCALAPPDATA 'CustomTweakByDoxaiz\app-start.log')
@@ -435,6 +440,7 @@ jobs:
 
       - name: Приложить к сборке
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: CustomTweakByDoxaiz-win-x64
           path: |
@@ -493,6 +499,7 @@ jobs:
       - name: Журналы и результаты тестов (всегда)
         if: always()
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: test-results-and-logs
           path: |
