@@ -428,9 +428,6 @@ jobs:
 
       # Задача B: узлы маршрутизации на живой Windows через канал службы. Только чтение
       # (route print + Get-NetAdapter). На раннере нет второго канала — и ответ обязан быть
-      # честным: «кандидатов кроме текущего шлюза нет». Вывод — в артефакты как доказательство.
-      # Задача B: узлы маршрутизации на живой Windows через канал службы. Только чтение
-      # (route print + Get-NetAdapter). На раннере нет второго канала — и ответ обязан быть
       # честным: «кандидатов кроме текущего шлюза нет». Шаг герметичный: служба к этому моменту
       # после C7 снята, поэтому ставим установщик сами, проверяем и убираем за собой.
       # Вывод — в артефакты как доказательство.
@@ -445,30 +442,39 @@ jobs:
           if (-not (Test-Path $smoke)) { throw "No smoke file: $smoke" }
           New-Item -ItemType Directory -Force test-results | Out-Null
 
-          $svc = Get-Service -Name PingForge -ErrorAction SilentlyContinue
-          if ($svc is $null) {
-            $install = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
-            if ($install.ExitCode -ne 0) { throw "Setup exit $($install.ExitCode)" }
-          }
-          (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(90))
+          try {
+            $svc = Get-Service -Name PingForge -ErrorAction SilentlyContinue
+            if ($svc is $null) {
+              $install = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+              if ($install.ExitCode -ne 0) { throw "Setup exit $($install.ExitCode)" }
+              Write-Host "::notice file=tools/c7-live-checks.ps1,line=1::routing-live: setup installed for the check"
+            }
+            (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(90))
+            Start-Sleep -Seconds 4
 
-          # Native stderr lines are not failures; capture all output, keep exit code honest.
-          $ErrorActionPreference = 'Continue'
-          $out = & $smoke 2>&1 | Out-String
-          $code = $LASTEXITCODE
-          $ErrorActionPreference = 'Stop'
-          $out | Set-Content test-results\routing-live.log -Encoding utf8
+            # Native stderr lines are not failures; capture all output, keep exit code honest.
+            # One retry: right after a fresh install the pipe may open a beat later than the service.
+            $code = 1
+            $out = ''
+            foreach ($attempt in 1..2) {
+              $ErrorActionPreference = 'Continue'
+              $out = & $smoke 2>&1 | Out-String
+              $code = $LASTEXITCODE
+              $ErrorActionPreference = 'Stop'
+              if ($code -eq 0) { break }
+              if ($attempt -eq 1) { Start-Sleep -Seconds 6 }
+            }
+            $out | Set-Content test-results\routing-live.log -Encoding utf8
+
+            $tail = (($out -split "`n" | Where-Object { $_.Trim().Length -gt 0 } | Select-Object -Last 12) -join ' // ') -replace '%', '%25'
+            Write-Host "::notice file=tools/c7-live-checks.ps1,line=1::routing-live exit=$code tail: $tail"
+          } catch {
+            Write-Host "::error file=tools/c7-live-checks.ps1,line=1::routing-live step failed: $($_.Exception.Message)"
+            throw
+          }
 
           $routeLine = (($out -split "`n" | Select-String -SimpleMatch '[6/6]') -join '').Trim()
-          $verdict = (($out -split "`n" | Select-String -SimpleMatch 'Итог:') -join '').Trim()
-          Write-Host "::notice file=.github/workflows/build.yml,line=1::routing-live: $routeLine"
-          if ($code -eq 0) { Write-Host "::notice file=.github/workflows/build.yml,line=1::routing-live verdict: $verdict" }
-
-          # Leave the runner clean, exactly like the C7 script does.
-          $uninstaller = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\Uninstall.exe'
-          if (Test-Path $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait | Out-Null }
-
-          if ($code -ne 0) { throw "EngineSmoke exit $code (see test-results/routing-live.log)" }
+          if ($code -ne 0) { throw "EngineSmoke exit $code (output is in the notice annotation above and in test-results/routing-live.log)" }
           if ($routeLine -notmatch '6/6') { throw "routing check line [6/6] missing from smoke output" }
 
       - name: Готовые .exe и контрольные суммы

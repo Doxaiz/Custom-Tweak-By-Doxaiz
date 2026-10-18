@@ -167,22 +167,18 @@ public static class RoutingNodeDiscovery
 
             string name = adapterName.Length > 0 ? adapterName : address;
             string source;
-            int order;
 
             if (currentGateway is not null && address.Equals(currentGateway, StringComparison.OrdinalIgnoreCase))
             {
                 source = RoutingNodeSourceRu.CurrentGateway;
-                order = 0;
             }
             else if (adapter is not null && AdapterDirectoryParser.LooksLikeVpn(adapter))
             {
                 source = RoutingNodeSourceRu.VpnAdapter(adapterName);
-                order = 1;
             }
             else
             {
                 source = RoutingNodeSourceRu.SecondGateway;
-                order = 2;
             }
 
             found[address] = new RoutingNodeEntry(address, name, source);

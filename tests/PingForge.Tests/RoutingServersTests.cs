@@ -937,7 +937,7 @@ public sealed class RoutingServersTests
 
         Assert.Contains("Измерять нечего", harness.Routing.StatusRu, StringComparison.Ordinal);
         Assert.Empty(harness.Dialogs.Confirmations);
-        Assert.Empty(harness.Channel.Requests.Where(request => request.Command == EngineCommandKind.RouteMeasure));
+        Assert.DoesNotContain(harness.Channel.Requests, request => request.Command == EngineCommandKind.RouteMeasure);
     }
 
     [Fact]
