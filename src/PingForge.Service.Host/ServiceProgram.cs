@@ -108,7 +108,19 @@ public static class ServiceProgram
         // Раньше здесь был null, и кнопка честно отвечала «движок не подключён». Теперь собраны
         // все части: поиск игрового потока по таблице соединений, настоящие пробы (ICMP и TCP),
         // действия «маршрут для игры» и «QoS DSCP», откат и фоновый контроль.
-        using var network = new WindowsGameNetworkPlatform(platform, new GameProcessCatalog());
+        // Свои игры человека из общего файла настроек (задача A): окно пишет, служба читает
+        // терпимо — битый список означает «20 встроенных», а не остановку службы.
+        IReadOnlyList<CustomGameEntry> customGames = ServiceSettings.ReadCustomGames(DataDirectory, out string? customGamesProblem);
+        if (customGamesProblem is not null)
+        {
+            Log($"Свои игры: {customGamesProblem}.");
+        }
+        else if (customGames.Count > 0)
+        {
+            Log($"Свои игры из настроек: {customGames.Count} (анти-чит у них неизвестен).");
+        }
+
+        using var network = new WindowsGameNetworkPlatform(platform, GameProcessCatalog.WithCustomGames(customGames));
 
         // Настоящие транспорты: ICMP-эхо, время TCP-рукопожатия, системный DNS.
         var icmp = new SystemNetIcmpProbe();

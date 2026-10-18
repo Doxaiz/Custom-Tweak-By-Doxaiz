@@ -78,6 +78,89 @@ internal static class ServiceSettings
         return result.Written;
     }
 
+    /// <summary>
+    /// Свои игры из общего файла (задача A). Чтение терпимое: нет файла, битый JSON, мусор вместо
+    /// списка или битые записи внутри — служба работает с 20 встроенными играми, а сюда
+    /// возвращается пустой список и объяснение для журнала. Падать из-за чужих игр нельзя.
+    /// </summary>
+    public static IReadOnlyList<PingForge.Network.CustomGameEntry> ReadCustomGames(string dataDirectory, out string? problemRu)
+    {
+        problemRu = null;
+
+        try
+        {
+            if (!Writer(dataDirectory).TryRead(out string json, out _))
+            {
+                problemRu = "файл настроек не прочитался — свои игры не загружены, работаю с 20 известными";
+                return [];
+            }
+
+            if (json.Length == 0)
+            {
+                return [];
+            }
+
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement? customGames = null;
+            foreach (JsonProperty candidate in document.RootElement.EnumerateObject())
+            {
+                if (string.Equals(candidate.Name, "CustomGames", StringComparison.OrdinalIgnoreCase))
+                {
+                    customGames = candidate.Value;
+                    break;
+                }
+            }
+
+            if (customGames is null)
+            {
+                return [];
+            }
+
+            if (customGames.Value.ValueKind != JsonValueKind.Array)
+            {
+                problemRu = "в настройках вместо списка своих игр лежит не список — свои игры не загружены, работаю с 20 известными";
+                return [];
+            }
+
+            var games = new List<PingForge.Network.CustomGameEntry>();
+            foreach (JsonElement item in customGames.Value.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                string? processName = ReadString(item, "ProcessName");
+                string? titleRu = ReadString(item, "TitleRu");
+                if (!string.IsNullOrWhiteSpace(processName) && !string.IsNullOrWhiteSpace(titleRu))
+                {
+                    games.Add(new PingForge.Network.CustomGameEntry(processName.Trim(), titleRu.Trim()));
+                }
+            }
+
+            return games;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            problemRu = $"настройки своих игр не прочитались ({ex.GetType().Name}) — работаю с 20 известными";
+            return [];
+        }
+    }
+
+    private static string? ReadString(JsonElement element, string property)
+    {
+        foreach (JsonProperty candidate in element.EnumerateObject())
+        {
+            if (string.Equals(candidate.Name, property, StringComparison.OrdinalIgnoreCase)
+                && candidate.Value.ValueKind == JsonValueKind.String)
+            {
+                return candidate.Value.GetString();
+            }
+        }
+
+        return null;
+    }
+
     private static string? ReadStringIgnoreCase(string json, string property)
     {
         using JsonDocument document = JsonDocument.Parse(json);

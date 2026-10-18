@@ -8,7 +8,80 @@ public sealed record KnownGame(
     string TitleRu,
     string AntiCheatName,
     AntiCheatStatus AntiCheat,
-    string NoteRu = "");
+    string NoteRu = "",
+    bool IsCustom = false);
+
+/// <summary>Своя игра человека в общем файле настроек: имя процесса и название, которое он дал.</summary>
+public sealed record CustomGameEntry(string ProcessName, string TitleRu);
+
+/// <summary>
+/// Проверка своей игры перед сохранением. Отказ — с причиной и средством, а не «не получилось»:
+/// файл должен существовать и быть .exe, название — не пустым, дубли и встроенные игры не добавляются.
+/// </summary>
+public static class CustomGameValidation
+{
+    public static bool TryCreate(
+        string? executablePath,
+        string? titleRu,
+        Func<string, bool> fileExists,
+        IEnumerable<string> existingProcessNames,
+        out CustomGameEntry? entry,
+        out string errorRu)
+    {
+        entry = null;
+        errorRu = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(executablePath))
+        {
+            errorRu = "Файл игры не выбран. Нажмите «Добавить игру» и укажите .exe файл игры.";
+            return false;
+        }
+
+        string path = executablePath.Trim();
+        if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            errorRu = $"«{path}» — не .exe файл. Своей игрой можно добавить только исполняемый файл игры.";
+            return false;
+        }
+
+        if (!fileExists(path))
+        {
+            errorRu = $"Файла «{path}» на диске нет. Проверьте путь: возможно, игра перемещена или удалена.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(titleRu))
+        {
+            errorRu = "Название игры пустое. Дайте игре название — по нему вы узнаете её в списке.";
+            return false;
+        }
+
+        string processName = GameProcessCatalog.Normalize(path);
+        if (GameProcessCatalog.IsIgnored(processName))
+        {
+            errorRu = $"«{processName}» — служебный процесс или лаунчер, а не игра: такие процессы программа игрой не называет.";
+            return false;
+        }
+
+        if (existingProcessNames.Contains(processName, StringComparer.OrdinalIgnoreCase))
+        {
+            errorRu = $"Игра с процессом «{processName}» уже есть в списке. Второй раз добавлять не нужно.";
+            return false;
+        }
+
+        entry = new CustomGameEntry(processName, titleRu.Trim());
+        return true;
+    }
+
+    /// <summary>Своя игра как запись каталога: анти-чит не проверялся, и это сказано прямо.</summary>
+    public static KnownGame ToKnownGame(CustomGameEntry entry) => new(
+        entry.ProcessName,
+        entry.TitleRu,
+        "анти-чит не проверялся",
+        AntiCheatStatus.Untested,
+        "своя игра: анти-чит неизвестен",
+        IsCustom: true);
+}
 
 /// <summary>
 /// Список известных игр. Намеренно короткий и проверяемый: неизвестный процесс мы НЕ называем игрой
@@ -84,6 +157,37 @@ public sealed class GameProcessCatalog
     }
 
     public IReadOnlyList<KnownGame> All => _games;
+
+    /// <summary>Только свои игры человека (встроенные 20 так не помечены и не удаляются).</summary>
+    public IReadOnlyList<KnownGame> CustomGames => _games.Where(game => game.IsCustom).ToList();
+
+    /// <summary>
+    /// Каталог «встроенные + свои». Битые записи своих игр (пустое имя/название, дубли встроенных)
+    /// пропускаются, а не ломают список: служба обязана работать с 20 известными в любом случае.
+    /// </summary>
+    public static GameProcessCatalog WithCustomGames(IEnumerable<CustomGameEntry>? customGames)
+    {
+        var games = new List<KnownGame>(DefaultGames);
+        var known = new HashSet<string>(DefaultGames.Select(game => Normalize(game.ProcessName)), StringComparer.OrdinalIgnoreCase);
+
+        foreach (CustomGameEntry entry in customGames ?? [])
+        {
+            if (entry is null || string.IsNullOrWhiteSpace(entry.ProcessName) || string.IsNullOrWhiteSpace(entry.TitleRu))
+            {
+                continue;
+            }
+
+            string processName = Normalize(entry.ProcessName);
+            if (!known.Add(processName) || IsIgnored(processName))
+            {
+                continue;
+            }
+
+            games.Add(CustomGameValidation.ToKnownGame(new CustomGameEntry(processName, entry.TitleRu.Trim())));
+        }
+
+        return new GameProcessCatalog(games);
+    }
 
     public bool TryMatch(string? processName, out KnownGame game)
     {

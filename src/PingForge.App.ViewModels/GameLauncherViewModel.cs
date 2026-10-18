@@ -58,9 +58,18 @@ public sealed class GameCardViewModel : ObservableObject
             : $"Найдена: {executablePath}";
     }
 
-    public KnownGame Game { get; }
+    public KnownGame Game { get; private set; }
+
+    /// <summary>Своя игра человека: её можно удалить и переименовать. Встроенные — нельзя.</summary>
+    public bool IsCustom => Game.IsCustom;
 
     public string TitleRu => Game.TitleRu;
+
+    internal void Rename(string titleRu)
+    {
+        Game = Game with { TitleRu = titleRu };
+        OnPropertyChanged(nameof(TitleRu), nameof(Game), nameof(IsCustom));
+    }
 
     public string ProcessName => Game.ProcessName;
 
@@ -158,7 +167,7 @@ public sealed class GameLauncherViewModel : ObservableObject
     private readonly IExecutablePicker _picker;
     private readonly IAppSettingsStore _store;
     private readonly MainViewModel _main;
-    private readonly List<GameCardViewModel> _cards;
+    private readonly System.Collections.ObjectModel.ObservableCollection<GameCardViewModel> _cards;
     private string _statusRu = "Список игр готов. Нажмите «Открыть» — программа запустит игру и предложит оптимизацию.";
 
     public GameLauncherViewModel(
@@ -175,24 +184,36 @@ public sealed class GameLauncherViewModel : ObservableObject
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _main = main ?? throw new ArgumentNullException(nameof(main));
 
+        AppSettings loaded = store.Load();
         IReadOnlyList<KnownGame> catalog = games ?? GameProcessCatalog.DefaultGames;
-        IReadOnlyDictionary<string, string> remembered = store.Load().GamePaths
+
+        // Свои игры человека лежат в тех же настройках (задача A). Встроенный список ими не
+        // заменяется: свои добавляются после встроенных и помечены IsCustom.
+        if (games is null && loaded.CustomGames is { Count: > 0 })
+        {
+            catalog = GameProcessCatalog.WithCustomGames(loaded.CustomGames).All;
+        }
+
+        IReadOnlyDictionary<string, string> remembered = loaded.GamePaths
             ?? new Dictionary<string, string>();
 
-        _cards = catalog
+        _cards = new System.Collections.ObjectModel.ObservableCollection<GameCardViewModel>(catalog
             .Select(game => new GameCardViewModel(
                 game,
                 remembered.TryGetValue(game.ProcessName, out string? path) && File.Exists(path) ? path : null,
                 OpenAsync,
-                ChoosePathAsync))
-            .ToList();
+                ChoosePathAsync)));
 
         FindGamesCommand = new AsyncRelayCommand(FindInstalledAsync);
+        AddGameCommand = new AsyncRelayCommand(AddGameFromPickerAsync);
     }
 
     public IReadOnlyList<GameCardViewModel> Cards => _cards;
 
     public AsyncRelayCommand FindGamesCommand { get; }
+
+    /// <summary>«Добавить игру»: выбрать .exe, которого нет в списке известных.</summary>
+    public AsyncRelayCommand AddGameCommand { get; }
 
     public string StatusRu
     {
@@ -294,6 +315,118 @@ public sealed class GameLauncherViewModel : ObservableObject
         StatusRu = SavePath(card) ?? card.StatusRu;
         OnPropertyChanged(nameof(SummaryRu));
         await Task.CompletedTask.ConfigureAwait(true);
+    }
+
+    /// <summary>Выбрать .exe через диалог и добавить своей игрой; название — по имени файла, переименовать можно в карточке.</summary>
+    public async Task AddGameFromPickerAsync()
+    {
+        string? path = _picker.Pick("Выберите .exe своей игры");
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            StatusRu = "Игра не добавлена: файл не выбран.";
+            return;
+        }
+
+        string title = Path.GetFileNameWithoutExtension(path.Trim());
+        await AddCustomGameAsync(path, title).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Добавить свою игру. Валидация — общая с каталогом: файл существует, это .exe, название
+    /// не пустое, дублей и служебных процессов нет. Отказ пишется в статус дословно.
+    /// </summary>
+    public Task AddCustomGameAsync(string? executablePath, string? titleRu)
+    {
+        var existing = _cards.Select(card => card.ProcessName).ToArray();
+        if (!CustomGameValidation.TryCreate(executablePath, titleRu, File.Exists, existing, out CustomGameEntry? entry, out string errorRu))
+        {
+            StatusRu = $"Игра не добавлена: {errorRu}";
+            return Task.CompletedTask;
+        }
+
+        KnownGame game = CustomGameValidation.ToKnownGame(entry!);
+        var card = new GameCardViewModel(game, executablePath!.Trim(), OpenAsync, ChoosePathAsync);
+        _cards.Add(card);
+        SaveCustomGames(extraPath: (game.ProcessName, executablePath.Trim()));
+        StatusRu = $"Своя игра «{game.TitleRu}» добавлена. Анти-чит у неё неизвестен — программа этого не скрывает. " +
+            "Служба подхватит её при следующем запуске службы.";
+        OnPropertyChanged(nameof(SummaryRu));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Удалить свою игру. Встроенную удалить нельзя — и это не кнопка «не работает», а отказ с причиной.</summary>
+    public bool RemoveCustomGame(GameCardViewModel card)
+    {
+        ArgumentNullException.ThrowIfNull(card);
+        if (!card.IsCustom)
+        {
+            StatusRu = $"«{card.TitleRu}» — встроенная игра из списка известных: её удалить нельзя. Свои игры удаляются из их карточек.";
+            return false;
+        }
+
+        _cards.Remove(card);
+        SaveCustomGames();
+        StatusRu = $"Своя игра «{card.TitleRu}» удалена. Теперь этот процесс снова «кандидат, а не игра» — " +
+            "оптимизация для него не запустится, пока игру не добавят снова.";
+        OnPropertyChanged(nameof(SummaryRu));
+        return true;
+    }
+
+    /// <summary>Переименовать свою игру. Встроенные названия не меняются.</summary>
+    public bool RenameCustomGame(GameCardViewModel card, string? newTitleRu)
+    {
+        ArgumentNullException.ThrowIfNull(card);
+        if (!card.IsCustom)
+        {
+            StatusRu = $"«{card.TitleRu}» — встроенная игра: её название не меняется. Переименовываются только свои игры.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(newTitleRu))
+        {
+            StatusRu = "Название не изменено: новое название пустое.";
+            return false;
+        }
+
+        card.Rename(newTitleRu.Trim());
+        SaveCustomGames();
+        StatusRu = $"Своя игра переименована в «{card.TitleRu}».";
+        return true;
+    }
+
+    private void SaveCustomGames((string ProcessName, string Path)? extraPath = null)
+    {
+        try
+        {
+            AppSettings current = _store.Load();
+            var paths = current.GamePaths is null
+                ? new Dictionary<string, string>()
+                : new Dictionary<string, string>(current.GamePaths);
+            if (extraPath is { } extra)
+            {
+                paths[extra.ProcessName] = extra.Path;
+            }
+
+            var custom = _cards
+                .Where(card => card.IsCustom)
+                .Select(card => new CustomGameEntry(card.ProcessName, card.TitleRu))
+                .ToList();
+
+            // Пути удалённых своих игр не держим: удалённая игра не должна воскресать по пути.
+            var customNames = new HashSet<string>(custom.Select(game => game.ProcessName), StringComparer.OrdinalIgnoreCase);
+            foreach (string stale in paths.Keys.Where(name =>
+                !GameProcessCatalog.DefaultGames.Any(game => string.Equals(game.ProcessName, name, StringComparison.OrdinalIgnoreCase))
+                && !customNames.Contains(name)).ToList())
+            {
+                paths.Remove(stale);
+            }
+
+            _store.Save(current with { CustomGames = custom, GamePaths = paths });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            StatusRu = $"Изменение списка игр не записалось в настройки: {ex.Message}. В этом запуске список работает, после перезапуска окна вернётся прежний.";
+        }
     }
 
     private string? SavePath(GameCardViewModel card)

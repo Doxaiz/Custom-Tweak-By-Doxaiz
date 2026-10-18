@@ -54,6 +54,7 @@ internal static class SelfCheck
         CheckBindings(app, problems);
         CheckNotice(app, problems);
         CheckLauncherAndSetup(app, problems);
+        CheckCustomGames(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -282,6 +283,47 @@ internal static class SelfCheck
         if (app.Setup.Recommended.TitleRu.Length == 0)
         {
             problems.Add("мастер первого запуска не может посчитать совет");
+        }
+    }
+
+    /// <summary>
+    /// Свои игры (задача A) на живой Windows: добавить карточку в модель окна, переименовать
+    /// и удалить. Файловый диалог здесь не участвует (его автоматикой честно не нажать),
+    /// а вся логика окна — настоящая: валидация, запись в настройки, список карточек.
+    /// В качестве .exe берётся сам файл программы: он точно существует. После проверки
+    /// список возвращается к прежнему виду.
+    /// </summary>
+    private static void CheckCustomGames(App app, List<string> problems)
+    {
+        try
+        {
+            string exe = Environment.ProcessPath ?? string.Empty;
+            int before = app.Games.Cards.Count;
+
+            app.Games.AddCustomGameAsync(exe, "Проверка своих игр").GetAwaiter().GetResult();
+            GameCardViewModel? card = app.Games.Cards.FirstOrDefault(candidate => candidate.IsCustom);
+            if (card is null)
+            {
+                problems.Add("свои игры: карточка своей игры не появилась в окне");
+                StartupLog.Note("СВОИ ИГРЫ: НЕ работает — карточка не добавлена");
+                return;
+            }
+
+            bool renamed = app.Games.RenameCustomGame(card, "Проверка своих игр (переименована)");
+            bool removed = app.Games.RemoveCustomGame(card);
+            bool restored = app.Games.Cards.Count == before;
+            bool ok = renamed && removed && restored;
+
+            StartupLog.Note($"СВОИ ИГРЫ: добавление/переименование/удаление в окне — {(ok ? "работает" : "НЕ работает")}");
+            if (!ok)
+            {
+                problems.Add("свои игры: добавление, переименование или удаление в окне не сработало до конца");
+            }
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"свои игры: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"СВОИ ИГРЫ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 
