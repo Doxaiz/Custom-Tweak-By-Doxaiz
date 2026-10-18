@@ -912,7 +912,7 @@ public sealed class RoutingServersTests
     }
 
     [Fact]
-    public async Task Отказ_подтверждения_—_ничего_не_отправлено_и_маршруты_не_тронуты()
+    public async Task Отказ_подтверждения_ничего_не_отправляет_и_маршруты_не_тронуты()
     {
         using RoutingHarness harness = new();
         await harness.Routing.AddNodeAsync("10.8.0.1", "WG");
@@ -940,7 +940,7 @@ public sealed class RoutingServersTests
     }
 
     [Fact]
-    public async Task Игра_не_найдена_—_ответ_службы_видно_в_окне_как_есть()
+    public async Task Игра_не_найдена_ответ_службы_видно_в_окне_как_есть()
     {
         using RoutingHarness harness = new();
         await harness.Routing.AddNodeAsync("10.8.0.1", "WG");
