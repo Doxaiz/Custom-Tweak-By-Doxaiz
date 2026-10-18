@@ -147,6 +147,35 @@ internal static class ServiceSettings
         }
     }
 
+    /// <summary>
+    /// Настройки маршрутизации из общего файла (задача B). Чтение терпимое, как у своих игр:
+    /// нет файла, пустой файл, битый JSON, мусор вместо списка узлов — служба работает с пустым
+    /// списком: «узла нет» — это честный отказ действия, а не падение службы. Разбирает файл
+    /// общий с окном парсер <see cref="PingForge.Network.Routes.RoutingNodesJson"/> — чтобы чтение
+    /// окна и чтение службы не разъехались на двух наборах правил.
+    /// </summary>
+    public static PingForge.Network.Routes.RoutingSettings ReadRouting(string dataDirectory, out string? problemRu)
+    {
+        problemRu = null;
+
+        try
+        {
+            if (!Writer(dataDirectory).TryRead(out string json, out _))
+            {
+                problemRu = "файл настроек не прочитался — узлов маршрутизации не вижу, маршрут менять не буду";
+                return PingForge.Network.Routes.RoutingSettings.Empty;
+            }
+
+            PingForge.Network.Routes.RoutingSettings settings = PingForge.Network.Routes.RoutingNodesJson.Read(json, out problemRu);
+            return settings;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            problemRu = $"настройки маршрутизации не прочитались ({ex.GetType().Name}) — беру пустой список узлов";
+            return PingForge.Network.Routes.RoutingSettings.Empty;
+        }
+    }
+
     private static string? ReadString(JsonElement element, string property)
     {
         foreach (JsonProperty candidate in element.EnumerateObject())

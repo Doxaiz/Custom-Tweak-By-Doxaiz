@@ -339,6 +339,7 @@ public class ServiceDispatcherTests
         { "rollback", """{"id":"3","command":"rollback"}""" },
         { "repair-network", """{"id":"4","command":"repair-network"}""" },
         { "realtime-start", """{"id":"5","command":"realtime-start"}""" },
+        { "route-measure", """{"id":"6","command":"route-measure"}""" },
     };
 
     [Theory]

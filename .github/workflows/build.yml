@@ -426,6 +426,66 @@ jobs:
           & tools\c7-live-checks.ps1 -SetupPath $setup -SmokePath $smoke
           if ($LASTEXITCODE -ne 0) { throw "C7 live checks exit $LASTEXITCODE" }
 
+      # Задача B: узлы маршрутизации на живой Windows через канал службы. Только чтение
+      # (route print + Get-NetAdapter). На раннере нет второго канала — и ответ обязан быть
+      # честным: «кандидатов кроме текущего шлюза нет». Шаг герметичный: служба к этому моменту
+      # после C7 снята, поэтому ставим установщик сами, проверяем и убираем за собой.
+      # Вывод — в артефакты как доказательство.
+      - name: B - routing nodes live check via service pipe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $ann = 'file=tools/c7-live-checks.ps1,line=1'
+          try {
+            $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+            $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
+            $smoke = "${{ runner.temp }}/art/bin/PingForge.EngineSmoke/release/PingForge.EngineSmoke.exe"
+            Write-Host "::notice $ann::routing-live pre: setup=$(Test-Path $setup) smoke=$(Test-Path $smoke)"
+            if (-not (Test-Path $smoke)) { throw "no smoke file at $smoke" }
+
+            $svc = Get-Service -Name PingForge -ErrorAction SilentlyContinue
+            Write-Host "::notice $ann::routing-live service: exists=$($svc -ne $null) status=$($svc.Status)"
+            if ($svc -eq $null) {
+              if (-not (Test-Path $setup)) { throw "no service and no setup at $setup" }
+              $install = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+              if ($install.ExitCode -ne 0) { throw "setup exit $($install.ExitCode)" }
+            } elseif ($svc.Status -ne 'Running') {
+              Start-Service PingForge -ErrorAction SilentlyContinue
+            }
+            (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(90))
+            Start-Sleep -Seconds 4
+
+            $code = 1
+            $out = ''
+            foreach ($attempt in 1..2) {
+              $out = & $smoke 2>&1 | Out-String
+              $code = $LASTEXITCODE
+              if ($code -eq 0) { break }
+              Start-Sleep -Seconds 6
+            }
+            New-Item -ItemType Directory -Force test-results | Out-Null
+            $out | Set-Content test-results\routing-live.log -Encoding utf8
+
+            $routeLine = (($out -split "`n" | Select-String -SimpleMatch '[6/6]') -join '').Trim()
+            $checks = (($out -split "`n" | Where-Object { $_ -match 'x1b|\[\d/\d\]' -or $_ -match '[0-9]/[0-9]' }) -join ' | ').Trim()
+            $checks = $checks -replace '%','%25' -replace "`r",''
+            Write-Host "::notice $ann::routing-live exit=$code; checks: $checks"
+
+            if ($code -ne 0) {
+              $last = (($out -split "`n" | Where-Object { $_.Trim().Length -gt 0 } | Select-Object -Last 8) -join ' | ') -replace '%','%25' -replace "`r",''
+              Write-Host "::error $ann::routing-live tail: $last"
+              throw "EngineSmoke exit $code"
+            }
+            if ($routeLine -notmatch '6/6') { throw 'line [6/6] missing from smoke output' }
+
+            $uninstaller = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\Uninstall.exe'
+            if (Test-Path $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait | Out-Null }
+            Write-Host "::notice $ann::routing-live OK: $routeLine"
+          } catch {
+            Write-Host "::error $ann::routing-live failed: $($_.Exception.Message -replace '%','%25')"
+            exit 1
+          }
+
       - name: Готовые .exe и контрольные суммы
         run: |
           $ErrorActionPreference = 'Stop'
@@ -444,7 +504,11 @@ jobs:
           Get-Content dist\SHA256SUMS.txt
         shell: pwsh
 
+      # Тяжёлые dist-артефакты (.exe/.zip) грузятся только на релизных тегах: там же эти файлы
+      # едут и в ассеты релиза. На каждый push ~280 МБ artifact выжимали квоту хранилища Actions
+      # в ноль, и с 18 октября загрузка журналов падала молча — это и чиним.
       - name: Приложить к сборке
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v7
         continue-on-error: true
         with:
@@ -502,16 +566,22 @@ jobs:
             dist/*.zip
             dist/SHA256SUMS.txt
 
+      # Только доказательства: TRX, журнал службы, вывод живых проверок и один снимок окна.
+      # Никаких bin/, obj/ и многосотмегабайтных слепков — retention 3 дня, чтобы следы прогонов
+      # не съедали квоту, которую и так превысили старые dist-артефакты.
       - name: Журналы и результаты тестов (всегда)
         if: always()
         uses: actions/upload-artifact@v7
         continue-on-error: true
         with:
           name: test-results-and-logs
+          retention-days: 3
           path: |
             test-results/**/*.trx
             dist/app-window.png
             dist/app-start.log
             dist/install-service.log
             test-results/service.log
+            test-results/routing-live.log
+            test-results/c7-live-checks.log
           if-no-files-found: warn

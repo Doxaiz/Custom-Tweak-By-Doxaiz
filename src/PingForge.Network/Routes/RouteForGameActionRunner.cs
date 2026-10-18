@@ -23,17 +23,20 @@ public sealed class RouteForGameActionRunner : IOptimizationActionRunner
     private readonly IRouteTableReader? _table;
     private readonly Func<GameFlowInfo?> _currentFlow;
     private readonly Func<RouteOverride?> _routeOverride;
+    private readonly Func<string?> _noTargetNoteRu;
 
     public RouteForGameActionRunner(
         ICommandPort? command,
         IRouteTableReader? table,
         Func<GameFlowInfo?> currentFlow,
-        Func<RouteOverride?>? routeOverride = null)
+        Func<RouteOverride?>? routeOverride = null,
+        Func<string?>? noTargetNoteRu = null)
     {
         _command = command;
         _table = table;
         _currentFlow = currentFlow ?? throw new ArgumentNullException(nameof(currentFlow));
         _routeOverride = routeOverride ?? (() => null);
+        _noTargetNoteRu = noTargetNoteRu ?? (() => null);
     }
 
     public async Task<OptimizationActionOutcome> ApplyAsync(
@@ -67,10 +70,20 @@ public sealed class RouteForGameActionRunner : IOptimizationActionRunner
         RouteOverride? target = _routeOverride();
         if (target is null)
         {
+            // Причина отказа бывает разная: узла нет вовсе, узлы есть, но не выбраны, или автовыбор
+            // измерил и честно сказал «прямой путь не хуже». Последнее — не «нет узла», и врать
+            // под общей формулировкой нельзя: провайдер путей пишет заметку, она идёт в отказ.
+            string? decisionNote = _noTargetNoteRu();
+            if (!string.IsNullOrWhiteSpace(decisionNote))
+            {
+                return OptimizationActionOutcome.Fail($"Маршрут не изменён: {decisionNote}");
+            }
+
             return OptimizationActionOutcome.Fail(
-                "Маршрут не изменён: не задан альтернативный узел. Программа не угадывает, через какой шлюз вести " +
-                "трафик, и не трогает существующий маршрут по умолчанию без причины — если у вас нет второго канала " +
-                "или релея, менять здесь нечего.");
+                "Маршрут не изменён: не задан альтернативный узел. Выберите его в «Настройки» → «Сервер маршрутизации» " +
+                "(кнопка «Найти шлюзы» находит реальные шлюзы, узел можно добавить и вручную). Программа не угадывает, " +
+                "через какой шлюз вести трафик, и не трогает существующий маршрут по умолчанию без причины — если " +
+                "второго канала или настроенного VPN-адаптера нет, менять здесь нечего.");
         }
 
         if (!RouteCommandBuilder.IsValidAddress(target.NextHop))

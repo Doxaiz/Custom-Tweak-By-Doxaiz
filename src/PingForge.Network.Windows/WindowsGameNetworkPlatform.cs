@@ -47,7 +47,8 @@ public sealed class WindowsGameNetworkPlatform : IDisposable
             _platform.Command,
             RouteTable,
             () => ActiveFlow,
-            () => RouteTarget);
+            () => RouteTarget,
+            () => RouteRefusalNote);
 
         QosWriter = new QosDscpPolicyWriter(_platform.Registry);
         DscpActions = new DscpMarkingActionRunner(_platform.Registry, () => ActiveFlow);
@@ -72,6 +73,13 @@ public sealed class WindowsGameNetworkPlatform : IDisposable
 
     /// <summary>Куда вести трафик игры. null — менять маршрут нечем и не нужно (нет второго канала и релея).</summary>
     public RouteOverride? RouteTarget { get; set; }
+
+    /// <summary>
+    /// Честная причина, почему цели нет (например, «прямой путь не хуже» после замера). Она подставляется
+    /// в отказ действия вместо общей формулировки «не задан альтернативный узел»: человек должен читать
+    /// фактическое решение, а не догадываться, что измерилось.
+    /// </summary>
+    public string? RouteRefusalNote { get; set; }
 
     /// <summary>Проверка прав: изменение сети без администратора невозможно, и это надо показать заранее.</summary>
     public static bool IsElevated()

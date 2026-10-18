@@ -3,6 +3,7 @@ using PingForge.Core.Tweaks;
 using PingForge.Data;
 using PingForge.Data.Repositories;
 using PingForge.Network;
+using PingForge.Network.Routes;
 using PingForge.Network.Windows;
 using PingForge.Orchestration;
 using PingForge.Orchestration.Realtime;
@@ -31,7 +32,8 @@ public static class ServiceProgram
     /// <summary>Имя службы. Оно же используется в командах установки и в диспетчере служб.</summary>
     public const string ServiceName = "PingForge";
 
-    private static readonly string DataDirectory = Path.Combine(
+    /// <summary>Каталог данных: журнал, база и общий с окном settings.json. Нужен и частям, которые служба собирает отдельно.</summary>
+    internal static readonly string DataDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "PingForge");
 
@@ -131,10 +133,61 @@ public static class ServiceProgram
             new HopTracerouteEngine(icmp));
         var measurement = new RouteProbeMeasurementSource(probes, samplesPerWindow: 12);
 
+        // ── Сервер маршрутизации (задача B) ──────────────────────────────────────────────────
+        // Узлы ищет и измеряет служба: у окна прав на маршруты нет, а смотреть таблицу маршрутов
+        // может всякий. Своей сети узлов у проекта нет: кандидаты — только реальные шлюзы активных
+        // адаптеров, VPN из таблицы маршрутов и ручной ввод человека.
+        Func<RoutingSettings> readRouting = () =>
+        {
+            RoutingSettings routing = ServiceSettings.ReadRouting(DataDirectory, out string? routingProblem);
+            if (routingProblem is not null)
+            {
+                Log($"Серверы маршрутизации: {routingProblem}.");
+            }
+
+            return routing;
+        };
+
+        var routeComparison = new RoutePathComparisonService(platform.Command, network.RouteTable, measurement);
+
+        // Единственный источник RouteTarget для живого оптимизатора: узел из настроек (или победитель
+        // замера путей) платформа получает здесь и только во время оптимизации — при запуске службы
+        // не меняется ни маршрут, ни этот источник.
+        var routePaths = new RoutingPathOptionsProvider(
+            readRouting,
+            target => network.RouteTarget = target,
+            note => network.RouteRefusalNote = note,
+            routeComparison,
+            flow => network.ActiveFlow = flow);
+
+        var routingCandidates = new WindowsRoutingCandidateSource(
+            network.RouteTable,
+            new PowerShellAdapterDirectory(platform.Command));
+
+        var routingService = new HostRoutingService(network, routingCandidates, routeComparison, Log);
+
+        RoutingSettings startupRouting = readRouting();
+        Log(startupRouting.Nodes.Count == 0
+            ? "Серверы маршрутизации: узлов в настройках нет — действие «маршрут для игры» честно откажет и подскажет, где выбрать."
+            : $"Серверы маршрутизации: узлов {startupRouting.Nodes.Count}, по умолчанию " +
+              $"{(startupRouting.DefaultNode is null ? "не выбран" : $"«{startupRouting.DefaultNode.Name}» ({startupRouting.DefaultNode.Address})")}, " +
+              $"автовыбор {(startupRouting.AutoSelectBest ? "включён (путь выбирается замером при оптимизации)" : "выключен")}.");
+
         var realtime = new RealtimeOptimizer(
             network.Watcher,
             measurement,
-            new GameNetworkActionRunner(network.RouteActions, network.DscpActions));
+            new GameNetworkActionRunner(network.RouteActions, network.DscpActions),
+            pathOptions: routePaths);
+
+        // Новая сессия оптимизации обязана мерить пути заново: провайдер помнит свежий вердикт,
+        // чтобы контроль качества не запускал сравнение на каждый тик. Первый тик сессии — «ищу игру».
+        realtime.Updated += snapshot =>
+        {
+            if (snapshot.State == RealtimeOptimizationState.FindingGame)
+            {
+                routePaths.Invalidate();
+            }
+        };
 
         // Профиль потребления — общий с окном файл: экономный профиль растягивает контроль,
         // «максимум реакции» — наоборот. Служба читает его при каждом запуске оптимизации.
@@ -165,7 +218,8 @@ public static class ServiceProgram
             realtime: realtime,
             readProfile: readProfile,
             applyProfile: writeProfile,
-            stateReader: systemState);
+            stateReader: systemState,
+            routing: routingService);
 
         var dispatcher = new EngineDispatcher(operations);
         var server = new EnginePipeServer(dispatcher, Log);

@@ -58,7 +58,7 @@ internal static class Program
         {
             // 1. Служба вообще на связи?
             (bool pingOk, string pingMessage) = await client.PingAsync();
-            Console.WriteLine($"[1/5] Связь: {pingMessage}");
+            Console.WriteLine($"[1/6] Связь: {pingMessage}");
             if (!pingOk)
             {
                 Console.WriteLine("Служба ответила отказом на «проверить связь» — дальше спрашивать нечего.");
@@ -71,7 +71,7 @@ internal static class Program
             // а какие именно: счётчик совпадёт и тогда, когда одну команду переименовали, а другую потеряли.
             string capabilities = await client.GetCapabilitiesAsync();
             (bool commandsMatch, string commandsNote) = CompareCommands(capabilities);
-            Console.WriteLine($"[2/5] Список команд: {commandsNote}");
+            Console.WriteLine($"[2/6] Список команд: {commandsNote}");
             if (!commandsMatch)
             {
                 Console.WriteLine("      Служба и утилита собраны из разных версий — это отказ версий, а не мелочь.");
@@ -81,7 +81,7 @@ internal static class Program
 
             // 3. Состояние.
             EngineResponse status = await client.SendAsync(EngineCommandKind.Status);
-            Console.WriteLine($"[3/5] Состояние: {(status.Ok ? status.MessageRu : "ОТКАЗ: " + status.MessageRu)}");
+            Console.WriteLine($"[3/6] Состояние: {(status.Ok ? status.MessageRu : "ОТКАЗ: " + status.MessageRu)}");
             if (!status.Ok)
             {
                 return 2;
@@ -89,7 +89,7 @@ internal static class Program
 
             // 4. Чтение состояния системы — самое интересное: тут служба трогает настоящую Windows.
             EngineResponse state = await client.SendAsync(EngineCommandKind.ReadSystemState);
-            Console.WriteLine($"[4/5] Чтение состояния системы: {(state.Ok ? "прочитано" : "ОТКАЗ: " + state.MessageRu)}");
+            Console.WriteLine($"[4/6] Чтение состояния системы: {(state.Ok ? "прочитано" : "ОТКАЗ: " + state.MessageRu)}");
             if (!state.Ok)
             {
                 return 2;
@@ -109,14 +109,31 @@ internal static class Program
 
             // 5. Журнал.
             EngineResponse journal = await client.SendAsync(EngineCommandKind.JournalTail);
-            Console.WriteLine($"[5/5] Хвост журнала: {(journal.Ok ? journal.MessageRu : "ОТКАЗ: " + journal.MessageRu)}");
+            Console.WriteLine($"[5/6] Хвост журнала: {(journal.Ok ? journal.MessageRu : "ОТКАЗ: " + journal.MessageRu)}");
             if (!journal.Ok)
             {
                 return 2;
             }
 
+            // 6. Узлы маршрутизации (задача B): только чтение — таблица маршрутов и список адаптеров.
+            // Проверка принципиально честная: если на машине нет второго канала или VPN, служба обязана
+            // сказать «кандидатов кроме текущего шлюза нет», а не показать выдуманный список.
+            EngineResponse routes = await client.SendAsync(EngineCommandKind.RouteDiscover);
+            Console.WriteLine($"[6/6] Узлы маршрутизации: {(routes.Ok ? routes.MessageRu : "ОТКАЗ: " + routes.MessageRu)}");
+            if (!routes.Ok)
+            {
+                return 2;
+            }
+
+            int invented = CountInventedNodes(routes.DataJson);
+            if (invented > 0)
+            {
+                Console.WriteLine($"ПРОВАЛ: в ответе {invented} узл(ов) с нечестным источником — «серверов PingForge» быть не должно.");
+                return 3;
+            }
+
             Console.WriteLine();
-            Console.WriteLine("Итог: служба отвечает, состояние читается, список команд совпадает. Ничего не изменено.");
+            Console.WriteLine("Итог: служба отвечает, состояние читается, список команд совпадает, узлы маршрутизации честные. Ничего не изменено.");
             return 0;
         }
         catch (EngineUnavailableException ex)
@@ -131,6 +148,45 @@ internal static class Program
     /// Режимы C7: проверка личности, попытка применения без прав и применение с откатом.
     /// Каждый режим печатает то, что прислала служба, дословно — журнал прогона и есть доказательство.
     /// </summary>
+    /// <summary>
+    /// Считает узлы с источником вне белого списка («текущий шлюз», «второй шлюз», «VPN-адаптер …»,
+    /// «введён вручную»). Это живая версия теста «выдуманных серверов PingForge нет».
+    /// </summary>
+    private static int CountInventedNodes(string? dataJson)
+    {
+        if (string.IsNullOrWhiteSpace(dataJson))
+        {
+            return 0;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(dataJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return 1;
+            }
+
+            int bad = 0;
+            foreach (var item in document.RootElement.EnumerateArray())
+            {
+                string source = item.TryGetProperty("source", out var s1) ? s1.GetString() ?? "" : "";
+                bool honest = source == "текущий шлюз" || source == "второй шлюз" || source == "введён вручную"
+                    || source.StartsWith("VPN-адаптер ", StringComparison.Ordinal);
+                if (!honest)
+                {
+                    bad++;
+                }
+            }
+
+            return bad;
+        }
+        catch (JsonException)
+        {
+            return 1;
+        }
+    }
+
     private static async Task<int> RunSpecialModeAsync(EngineClient client, HashSet<string> flags)
     {
         try

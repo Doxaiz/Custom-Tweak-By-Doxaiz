@@ -51,4 +51,15 @@ public interface IEngineOperations
 
     /// <summary>Прочитать текущее состояние Windows и сети: что настроено сейчас, до всяких изменений.</summary>
     Task<EngineOperationResult> ReadSystemStateAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Найти узлы маршрутизации (задача B). Реализация есть не у всякого исполнителя — это команда
+    /// собранного сетевого слоя, — поэтому у метода есть отказ по умолчанию: «не подключён», а не тишина.
+    /// </summary>
+    Task<EngineOperationResult> DiscoverRoutingNodesAsync(CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Слой маршрутизации не подключён: искать узлы нечем."));
+
+    /// <summary>Измерить пути до игрового сервера через сохранённые узлы (задача B). Отказ по умолчанию — тот же честный.</summary>
+    Task<EngineOperationResult> MeasureRoutingPathsAsync(CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Слой маршрутизации не подключён: измерять пути нечем."));
 }
