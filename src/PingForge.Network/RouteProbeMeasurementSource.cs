@@ -50,7 +50,10 @@ public sealed class RouteProbeMeasurementSource : IRealtimeMeasurementSource
             JitterMs: statistics.JitterMadMs ?? 0,
             LossPercent: statistics.PacketLossPercent ?? 0,
             Samples: statistics.ReceivedCount,
-            MethodRu: DescribeMethod(statistics));
+            MethodRu: DescribeMethod(statistics),
+            RttMinMs: statistics.RttMinMs,
+            RttAvgMs: statistics.RttAvgMs,
+            RttP95Ms: statistics.RttP95Ms);
     }
 
     /// <summary>

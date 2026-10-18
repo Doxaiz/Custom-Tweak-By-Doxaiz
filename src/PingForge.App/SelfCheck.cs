@@ -57,6 +57,7 @@ internal static class SelfCheck
         CheckLauncherAndSetup(app, problems);
         CheckCustomGames(app, problems);
         CheckRoutingServers(app, problems);
+        CheckAnalysisIntegration(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -401,6 +402,163 @@ internal static class SelfCheck
             problems.Add($"серверы маршрутизации: проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"СЕРВЕРЫ МАРШРУТИЗАЦИИ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Задача F: анализ подключён к продукту. Проверяется то, что видит человек: график сети
+    /// в «Оптимизации» (с честной надписью «данных пока нет» до первого замера), карточка
+    /// «Задержка ввода» в «Твиках» и блок «Проверка настроек» в «Настройках».
+    ///
+    /// Модель графика прогоняется по-настоящему: серия с разрывом обязана превратиться в отрезки
+    /// линий в разметке (Polyline), а точка без измерения — остаться разрывом, а не нулём.
+    /// </summary>
+    private static void CheckAnalysisIntegration(App app, List<string> problems)
+    {
+        try
+        {
+            // ── График сети в «Оптимизации» ────────────────────────────────────────────────
+            var chart = app.MainScreen.Chart;
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "ChartCard") is null)
+                    {
+                        problems.Add("график сети: нет карточки «График сети» в разделе «Оптимизация»");
+                    }
+
+                    if (!HasText(root, "График сети") || !HasText(root, "Данных пока нет"))
+                    {
+                        problems.Add("график сети: нет честной надписи «данных пока нет» — пустой график без объяснения");
+                    }
+
+                    if (!HasText(root, "1 минута") || !HasText(root, "15 минут"))
+                    {
+                        problems.Add("график сети: нет переключателя окна 1/5/15 минут");
+                    }
+
+                    if (FindNamed<FrameworkElement>(root, "InputLatencyBlock") is null || !HasText(root, "Проверить задержку ввода"))
+                    {
+                        problems.Add("задержка ввода: нет карточки «Задержка ввода» с кнопкой проверки в разделе «Твики»");
+                    }
+
+                    if (FindNamed<FrameworkElement>(root, "SettingsCheckBlock") is null || !HasText(root, "Проверить настройки"))
+                    {
+                        problems.Add("проверка настроек: нет карточки «Проверка настроек» в разделе «Настройки»");
+                    }
+
+                    // Живая прогонка модели графика: серия с разрывом → линии в разметке.
+                    DateTimeOffset now = DateTimeOffset.Now;
+                    chart.ReceiveSamples(
+                    [
+                        new PingForge.Analysis.Charting.ChartSample(now.AddSeconds(-6), RttAvgMs: 40, JitterMadMs: 1.5, PacketLossPercent: 0),
+                        PingForge.Analysis.Charting.ChartSample.Empty(now.AddSeconds(-4)),
+                        new PingForge.Analysis.Charting.ChartSample(now.AddSeconds(-2), RttAvgMs: 46, JitterMadMs: 2, PacketLossPercent: 0.5),
+                    ]);
+                    chart.IsWindow5 = true;
+                    root.UpdateLayout();
+
+                    if (!chart.HasData || chart.RttPanel.IsEmpty || chart.RttPanel.Segments.Count < 1)
+                    {
+                        problems.Add("график сети: серия с измерениями не построилась в линии");
+                    }
+
+                    int lines = CountPolylines(root);
+                    if (lines < 3)
+                    {
+                        problems.Add($"график сети: в разметке {lines} линий, а панели (задержка, джиттер, потери) — три");
+                    }
+
+                    // Разрыв обязан остаться разрывом: две измеренные точки с пустой между ними —
+                    // это два отрезка у ряда RTT (или один, если точки соединились в обход пустой,
+                    // что было бы ошибкой), но никак не три подряд заполненных.
+                    var rttSeries = PingForge.Analysis.Charting.NetworkChartBuilder
+                        .Build(new[]
+                        {
+                            new PingForge.Analysis.Charting.ChartSample(now.AddSeconds(-6), RttAvgMs: 40),
+                            PingForge.Analysis.Charting.ChartSample.Empty(now.AddSeconds(-4)),
+                            new PingForge.Analysis.Charting.ChartSample(now.AddSeconds(-2), RttAvgMs: 46),
+                        }, TimeSpan.FromMinutes(5))
+                        .Series.Single(s => s.Indicator == PingForge.Analysis.Charting.ChartIndicator.RttAvgMs);
+                    if (rttSeries.Points.Any(p => !p.IsMeasured && p.Value is not null))
+                    {
+                        problems.Add("график сети: пустая точка превратилась в число — нарушено правило «нет измерения — нет нуля»");
+                    }
+                }
+            }
+
+            // ── Карточка задержки ввода: модель и фильтр ───────────────────────────────────
+            if (app.Tweaks.InputLatency is null)
+            {
+                problems.Add("задержка ввода: карточка не прикреплена к разделу «Твики»");
+                StartupLog.Note("ЗАДЕРЖКА ВВОДА: НЕ работает — карточка не прикреплена");
+            }
+            else
+            {
+                int allRows = app.Tweaks.Rows.Count;
+                app.Tweaks.ShowOnlyCodes(["MOUSE_ACCEL_SPEED", "KEYBOARD_FILTERKEYS_OFF"]);
+                bool filtered = app.Tweaks.IsFiltered
+                    && app.Tweaks.VisibleRows.Count < allRows
+                    && app.Tweaks.VisibleRows.All(row => row.Code is "MOUSE_ACCEL_SPEED" or "KEYBOARD_FILTERKEYS_OFF");
+                app.Tweaks.ClearFilter();
+                bool restored = !app.Tweaks.IsFiltered && app.Tweaks.VisibleRows.Count == allRows;
+
+                if (!filtered || !restored)
+                {
+                    problems.Add("задержка ввода: фильтр «показать связанные твики» не отбирает и не возвращает список");
+                    StartupLog.Note("ЗАДЕРЖКА ВВОДА: НЕ работает — фильтр связанных твиков сломан");
+                }
+                else
+                {
+                    StartupLog.Note("ЗАДЕРЖКА ВВОДА: карточка в «Твиках» есть, фильтр связанных твиков работает");
+                }
+            }
+
+            // ── Проверка настроек: модель ──────────────────────────────────────────────────
+            if (app.Settings.Check is null)
+            {
+                problems.Add("проверка настроек: блок не собран в разделе «Настройки»");
+                StartupLog.Note("ПРОВЕРКА НАСТРОЕК: НЕ работает — модель блока не собрана");
+            }
+            else
+            {
+                // До запуска проверки статус обязан говорить «ещё не запускалась», а не «всё хорошо».
+                bool honestIdle = app.Settings.Check.StatusRu.Contains("ещё не запускалась", StringComparison.Ordinal);
+                if (!honestIdle)
+                {
+                    problems.Add("проверка настроек: до запуска статус не говорит честное «ещё не запускалась»");
+                }
+
+                StartupLog.Note(honestIdle
+                    ? "ПРОВЕРКА НАСТРОЕК: блок в «Настройках» есть, честный статус до запуска на месте"
+                    : "ПРОВЕРКА НАСТРОЕК: НЕ работает — статус до запуска нечестный");
+            }
+
+            StartupLog.Note($"ГРАФИК СЕТИ: карточка построена, линий в разметке: {(app.Shell?.Content is FrameworkElement r ? CountPolylines(r) : 0)}, " +
+                "источник данных — только замеры живой оптимизации (собственных зондов у графика нет)");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"анализ (задача F): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"АНАЛИЗ (ЗАДАЧА F): НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Сколько линий графика реально нарисовано в разметке: геометрия из модели дошла до экрана.</summary>
+    private static int CountPolylines(DependencyObject node)
+    {
+        int count = node is System.Windows.Shapes.Polyline ? 1 : 0;
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            count += CountPolylines(VisualTreeHelper.GetChild(node, i));
+        }
+
+        return count;
     }
 
     /// <summary>

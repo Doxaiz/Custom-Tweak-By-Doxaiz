@@ -360,4 +360,88 @@ public sealed class RealtimeOptimizationTests
         Assert.Contains(plan.Notes, n => n.Contains("не проверялась", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(plan.Notes, n => n.Contains("отдельное окно со снапшотом", StringComparison.OrdinalIgnoreCase));
     }
+
+    // ── Задача F: история замеров для графика сети ────────────────────────────────────────────
+
+    [Fact]
+    public async Task История_замеров_хранит_окна_сессии_а_провалы_остаются_null()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        // Три окна «до», контрольное окно — и дальше контроль: одно окно не измеряется.
+        var measurements = new ScriptedMeasurements(
+            Measurable(120), Measurable(118), Measurable(120),
+            Measurable(80), Measurable(82))
+        {
+            Fallback = PathMeasurement.Unmeasurable("поток пропал"),
+        };
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+
+        await optimizer.StartAsync();
+        await optimizer.TickOnceAsync();
+
+        IReadOnlyList<RealtimeMeasurementPoint> samples = optimizer.RecentSamples;
+
+        // Базовые окна + контрольное + тик: пять измеренных точек с датами.
+        Assert.Equal(5, samples.Count);
+        Assert.All(samples, point => Assert.True(point.IsMeasurable));
+        Assert.All(samples, point => Assert.NotNull(point.RttMedianMs));
+        Assert.All(samples, point => Assert.True(point.AtUtc > DateTime.MinValue));
+
+        // Шестое окно не измерилось: точка с null-полями — на графике это разрыв, а не ноль.
+        await optimizer.TickOnceAsync();
+        samples = optimizer.RecentSamples;
+
+        Assert.Equal(6, samples.Count);
+        RealtimeMeasurementPoint gap = samples[^1];
+        Assert.False(gap.IsMeasurable);
+        Assert.Null(gap.RttMedianMs);
+        Assert.Null(gap.RttP95Ms);
+        Assert.Null(gap.JitterMadMs);
+        Assert.Null(gap.LossPercent);
+        Assert.Contains("поток пропал", gap.MethodRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task История_замеров_очищается_между_сессиями()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        var measurements = new ScriptedMeasurements(
+            Measurable(120), Measurable(120), Measurable(120), Measurable(80),   // первая сессия
+            Measurable(90), Measurable(90), Measurable(90), Measurable(70));      // вторая сессия
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+
+        await optimizer.StartAsync();
+        Assert.NotEmpty(optimizer.RecentSamples);
+        Assert.Contains(optimizer.RecentSamples, point => point.RttMedianMs is >= 120);
+
+        await optimizer.StopAsync();
+        await optimizer.StartAsync();
+
+        // Новая сессия начинается с чистой истории: точек первой сессии (120+) в графике нет.
+        Assert.NotEmpty(optimizer.RecentSamples);
+        Assert.All(optimizer.RecentSamples, point => Assert.True(point.RttMedianMs is null or <= 90));
+    }
+
+    [Fact]
+    public async Task Окно_замера_несёт_минимум_среднее_и_p95_когда_они_есть()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        var measurements = new ScriptedMeasurements(
+            WithDistribution(120), WithDistribution(120), WithDistribution(120), WithDistribution(80));
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+
+        await optimizer.StartAsync();
+
+        RealtimeMeasurementPoint point = optimizer.RecentSamples[^1];
+        Assert.True(point.IsMeasurable);
+        Assert.Equal(78, point.RttMinMs!.Value, 0.01);
+        Assert.Equal(80, point.RttMedianMs!.Value, 0.01);
+        Assert.Equal(96, point.RttP95Ms!.Value, 0.01);
+    }
+
+    private static PathMeasurement WithDistribution(double median) =>
+        new(true, median, 2, 0, 12, "ICMP-эхо до игрового сервера", RttMinMs: median - 2, RttAvgMs: median + 1, RttP95Ms: median + 16);
 }

@@ -1,6 +1,7 @@
 <Application x:Class="PingForge.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:PingForge.App"
              ShutdownMode="OnExplicitShutdown">
   <Application.Resources>
     <ResourceDictionary>
@@ -15,6 +16,8 @@
 
       <!-- Показ/скрытие карточек по булеву полю модели: без своего кода, средствами WPF. -->
       <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+      <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+      <local:ChartPointsConverter x:Key="ChartPoints" />
 
       <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />
       <SolidColorBrush x:Key="Panel" Color="{StaticResource PanelColor}" />

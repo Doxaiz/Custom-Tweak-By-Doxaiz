@@ -35,6 +35,13 @@ public partial class App : Application
     /// <summary>Каталог читается из той же сборки, что применяет служба: описания и вердикты совпадают.</summary>
     public TweakCatalog Catalog { get; private set; } = null!;
 
+    /// <summary>
+    /// Порты платформы Windows для анализа (задача F): советники задержки ввода и проверки настроек
+    /// читают реальные значения — реестр, PnP-устройства, свойства сетевых карт. Создаются здесь,
+    /// а не внутри моделей: их состав видно в одном месте, и их можно освободить при выходе.
+    /// </summary>
+    private PingForge.Tweaks.Windows.WindowsTweakPlatform? _analysisPlatform;
+
     public EngineClient Engine { get; private set; } = null!;
 
     public MainViewModel MainScreen { get; private set; } = null!;
@@ -120,7 +127,12 @@ public partial class App : Application
     private void Build()
     {
         Step("Собираю каталог твиков");
-        Catalog = new TweakCatalog(new TweakPlatformPorts());
+        // Задача F: каталог получает настоящие порты Windows. Витрина (строки, пресеты) от этого
+        // не меняется — она читает только описания. Зато советники анализа теперь снимают
+        // фактические значения, а не отвечают «не поддерживается».
+        var analysisPlatform = new PingForge.Tweaks.Windows.WindowsTweakPlatform();
+        _analysisPlatform = analysisPlatform;
+        Catalog = new TweakCatalog(analysisPlatform.ToCatalogPorts());
 
         Step("Читаю настройки");
         var dialogs = new WpfDialogs();
@@ -136,14 +148,32 @@ public partial class App : Application
         Step("Собираю модели представления");
         Engine = new EngineClient(new NamedPipeEngineChannel());
 
-        MainScreen = new MainViewModel(Engine, dialogs, runsAsAdministrator: IsAdministrator());
+        // pollStatusWhileOptimizing: пока оптимизация идёт, окно редко (раз в 3 с) спрашивает status —
+        // команда только читает. Так график сети живёт без собственных зондов: точки приходят
+        // из тех же замеров, что уже делает оптимизация.
+        MainScreen = new MainViewModel(Engine, dialogs, runsAsAdministrator: IsAdministrator(), pollStatusWhileOptimizing: true);
         Tweaks = new TweaksViewModel(
             Engine,
             dialogs,
             TweakRowFactory.BuildAll(Catalog),
             TweakRowFactory.BuildPresets(Catalog));
+
+        // Карточка «Задержка ввода» (задача F): советник из PingForge.Analysis, подключённый к окну.
+        Tweaks.AttachInputLatency(new InputLatencyViewModel(
+            AnalysisWiring.BuildInputLatency(analysisPlatform, Catalog),
+            Tweaks.ShowOnlyCodes));
+
         Journal = new JournalViewModel(Engine, settings.JournalRowsShown);
-        Settings = new SettingsViewModel(Engine, store, dialogs);
+
+        // Блок «Проверка настроек» (задача F): разбор конфликтов и советы по твикам, только чтение.
+        // Кнопка «Показать в твиках» фильтрует список и переключает раздел — тот же путь, что клик по меню.
+        Settings = new SettingsViewModel(
+            Engine,
+            store,
+            dialogs,
+            check: new SettingsCheckViewModel(
+                AnalysisWiring.BuildSettingsCheck(analysisPlatform, Catalog, () => MainScreen.Endpoint),
+                ShowInTweaks));
         Games = new GameLauncherViewModel(
             new WindowsGameLocator(),
             new ProcessGameStarter(),
@@ -352,9 +382,20 @@ public partial class App : Application
         Shutdown();
     }
 
+    /// <summary>
+    /// Задача F: кнопка «Показать в твиках» из блока проверки настроек. Сначала фильтр списка
+    /// по кодам, затем переход в раздел «Твики» — тем же путём, что и клик по меню.
+    /// </summary>
+    private void ShowInTweaks(IReadOnlyList<string> codes)
+    {
+        Tweaks.ShowOnlyCodes(codes);
+        Shell?.ShowTweaksSection();
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         _instance?.Dispose();
+        _analysisPlatform?.Dispose();
         base.OnExit(e);
     }
 

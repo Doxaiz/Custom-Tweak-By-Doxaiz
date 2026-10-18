@@ -39,15 +39,17 @@ public sealed class HostRoutingService : IRoutingService
 
     public async Task<EngineOperationResult> DiscoverAsync(CancellationToken ct = default)
     {
-        IReadOnlyList<RoutingNodeEntry> discovered;
+        RouteDiscoveryResult discovery;
         try
         {
-            discovered = await _candidates.DiscoverAsync(ct).ConfigureAwait(false);
+            discovery = await _candidates.DiscoverWithNotesAsync(ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return EngineOperationResult.Failure($"Таблица маршрутов не прочиталась: {ex.Message}. Узлы из настроек при этом на месте.");
         }
+
+        IReadOnlyList<RoutingNodeEntry> discovered = discovery.Nodes;
 
         // Сохранённые вручную узлы — не «найденные», но человек добавлял их сюда же: показываем
         // их рядом, чтобы окно честно склеило список без второй поездки.
@@ -67,11 +69,18 @@ public sealed class HostRoutingService : IRoutingService
                   "Сравнивать пути не среди чего — сравнивать имеет смысл только реальные альтернативы."
                 : $"Найдено узлов: {all.Count}, из них альтернатив текущему шлюзу: {alternatives}. Источники подписаны честно; «серверов PingForge» здесь не бывает.";
 
+        // Пояснения о туннелях без шлюза (Cloudflare WARP и другие wintun-туннели): они не стали
+        // узлами, и человек должен видеть причину, а не молчаливый пропуск.
+        foreach (string note in discovery.NotesRu)
+        {
+            message += $" {note}";
+        }
+
         IReadOnlyList<RoutingCandidateDto> dto = all
             .Select(node => new RoutingCandidateDto(node.Address, node.Name, node.SourceRu, node.SourceRu == RoutingNodeSourceRu.CurrentGateway))
             .ToList();
 
-        _log($"route-discover: узлов {all.Count}, альтернатив {alternatives}.");
+        _log($"route-discover: узлов {all.Count}, альтернатив {alternatives}, пояснений о туннелях {discovery.NotesRu.Count}.");
         return EngineOperationResult.Success(message, RoutingWireCodec.EncodeCandidates(dto));
     }
 

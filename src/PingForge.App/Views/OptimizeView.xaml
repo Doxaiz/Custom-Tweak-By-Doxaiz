@@ -1,6 +1,96 @@
 <UserControl x:Class="PingForge.App.Views.OptimizeView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:PingForge.App.ViewModels">
+  <UserControl.Resources>
+    <!-- Панель графика: линии с разрывами, оси и честная «не измерялось» вместо пустоты. -->
+    <DataTemplate x:Key="ChartPanelTemplate" DataType="{x:Type vm:ChartPanelViewModel}">
+      <StackPanel Margin="0,10,0,0">
+        <TextBlock Text="{Binding TitleRu}" FontWeight="SemiBold" FontSize="12.5" />
+
+        <!-- Пустая панель — тоже контент: честная причина, а не «просто ничего». -->
+        <Border Background="#0C1420" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
+                Padding="10" Margin="0,4,0,0"
+                Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}">
+          <TextBlock Style="{StaticResource Caption}" Text="{Binding EmptyRu}" />
+        </Border>
+
+        <Viewbox Stretch="Uniform" Margin="0,4,0,0"
+                 Visibility="{Binding IsEmpty, Converter={StaticResource InverseBoolToVisibility}}">
+          <Canvas Width="560" Height="132" Background="#0C1420">
+            <!-- Линии: отрезки без разрывов, разрыв измерения — новый отрезок, а не ноль. -->
+            <ItemsControl ItemsSource="{Binding Segments}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Polyline Points="{Binding PointsText, Converter={StaticResource ChartPoints}}" StrokeThickness="1.6">
+                    <Polyline.Style>
+                      <Style TargetType="Polyline">
+                        <Setter Property="Stroke" Value="{StaticResource Accent2}" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding LineKind}" Value="0">
+                            <Setter Property="Stroke" Value="{StaticResource Muted}" />
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding LineKind}" Value="1">
+                            <Setter Property="Stroke" Value="{StaticResource Accent}" />
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding LineKind}" Value="2">
+                            <Setter Property="Stroke" Value="#F2C94C" />
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding LineKind}" Value="3">
+                            <Setter Property="Stroke" Value="#A78BFA" />
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding LineKind}" Value="4">
+                            <Setter Property="Stroke" Value="#F2545B" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Polyline.Style>
+                  </Polyline>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Подписи осей: позиция и текст приходят из модели (пиксели канвы). -->
+            <ItemsControl ItemsSource="{Binding YLabels}">
+              <ItemsControl.ItemContainerStyle>
+                <Style TargetType="ContentPresenter">
+                  <Setter Property="Canvas.Left" Value="{Binding X}" />
+                  <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                </Style>
+              </ItemsControl.ItemContainerStyle>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Text}" FontSize="9" Foreground="{StaticResource Muted}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <ItemsControl ItemsSource="{Binding XLabels}">
+              <ItemsControl.ItemContainerStyle>
+                <Style TargetType="ContentPresenter">
+                  <Setter Property="Canvas.Left" Value="{Binding X}" />
+                  <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                </Style>
+              </ItemsControl.ItemContainerStyle>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Text}" FontSize="9" Foreground="{StaticResource Muted}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Canvas>
+        </Viewbox>
+
+        <!-- Легенда: строка на линию, из DescribeRu ряда — со значением и числом измеренных точек. -->
+        <ItemsControl ItemsSource="{Binding LegendLines}" Margin="0,4,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Style="{StaticResource Caption}" FontSize="11.5" Text="{Binding}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </DataTemplate>
+  </UserControl.Resources>
   <StackPanel>
     <TextBlock Style="{StaticResource Title}" Text="Оптимизация соединения" />
 
@@ -43,38 +133,45 @@
       </Grid>
     </Border>
 
-    <Border Style="{StaticResource Card}">
-      <StackPanel>
-        <TextBlock Text="Показатели" FontWeight="SemiBold" Margin="0,0,0,10" />
-        <UniformGrid Columns="4" Rows="1">
-          <Border x:Name="StatPing" Style="{StaticResource Card}" Margin="0,0,8,0" MinWidth="120">
-            <StackPanel>
-              <TextBlock Text="{Binding CurrentRttMs, StringFormat={}{0:0.#} мс, TargetNullValue=не измерено}"
-                         FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
-              <TextBlock Style="{StaticResource Caption}" Text="пинг сейчас" Margin="0,4,0,0" />
-            </StackPanel>
-          </Border>
-          <Border x:Name="StatBetter" Style="{StaticResource Card}" Margin="0,0,8,0" MinWidth="120">
-            <StackPanel>
-              <TextBlock Text="{Binding ImprovementMs, StringFormat=−{0:0.#} мс, TargetNullValue=—}"
-                         FontSize="18" FontWeight="SemiBold" />
-              <TextBlock Style="{StaticResource Caption}" Text="стало лучше" Margin="0,4,0,0" />
-            </StackPanel>
-          </Border>
-          <Border x:Name="StatBefore" Style="{StaticResource Card}" Margin="0,0,8,0" MinWidth="120">
-            <StackPanel>
-              <TextBlock Text="{Binding BaselineRttMs, StringFormat=было {0:0.#} мс, TargetNullValue=было —}"
-                         FontSize="18" FontWeight="SemiBold" />
-              <TextBlock Style="{StaticResource Caption}" Text="до оптимизации" Margin="0,4,0,0" />
-            </StackPanel>
-          </Border>
-          <Border x:Name="StatQuality" Style="{StaticResource Card}" Margin="0" MinWidth="120">
-            <StackPanel>
-              <TextBlock Text="{Binding QualityRu}" FontSize="18" FontWeight="SemiBold" />
-              <TextBlock Style="{StaticResource Caption}" Text="оценка качества" Margin="0,4,0,0" />
-            </StackPanel>
-          </Border>
-        </UniformGrid>
+    <!-- График сети (задача F): вместо статичной сводки чисел. Данные — только из замеров
+         живой оптимизации: график не запускает собственных зондов и не отправляет пакетов. -->
+    <Border Style="{StaticResource Card}" x:Name="ChartCard">
+      <StackPanel DataContext="{Binding Chart}">
+        <TextBlock Text="График сети" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding HonestCaptionRu}" />
+
+        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+          <TextBlock Text="Окно:" VerticalAlignment="Center" Style="{StaticResource Caption}" Margin="0,0,10,0" />
+          <RadioButton GroupName="ChartWindow" Content="1 минута" Margin="0,0,14,0" Foreground="{StaticResource Text}"
+                       IsChecked="{Binding IsWindow1, Mode=TwoWay}" />
+          <RadioButton GroupName="ChartWindow" Content="5 минут" Margin="0,0,14,0" Foreground="{StaticResource Text}"
+                       IsChecked="{Binding IsWindow5, Mode=TwoWay}" />
+          <RadioButton GroupName="ChartWindow" Content="15 минут" Margin="0,0,16,0" Foreground="{StaticResource Text}"
+                       IsChecked="{Binding IsWindow15, Mode=TwoWay}" />
+          <TextBlock Style="{StaticResource Caption}" Text="{Binding LastSampleRu}" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- Пустое состояние — честная надпись, а не пустая коробка без объяснения. -->
+        <Border Background="#0C1420" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
+                Padding="12" Margin="0,10,0,0"
+                Visibility="{Binding HasData, Converter={StaticResource InverseBoolToVisibility}}">
+          <TextBlock Text="{Binding EmptyStateRu}" TextWrapping="Wrap" />
+        </Border>
+
+        <StackPanel Visibility="{Binding HasData, Converter={StaticResource BoolToVisibility}}">
+          <ContentControl Content="{Binding RttPanel}" ContentTemplate="{StaticResource ChartPanelTemplate}" />
+          <ContentControl Content="{Binding JitterPanel}" ContentTemplate="{StaticResource ChartPanelTemplate}" />
+          <ContentControl Content="{Binding LossPanel}" ContentTemplate="{StaticResource ChartPanelTemplate}" />
+        </StackPanel>
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" Text="{Binding WindowSummaryRu}" />
+        <ItemsControl ItemsSource="{Binding NotesRu}" Margin="0,4,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Style="{StaticResource Caption}" FontSize="11.5" Text="{Binding}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
       </StackPanel>
     </Border>
 

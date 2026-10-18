@@ -29,6 +29,11 @@
          Как None, а не как Compile: исходник чужого проекта не должен компилироваться здесь. -->
     <None Include="..\..\src\PingForge.App\app.manifest" Link="checked-app.manifest" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\PingForge.App.csproj" Link="checked-PingForge.App.csproj" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Задача F: тест-«сторож» сверяет, что слой анализа подключён к проекту интерфейса. -->
+    <None Include="..\..\src\PingForge.App.ViewModels\PingForge.App.ViewModels.csproj" Link="checked-PingForge.App.ViewModels.csproj" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\Views\OptimizeView.xaml" Link="checked-OptimizeView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\Views\TweaksView.xaml" Link="checked-TweaksView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\Views\SettingsView.xaml" Link="checked-SettingsView.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeAclFactory.cs" Link="checked-PipeAclFactory.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeClientInspector.cs" Link="checked-PipeClientInspector.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\КАНАЛЫ-СЛУЖБЫ.md" Link="checked-pipes-doc.md" CopyToOutputDirectory="PreserveNewest" />

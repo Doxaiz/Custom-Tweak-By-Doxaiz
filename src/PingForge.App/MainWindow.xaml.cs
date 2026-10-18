@@ -79,6 +79,13 @@ public partial class MainWindow : Window
     private void NavChanged(object sender, RoutedEventArgs e) => ApplySection();
 
     /// <summary>
+    /// Задача F: перейти в раздел «Твики» из кода — так работает кнопка «Показать в твиках»
+    /// блока проверки настроек. Отмечаем пункт меню: <see cref="NavChanged"/> сам применит раздел,
+    /// то есть путь ровно тот же, что и клик человека по меню.
+    /// </summary>
+    public void ShowTweaksSection() => NavTweaks.IsChecked = true;
+
+    /// <summary>
     /// Показать выбранный раздел. Вызывается и обработчиком меню, и после загрузки окна:
     /// одна и та же логика, один и тот же результат — независимо от того, что произошло раньше.
     /// </summary>

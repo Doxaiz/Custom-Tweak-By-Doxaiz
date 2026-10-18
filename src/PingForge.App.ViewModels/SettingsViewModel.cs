@@ -19,7 +19,7 @@ public sealed class SettingsViewModel : ObservableObject
     private bool _closeToTray;
     private string _statusRu;
 
-    public SettingsViewModel(EngineClient engine, IAppSettingsStore store, IUserDialogs dialogs, RoutingSettingsViewModel? routing = null)
+    public SettingsViewModel(EngineClient engine, IAppSettingsStore store, IUserDialogs dialogs, RoutingSettingsViewModel? routing = null, SettingsCheckViewModel? check = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _store = store ?? throw new ArgumentNullException(nameof(dialogs));
@@ -38,10 +38,19 @@ public sealed class SettingsViewModel : ObservableObject
         // Блок «Сервер маршрутизации» (задача B) живёт здесь, в «Настройках»: узлы, поиск шлюзов,
         // измерение путей и выбор узла по умолчанию. Двойник передаётся в тестах — в бою свой.
         Routing = routing ?? new RoutingSettingsViewModel(engine, store, dialogs);
+
+        // Блок «Проверка настроек» (задача F): разбор конфликтов и советы по твикам на готовом
+        // коде PingForge.Analysis. Тоже только чтение и тоже с двойником в тестах.
+        Check = check ?? new SettingsCheckViewModel(
+            new UnavailableSettingsCheckAnalysis(),
+            _ => { });
     }
 
     /// <summary>Узлы маршрутизации: список, поиск шлюзов, замер путей. Ничего не меняет сама по себе.</summary>
     public RoutingSettingsViewModel Routing { get; }
+
+    /// <summary>Проверка настроек: что мешает, что стоит изменить, что не проверено. Ничего не применяет.</summary>
+    public SettingsCheckViewModel Check { get; }
 
     public AsyncRelayCommand SaveCommand { get; }
 
@@ -163,4 +172,15 @@ public sealed class SettingsViewModel : ObservableObject
             StatusRu = ex.Message;
         }
     }
+}
+
+/// <summary>
+/// Честный «анализатор не подключён»: проверка настроек в этой сборке не работает, и кнопка
+/// говорит именно это, а не делает вид. В бою приложение подключает настоящий анализатор
+/// из PingForge.Analysis — этот класс остаётся для тестов и крайних случаев.
+/// </summary>
+internal sealed class UnavailableSettingsCheckAnalysis : ISettingsCheckAnalysis
+{
+    public Task<SettingsCheckReport> CheckAsync(CancellationToken ct = default) => throw new NotSupportedException(
+        "Анализатор настроек не подключён в этой сборке: проверка недоступна, «не проверено» — честный ответ.");
 }

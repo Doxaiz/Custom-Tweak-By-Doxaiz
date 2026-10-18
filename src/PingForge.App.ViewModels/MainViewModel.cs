@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using PingForge.Analysis.Charting;
 using PingForge.Service.Protocol;
 
 namespace PingForge.App.ViewModels;
@@ -14,6 +15,8 @@ public sealed class MainViewModel : ObservableObject
 {
     private readonly EngineClient _engine;
     private readonly IUserDialogs _dialogs;
+    private readonly bool _pollStatusWhileOptimizing;
+    private int _pollGeneration;
     private string _statusRu = "Готово к работе. Нажмите «Оптимизировать соединение» — до этого программа ничего не меняет.";
     private string _qualityRu = "Замеров пока не было";
     private string? _gameTitleRu;
@@ -32,17 +35,25 @@ public sealed class MainViewModel : ObservableObject
     /// и ждало ответа службы: на снимке живой Windows выходило «Прав администратора нет» — при том, что
     /// журнал той же программы писал «есть». Права окна знает сама Windows; ответ службы их уточняет.
     /// </remarks>
-    public MainViewModel(EngineClient engine, IUserDialogs dialogs, bool runsAsAdministrator = false)
+    public MainViewModel(EngineClient engine, IUserDialogs dialogs, bool runsAsAdministrator = false, bool pollStatusWhileOptimizing = false)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
         _hasRights = runsAsAdministrator;
+        _pollStatusWhileOptimizing = pollStatusWhileOptimizing;
 
         OptimizeCommand = new AsyncRelayCommand(ToggleOptimizationAsync, () => true);
         RefreshStatusCommand = new AsyncRelayCommand(RefreshStatusAsync, () => true);
         RepairNetworkCommand = new AsyncRelayCommand(RepairNetworkAsync, () => true);
         DismissNoticeCommand = new RelayCommand(() => ShowNotice(null, null));
     }
+
+    /// <summary>
+    /// График сети (задача F): строится ТОЛЬКО из замеров живой оптимизации, которые отдаёт
+    /// команда status. График не запускает собственных зондов и не отправляет пакетов —
+    /// все точки приходят из уже идущих замеров оптимизации.
+    /// </summary>
+    public NetworkChartViewModel Chart { get; } = new();
 
     /// <summary>Закрыть ответ программы, когда он прочитан.</summary>
     public RelayCommand DismissNoticeCommand { get; }
@@ -99,6 +110,10 @@ public sealed class MainViewModel : ObservableObject
             if (Set(ref _isOptimizing, value))
             {
                 OnPropertyChanged(nameof(ButtonTextRu), nameof(IsIdle));
+                if (value)
+                {
+                    StartStatusPolling();
+                }
             }
         }
     }
@@ -272,6 +287,44 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Редкий опрос состояния, пока оптимизация идёт (только в бою — тестам цикл не нужен).
+    /// Команда status только читает: ни одного изменения системы за спиной пользователя.
+    /// Останавливается сама, когда оптимизация закончилась (IsOptimizing → false).
+    /// </summary>
+    private void StartStatusPolling()
+    {
+        if (!_pollStatusWhileOptimizing)
+        {
+            return;
+        }
+
+        int generation = ++_pollGeneration;
+        _ = PollStatusWhileOptimizingAsync(generation);
+    }
+
+    private async Task PollStatusWhileOptimizingAsync(int generation)
+    {
+        while (_pollGeneration == generation && IsOptimizing)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (_pollGeneration != generation || !IsOptimizing)
+            {
+                return;
+            }
+
+            await RefreshStatusAsync().ConfigureAwait(true);
+        }
+    }
+
     /// <summary>«Починить сеть»: снять остатки после аварии. Всегда с подтверждением.</summary>
     public async Task RepairNetworkAsync()
     {
@@ -345,6 +398,13 @@ public sealed class MainViewModel : ObservableObject
                 IsOptimizing = wire is "active-monitoring" or "degraded" or "applying-actions" or "choosing-route" or "measuring-baseline";
             }
 
+            // График сети: точки приходят той же командой status — отдельного канала и зондов нет.
+            if (root.TryGetProperty("chartSamples", out System.Text.Json.JsonElement samples) &&
+                samples.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                Chart.ReceiveSamples(ParseChartSamples(samples));
+            }
+
             OnPropertyChanged(nameof(RttLineRu));
             OnPropertyChanged(nameof(VersionsNoteRu));
 
@@ -369,4 +429,53 @@ public sealed class MainViewModel : ObservableObject
         && value.TryGetDouble(out double number)
             ? number
             : null;
+
+    /// <summary>
+    /// Разбор точек графика из ответа status. Правило то же, что во всей программе: неизмеренное
+    /// окно — точка без чисел (разрыв на графике), а не ноль. Медиана окна идёт в линию «средняя»,
+    /// когда способ замера не дал среднего: это то же число, которое кнопка называет «пинг сейчас».
+    /// </summary>
+    private static IReadOnlyList<ChartSample> ParseChartSamples(System.Text.Json.JsonElement array)
+    {
+        var samples = new List<ChartSample>(array.GetArrayLength());
+
+        foreach (System.Text.Json.JsonElement item in array.EnumerateArray())
+        {
+            if (item.ValueKind != System.Text.Json.JsonValueKind.Object ||
+                !item.TryGetProperty("atUtc", out System.Text.Json.JsonElement atElement) ||
+                atElement.ValueKind != System.Text.Json.JsonValueKind.String ||
+                !DateTimeOffset.TryParse(atElement.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out DateTimeOffset at))
+            {
+                // Точка без времени — не точка: пропустить честнее, чем рисовать «в нуле».
+                continue;
+            }
+
+            bool measured = item.TryGetProperty("measured", out System.Text.Json.JsonElement measuredElement)
+                && measuredElement.ValueKind == System.Text.Json.JsonValueKind.True;
+
+            if (!measured)
+            {
+                samples.Add(ChartSample.Empty(at));
+                continue;
+            }
+
+            double? min = ReadNumber(item, "rttMinMs");
+            double? median = ReadNumber(item, "rttMedianMs");
+            double? avg = ReadNumber(item, "rttAvgMs") ?? median;
+            double? p95 = ReadNumber(item, "rttP95Ms");
+            double? jitter = ReadNumber(item, "jitterMadMs");
+            double? loss = ReadNumber(item, "lossPercent");
+
+            samples.Add(new ChartSample(
+                at,
+                RttMinMs: min,
+                RttAvgMs: avg,
+                RttP95Ms: p95,
+                JitterMadMs: jitter,
+                PacketLossPercent: loss));
+        }
+
+        return samples;
+    }
 }
