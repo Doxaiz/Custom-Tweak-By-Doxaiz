@@ -1,7 +1,7 @@
 <UserControl x:Class="PingForge.App.Views.OptimizeView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="clr-namespace:PingForge.App.ViewModels">
+             xmlns:vm="clr-namespace:PingForge.App.ViewModels;assembly=PingForge.App.ViewModels">
   <UserControl.Resources>
     <!-- Панель графика: линии с разрывами, оси и честная «не измерялось» вместо пустоты. -->
     <DataTemplate x:Key="ChartPanelTemplate" DataType="{x:Type vm:ChartPanelViewModel}">
