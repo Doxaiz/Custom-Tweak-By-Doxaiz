@@ -90,6 +90,9 @@ try {
     $publicSmoke = Join-Path $publicSmokeDir (Split-Path $SmokePath -Leaf)
     Ann 'notice' "smoke copied to $publicSmoke"
 
+    $who = Run-AsUser (Join-Path $env:SystemRoot 'System32\whoami.exe') @('/user', '/groups') $pfUser $pfPassword
+    Ann 'notice' "pfcheck whoami exit=$($who.Code) : $($who.Output)"
+
     $asUser = Run-AsUser $publicSmoke @('--expect-identity') $pfUser $pfPassword
     Write-Host "-- pfcheck --expect-identity exit: $($asUser.Code)"
     Ann $(if ($asUser.Code -eq 0) { 'notice' } else { 'error' }) "pfcheck --expect-identity exit=$($asUser.Code) : $($asUser.Output)"
