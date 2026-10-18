@@ -198,14 +198,15 @@ public sealed class RoutingServersTests
     [Fact]
     public void WARP_без_шлюза_on_link_не_выдумывает_узел_а_объясняет_почему()
     {
-        // Так выглядит WARP на wintun: маршруты через туннель помечены «On-link», отдельного
-        // IPv4-шлюза не существует. Узел из этого не делается — вместо него честное пояснение.
+        // WARP в режиме Split Tunnel Include: через туннель идут только свои диапазоны Zero Trust
+        // (маршруты «On-link», IPv4-шлюза у туннеля нет). Интернет идёт через Wi-Fi.
+        // Узел из туннеля не делается — вместо него честное пояснение.
         IReadOnlyList<RouteTableEntry> routes =
         [
             new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
-            new RouteTableEntry("0.0.0.0", "0.0.0.0", "On-link", "172.16.0.2", 1, IsOnLink: true),
+            new RouteTableEntry("100.64.0.0", "255.192.0.0", "On-link", "172.16.0.2", 281, IsOnLink: true),
+            new RouteTableEntry("162.159.0.0", "255.255.0.0", "On-link", "172.16.0.2", 281, IsOnLink: true),
             new RouteTableEntry("172.16.0.2", "255.255.255.255", "On-link", "172.16.0.2", 281, IsOnLink: true),
-            new RouteTableEntry("100.100.100.100", "255.255.255.255", "On-link", "172.16.0.2", 281, IsOnLink: true),
         ];
         IReadOnlyList<AdapterInfo> adapters =
         [
@@ -227,6 +228,39 @@ public sealed class RoutingServersTests
         Assert.Contains("бесплатный", note, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("On-link", note, StringComparison.Ordinal);
         Assert.Contains("невозможно", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Когда_маршрут_по_умолчанию_сам_идёт_через_WARP_физический_шлюз_не_называется_текущим()
+    {
+        // Режим «туннелировать всё»: у WARP-маршрута по умолчанию метрика ниже, и весь трафик
+        // идёт в туннель. Тогда Wi-Fi-роутер — НЕ «текущий шлюз» (трафик через него не идёт),
+        // и программа не должна его так подписывать. Пояснение о WARP обязано появиться.
+        IReadOnlyList<RouteTableEntry> routes =
+        [
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "On-link", "172.16.0.2", 1, IsOnLink: true),
+            new RouteTableEntry("172.16.0.2", "255.255.255.255", "On-link", "172.16.0.2", 281, IsOnLink: true),
+        ];
+        IReadOnlyList<AdapterInfo> adapters =
+        [
+            new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]),
+            new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]),
+        ];
+
+        RouteDiscoveryResult discovery = RoutingNodeDiscovery.DiscoverWithNotes(routes, adapters);
+
+        // Роутер есть в списке (это честная альтернатива), но «текущим шлюзом» не называется:
+        // путь по умолчанию сейчас идёт через туннель, и делать вид иначе было бы обманом.
+        RoutingNodeEntry router = Assert.Single(discovery.Nodes);
+        Assert.Equal("192.168.1.1", router.Address);
+        Assert.Equal(RoutingNodeSourceRu.SecondGateway, router.SourceRu);
+
+        // Никакого «текущего шлюза» в списке нет: у туннеля нет адреса, выдумывать его нельзя.
+        Assert.DoesNotContain(discovery.Nodes, node => node.SourceRu == RoutingNodeSourceRu.CurrentGateway);
+
+        // Пояснение о WARP на месте — человек видит, куда на самом деле уходит трафик.
+        Assert.Contains(discovery.NotesRu, note => note.Contains("Cloudflare WARP", StringComparison.Ordinal));
     }
 
     [Fact]
