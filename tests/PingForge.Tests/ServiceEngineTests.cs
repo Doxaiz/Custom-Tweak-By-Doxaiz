@@ -47,6 +47,36 @@ public sealed class ServiceEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task Ping_с_личностью_клиента_называет_её_а_не_службу()
+    {
+        // C7: настоящая операция ping обязана отдать clientName/clientSid/clientIsAdmin
+        // именно подключившегося клиента. Служба сама — SYSTEM/S-1-5-18; если в ответе они,
+        // инспектор снова смотрит на токен службы, и живая проверка на раннере это поймает.
+        LiveEngineOperations ops = Build();
+        var peer = new EnginePeerIdentity("RUNNER\\runneradmin", "S-1-5-21-100-200-300-1001", ClientIsAdmin: true, ClientProcessId: 4242);
+
+        EngineOperationResult result = await ops.PingAsync(peer);
+
+        Assert.True(result.Ok);
+        Assert.Contains("\"clientName\":\"RUNNER\\\\runneradmin\"", result.DataJson);
+        Assert.Contains("\"clientSid\":\"S-1-5-21-100-200-300-1001\"", result.DataJson);
+        Assert.Contains("\"clientIsAdmin\":true", result.DataJson);
+        Assert.DoesNotContain("S-1-5-18", result.DataJson);
+    }
+
+    [Fact]
+    public async Task Ping_без_личности_пишет_что_клиент_не_определён()
+    {
+        LiveEngineOperations ops = Build();
+
+        EngineOperationResult result = await ops.PingAsync();
+
+        Assert.True(result.Ok);
+        Assert.Contains("\"clientSid\":\"не определён\"", result.DataJson);
+        Assert.Contains("\"clientIsAdmin\":false", result.DataJson);
+    }
+
+    [Fact]
     public async Task Ping_без_прав_честно_говорит_что_менять_нельзя()
     {
         LiveEngineOperations ops = Build(isElevationAvailable: false);

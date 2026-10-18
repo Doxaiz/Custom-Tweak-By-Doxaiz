@@ -59,15 +59,23 @@ public sealed class LiveEngineOperations : IEngineOperations
 
     public bool IsElevationAvailable { get; }
 
-    public async Task<EngineOperationResult> PingAsync(CancellationToken ct = default)
+    public async Task<EngineOperationResult> PingAsync(EnginePeerIdentity? peer = null, CancellationToken ct = default)
     {
         int tweakCount = _catalog.GetAllTweaks().Count;
         string rights = IsElevationAvailable
             ? "права администратора есть — меняющие команды работают"
             : "прав администратора нет — менять настройки Windows нельзя, доступны замеры и просмотр";
 
+        // C7: служба называет того, кто подключился, — по процессу КЛИЕНТА. Если личность не
+        // прочитана, так и пишем «не определён»: подставлять сюда саму службу (LocalSystem,
+        // S-1-5-18) было бы ровно тем враньём, которое C7 чинит.
+        EnginePeerIdentity client = peer ?? EnginePeerIdentity.Unknown("канал личность не передал");
+        string clientNote = client.ProblemRu is null
+            ? $"Клиент: {client.ClientName} (SID {client.ClientSid}), права администратора: {(client.ClientIsAdmin ? "есть" : "нет")}."
+            : $"Клиент не определён ({client.ProblemRu}) — считаю, что прав администратора у него нет.";
+
         string message = $"Служба жива: {_productName} {_appVersion}, протокол {EngineProtocol.Version}, " +
-            $"твиков в каталоге: {tweakCount}. {rights}.";
+            $"твиков в каталоге: {tweakCount}. {rights}. {clientNote}";
 
         string data = Encode(new PingData(
             _productName,
@@ -75,7 +83,11 @@ public sealed class LiveEngineOperations : IEngineOperations
             EngineProtocol.Version,
             tweakCount,
             IsElevationAvailable,
-            EngineCommandCatalog.All.Count));
+            EngineCommandCatalog.All.Count,
+            client.ClientName,
+            client.ClientSid,
+            client.ClientIsAdmin,
+            client.ClientProcessId));
 
         return await Task.FromResult(EngineOperationResult.Success(message, data)).ConfigureAwait(false);
     }
@@ -540,7 +552,11 @@ public sealed class LiveEngineOperations : IEngineOperations
         int ProtocolVersion,
         int TweakCount,
         bool IsElevationAvailable,
-        int CommandCount);
+        int CommandCount,
+        string ClientName,
+        string ClientSid,
+        bool ClientIsAdmin,
+        int ClientProcessId);
 
     private sealed record CommandData(string Wire, string TitleRu, string WhatRu, bool NeedsElevation);
 

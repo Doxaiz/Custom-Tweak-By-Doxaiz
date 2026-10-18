@@ -14,8 +14,13 @@ public interface IEngineOperations
     /// <summary>Доступны ли операции, меняющие систему: служба под LocalSystem или клиент с правами администратора.</summary>
     bool IsElevationAvailable { get; }
 
-    /// <summary>Проверка связи: версия протокола, режим прав, версия приложения.</summary>
-    Task<EngineOperationResult> PingAsync(CancellationToken ct = default);
+    /// <summary>
+    /// Проверка связи: версия протокола, режим прав, версия приложения — и личность того, кто
+    /// подключился (<paramref name="peer"/>), как её прочитала служба по процессу клиента (C7).
+    /// Без канала (прямой вызов в тестах) личность может быть не задана: тогда в ответе честно
+    /// «не определён», а не выдуманный клиент.
+    /// </summary>
+    Task<EngineOperationResult> PingAsync(EnginePeerIdentity? peer = null, CancellationToken ct = default);
 
     /// <summary>Список команд с описанием — тем же, что показывает интерфейс.</summary>
     Task<EngineOperationResult> CapabilitiesAsync(CancellationToken ct = default);

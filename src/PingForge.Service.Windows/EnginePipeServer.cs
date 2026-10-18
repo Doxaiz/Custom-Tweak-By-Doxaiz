@@ -88,6 +88,13 @@ public sealed class EnginePipeServer
                 _log($"Связь оборвалась: {ex.Message}");
                 pipe.Dispose();
             }
+            catch (Exception ex)
+            {
+                // Одно неудачное подключение не закрывает канал для всех остальных:
+                // записываем причину и слушаем дальше.
+                _log($"Подключение не обслужилось ({ex.GetType().Name}: {ex.Message}): слушаю дальше.");
+                pipe.Dispose();
+            }
         }
 
         _log($"Канал {pipeName} закрыт: служба останавливается.");
@@ -123,12 +130,22 @@ public sealed class EnginePipeServer
                     break;
                 }
 
+                // Личность уходит в разборщик целиком, а не одним флагом: ответ ping назовёт
+                // имя и SID клиента, и живая проверка сможет сличить их с процессом проверяющего.
+                var peer = new EnginePeerIdentity(
+                    client.NameRu,
+                    client.Sid,
+                    client.IsAdministrator,
+                    client.ProcessId,
+                    client.ProblemRu);
+
                 EngineResponse response = await dispatcher
                     .HandleJsonAsync(
                         frame,
                         client.IsAdministrator,
                         denialRu => _log($"ОТКАЗ ПО ПРАВАМ ({client.DescribeRu()}): {denialRu}"),
-                        ct)
+                        ct,
+                        peer)
                     .ConfigureAwait(false);
                 if (!await TryWriteAsync(pipe, response, ct).ConfigureAwait(false))
                 {

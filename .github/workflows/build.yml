@@ -72,7 +72,26 @@ jobs:
         run: dotnet build PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --nologo
 
       - name: Тесты
-        run: dotnet test PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --no-build --nologo
+        run: dotnet test PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --no-build --nologo --logger "trx;LogFileName=test-results.trx" --results-directory "test-results"
+
+      - name: Итог тестов (число из TRX)
+        if: always()
+        shell: pwsh
+        run: |
+          $trx = Get-ChildItem test-results -Filter *.trx -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $trx) { Write-Host "::warning file=.github/workflows/build.yml,line=1::TRX not found"; exit 0 }
+          [xml]$doc = Get-Content $trx.FullName -Raw
+          $c = $doc.TestRun.ResultSummary.Counters
+          $line = "TESTS total=$($c.total) executed=$($c.executed) passed=$($c.passed) failed=$($c.failed) error=$($c.error)"
+          Write-Host $line
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::$line"
+          $line >> $env:GITHUB_STEP_SUMMARY
+          foreach ($result in $doc.TestRun.Results.UnitTestResult) {
+            if ($result.resultType -eq 'Failed' -or $result.outcome -eq 'Failed') {
+              $msg = $result.Output.ErrorInfo.Message -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+              Write-Host "::error file=.github/workflows/build.yml,line=1::FAILED TEST $($result.testName) : $msg"
+            }
+          }
 
       # Витрины собираются из того же каталога, что применяет служба: если данные каталога разойдутся
       # с разметкой витрины, проверки упадут прямо здесь.
@@ -359,6 +378,54 @@ jobs:
           Write-Host 'Установщик проверен: ставит, запускает службу, удаляется без следов.'
         shell: pwsh
 
+      - name: Диагностика службы (при любом исходе)
+        if: always()
+        shell: pwsh
+        run: |
+          function Show-Tail([string]$title, [string]$path, [int]$count = 50) {
+            if (-not (Test-Path $path)) {
+              Write-Host "::warning file=.github/workflows/build.yml,line=1::no file $title ($path)"
+              return
+            }
+            $lines = Get-Content $path -Tail $count | ForEach-Object { $_ -replace '%', '%25' -replace "`r", '' }
+            $body = [string]::Join('%0A', $lines)
+            Write-Host "::error file=.github/workflows/build.yml,line=1::$title : $body"
+          }
+          $svc = Get-Service -Name PingForge -ErrorAction SilentlyContinue
+          $installDir = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz'
+          $state = @()
+          $state += "service=$($svc.Status)"
+          foreach ($name in @('CustomTweakByDoxaiz.exe', 'CustomTweakByDoxaiz.Service.exe', 'Uninstall.exe', 'install-service.ps1')) {
+            $state += "$name=$(Test-Path (Join-Path $installDir $name))"
+          }
+          $state += "arp=$(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CustomTweakByDoxaiz')"
+          $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Custom Tweak By Doxaiz\Custom Tweak By Doxaiz.lnk'
+          $state += "shortcut=$(Test-Path $shortcut)"
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::install state: $($state -join '; ')"
+          New-Item -ItemType Directory -Force test-results | Out-Null
+          $svcLog = Join-Path $env:ProgramData 'PingForge\service.log'
+          if (Test-Path $svcLog) { Copy-Item $svcLog test-results\service.log -Force }
+          $hits = Select-String -Path $svcLog -Pattern 'Слушаю канал|Подключился|ОТКАЗ|Команда|ошиб|Клиент отключился' -ErrorAction SilentlyContinue | Select-Object -Last 30 | ForEach-Object { $_.Line -replace '%', '%25' }
+          if ($hits) { Write-Host "::error file=.github/workflows/build.yml,line=1::service.log hits : $([string]::Join('%0A', $hits))" }
+          $proc = Get-Process -Name 'CustomTweakByDoxaiz.Service' -ErrorAction SilentlyContinue
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::service process: $($proc.Id -join ',') path=$($proc.Path -join ',')"
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::service.log length=$((Get-Item $svcLog -ErrorAction SilentlyContinue).Length) modified=$((Get-Item $svcLog -ErrorAction SilentlyContinue).LastWriteTime)"
+          Show-Tail 'service.log' $svcLog
+          Show-Tail 'install-service.log' (Join-Path $installDir 'install-service.log')
+          Show-Tail 'app-start.log' (Join-Path $env:LOCALAPPDATA 'CustomTweakByDoxaiz\app-start.log')
+
+      - name: C7 - live identity checks on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+          $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
+          $smoke = "${{ runner.temp }}/art/bin/PingForge.EngineSmoke/release/PingForge.EngineSmoke.exe"
+          if (-not (Test-Path $setup)) { throw "No setup file: $setup" }
+          if (-not (Test-Path $smoke)) { throw "No smoke file: $smoke" }
+          & tools\c7-live-checks.ps1 -SetupPath $setup -SmokePath $smoke
+          if ($LASTEXITCODE -ne 0) { throw "C7 live checks exit $LASTEXITCODE" }
+
       - name: Готовые .exe и контрольные суммы
         run: |
           $ErrorActionPreference = 'Stop'
@@ -379,6 +446,7 @@ jobs:
 
       - name: Приложить к сборке
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: CustomTweakByDoxaiz-win-x64
           path: |
@@ -433,3 +501,17 @@ jobs:
             dist/*.exe
             dist/*.zip
             dist/SHA256SUMS.txt
+
+      - name: Журналы и результаты тестов (всегда)
+        if: always()
+        uses: actions/upload-artifact@v7
+        continue-on-error: true
+        with:
+          name: test-results-and-logs
+          path: |
+            test-results/**/*.trx
+            dist/app-window.png
+            dist/app-start.log
+            dist/install-service.log
+            test-results/service.log
+          if-no-files-found: warn
