@@ -52,6 +52,10 @@ public sealed class EngineDispatcher
     /// </param>
     /// <param name="onDenialRu">Куда сообщить об отказе по правам: служба пишет это в журнал вместе с именем клиента.</param>
     /// <param name="ct">Отмена: закрылось окно или останавливается служба.</param>
+    /// <param name="peer">
+    /// Личность клиента, прочитанная каналом по его процессу (C7). Если задана, флаг прав
+    /// берётся из неё, а личность целиком уезжает в ответ ping.
+    /// </param>
     public async Task<EngineResponse> HandleJsonAsync(
         string requestJson,
         bool clientIsAdministrator = true,

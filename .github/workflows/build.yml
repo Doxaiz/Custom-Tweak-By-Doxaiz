@@ -72,7 +72,20 @@ jobs:
         run: dotnet build PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --nologo
 
       - name: Тесты
-        run: dotnet test PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --no-build --nologo --logger "trx;LogFileName=test-results.trx" --results-directory "${{ runner.temp }}/test-results"
+        run: dotnet test PingForge.slnx -c Release --artifacts-path "${{ runner.temp }}/art" --no-build --nologo --logger "trx;LogFileName=test-results.trx" --results-directory "test-results"
+
+      - name: Итог тестов (число из TRX)
+        if: always()
+        shell: pwsh
+        run: |
+          $trx = Get-ChildItem test-results -Filter *.trx -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $trx) { Write-Host "::warning file=.github/workflows/build.yml,line=1::TRX not found"; exit 0 }
+          [xml]$doc = Get-Content $trx.FullName -Raw
+          $c = $doc.TestRun.ResultSummary.Counters
+          $line = "TESTS total=$($c.total) executed=$($c.executed) passed=$($c.passed) failed=$($c.failed) error=$($c.error)"
+          Write-Host $line
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::$line"
+          $line >> $env:GITHUB_STEP_SUMMARY
 
       # Витрины собираются из того же каталога, что применяет служба: если данные каталога разойдутся
       # с разметкой витрины, проверки упадут прямо здесь.
@@ -359,6 +372,24 @@ jobs:
           Write-Host 'Установщик проверен: ставит, запускает службу, удаляется без следов.'
         shell: pwsh
 
+      - name: Диагностика службы (при любом исходе)
+        if: always()
+        shell: pwsh
+        run: |
+          function Show-Tail([string]$title, [string]$path, [int]$count = 60) {
+            Write-Host "== $title : $path"
+            if (-not (Test-Path $path)) { Write-Host "::warning file=.github/workflows/build.yml,line=1::no file $title"; return }
+            Get-Content $path -Tail $count | ForEach-Object {
+              $safe = $_ -replace '%', '%25' -replace "`r", '%0D' -replace '::', ';'
+              Write-Host "::error file=.github/workflows/build.yml,line=1::$title : $safe"
+            }
+          }
+          $svc = Get-Service -Name PingForge -ErrorAction SilentlyContinue
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::service state: $($svc.Status)"
+          Show-Tail 'service.log' (Join-Path $env:ProgramData 'PingForge\service.log')
+          Show-Tail 'install-service.log' (Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\install-service.log')
+          Show-Tail 'app-start.log' (Join-Path $env:LOCALAPPDATA 'CustomTweakByDoxaiz\app-start.log')
+
       - name: C7 - live identity checks on Windows
         shell: pwsh
         run: |
@@ -452,7 +483,7 @@ jobs:
         with:
           name: test-results-and-logs
           path: |
-            ${{ runner.temp }}/test-results/**/*.trx
+            test-results/**/*.trx
             dist/app-window.png
             dist/app-start.log
             dist/install-service.log
