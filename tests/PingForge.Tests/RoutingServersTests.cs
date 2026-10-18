@@ -1228,7 +1228,7 @@ public sealed class RoutingServersTests
                     : EngineResponse.Failure(request.Id, "Служба не ответила на замер путей."),
                 _ => EngineResponse.Success(request.Id, "ок"),
             });
-            RebuildRouting();
+            Routing = new RoutingSettingsViewModel(new EngineClient(Channel), Store, Dialogs);
         }
 
         public FakeEngineChannel Channel { get; }
@@ -1250,8 +1250,11 @@ public sealed class RoutingServersTests
         /// <summary>Сколько раз настройки реально записывались — по счётчику обёртки, а не по догадкам.</summary>
         public int Saves => Store.Saves;
 
-        public RoutingSettingsViewModel RebuildRouting() =>
+        public RoutingSettingsViewModel RebuildRouting()
+        {
             Routing = new RoutingSettingsViewModel(new EngineClient(Channel), Store, Dialogs);
+            return Routing;
+        }
 
         public void Dispose() => TryDelete(_filePath);
     }
