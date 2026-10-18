@@ -37,6 +37,56 @@
       </StackPanel>
     </Border>
 
+    <!-- Задержка ввода (задача F): советник из PingForge.Analysis, подключённый к окну.
+         Ничего не применяет: находки с приоритетом и связью с твиками каталога. -->
+    <Border Style="{StaticResource Card}" x:Name="InputLatencyBlock" DataContext="{Binding InputLatency}">
+      <StackPanel>
+        <TextBlock Text="Задержка ввода" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
+                   Text="Мышь, клавиатура, фоновая запись и очередь пакетов на сетевой карте — это задержка на вашей стороне, до сети. Проверка только читает: ничего не применяется." />
+
+        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+          <Button Style="{StaticResource GhostButton}" Content="Проверить задержку ввода" Command="{Binding CheckCommand}" Margin="0,0,12,0" />
+          <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" Text="{Binding StatusRu}" MaxWidth="520" />
+        </StackPanel>
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" Text="{Binding SummaryRu}" />
+
+        <ItemsControl ItemsSource="{Binding Findings}" Margin="0,8,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,8,0,8">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <Border Background="#131C2C" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="999" Padding="8,2" Margin="0,0,8,0">
+                      <TextBlock Text="{Binding PriorityRu}" FontSize="11.5" />
+                    </Border>
+                    <TextBlock Text="{Binding TitleRu}" FontWeight="SemiBold" />
+                  </StackPanel>
+                  <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" Text="{Binding ExplanationRu}" />
+                  <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" Text="{Binding ActionRu}" />
+                  <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" Foreground="{StaticResource Accent2}" Text="{Binding LinkRu}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <ItemsControl ItemsSource="{Binding SkippedChecks}" Margin="0,6,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Style="{StaticResource Caption}" FontSize="11.5" Text="{Binding}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+          <Button Style="{StaticResource GhostButton}" Content="Показать связанные твики" Command="{Binding ShowRelatedTweaksCommand}" Margin="0,0,12,0" />
+          <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" Text="{Binding CountsRu}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
     <!-- Массовые действия -->
     <Border Style="{StaticResource Card}">
       <StackPanel>
@@ -52,8 +102,17 @@
       </StackPanel>
     </Border>
 
-    <!-- Карточки твиков: сетка по две в ряд, как в витрине. -->
-    <ItemsControl ItemsSource="{Binding Rows}">
+    <!-- Фильтр по кодам (задача F): включается кнопками «Показать связанные твики» из проверок. -->
+    <Border Style="{StaticResource Card}" Margin="0,0,0,10"
+            Visibility="{Binding IsFiltered, Converter={StaticResource BoolToVisibility}}">
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" Text="{Binding FilterLineRu}" />
+        <Button Style="{StaticResource GhostButton}" Content="Показать весь каталог" Command="{Binding ClearFilterCommand}" Margin="12,0,0,0" />
+      </StackPanel>
+    </Border>
+
+    <!-- Карточки твиков: сетка по две в ряд, как в витрине. Фильтр показывает часть списка. -->
+    <ItemsControl ItemsSource="{Binding VisibleRows}">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
           <WrapPanel />

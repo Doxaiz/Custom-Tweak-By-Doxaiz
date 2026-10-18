@@ -20,6 +20,7 @@ public sealed class TweaksViewModel : ObservableObject
     private string _statusRu = "Выберите пресет или отметьте твики вручную. Ничего не применяется до нажатия кнопки.";
     private PresetViewModel? _selectedPreset;
     private bool _isApplying;
+    private List<TweakRowViewModel>? _visibleFilter;
 
     public TweaksViewModel(
         EngineClient engine,
@@ -38,6 +39,7 @@ public sealed class TweaksViewModel : ObservableObject
         SelectRecommendedCommand = new RelayCommand(() => SelectRecommended());
         SelectAllCommand = new RelayCommand(() => SelectAll());
         SelectNoneCommand = new RelayCommand(() => SelectNone());
+        ClearFilterCommand = new RelayCommand(ClearFilter, () => IsFiltered);
 
         foreach (TweakRowViewModel row in _rows)
         {
@@ -50,6 +52,61 @@ public sealed class TweaksViewModel : ObservableObject
     }
 
     public IReadOnlyList<TweakRowViewModel> Rows => _rows;
+
+    /// <summary>
+    /// Карточка «Задержка ввода» (задача F): советник из PingForge.Analysis, подключённый к окну.
+    /// Прикрепляется после построения: ей нужен переход к отфильтрованному списку этого же раздела.
+    /// </summary>
+    public InputLatencyViewModel? InputLatency { get; private set; }
+
+    public void AttachInputLatency(InputLatencyViewModel card)
+    {
+        InputLatency = card ?? throw new ArgumentNullException(nameof(card));
+        OnPropertyChanged(nameof(InputLatency));
+    }
+
+    /// <summary>Строки, которые видит человек: весь каталог или отфильтрованная часть (задача F).</summary>
+    public IReadOnlyList<TweakRowViewModel> VisibleRows => _visibleFilter ?? _rows;
+
+    /// <summary>Включён ли фильтр по кодам (из карточки задержки ввода или проверки настроек).</summary>
+    public bool IsFiltered => _visibleFilter is not null;
+
+    /// <summary>Подпись фильтра: сколько строк показано из скольких — числа считаются, а не пишутся.</summary>
+    public string FilterLineRu => IsFiltered
+        ? $"Показаны {VisibleRows.Count} из {_rows.Count} твиков — связанных с последней проверкой."
+        : string.Empty;
+
+    public RelayCommand ClearFilterCommand { get; }
+
+    /// <summary>
+    /// Показать только перечисленные твики — так работают кнопки «Показать связанные твики»
+    /// из карточки задержки ввода и «Показать в твиках» из проверки настроек. Отбор — и ничего больше:
+    /// ползунки, пресеты и применение остаются в полном списке.
+    /// </summary>
+    public void ShowOnlyCodes(IReadOnlyList<string> codes)
+    {
+        ArgumentNullException.ThrowIfNull(codes);
+
+        var wanted = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+        var matched = _rows.Where(row => wanted.Contains(row.Code)).ToList();
+
+        // Ни одного совпадения — фильтр не включается: пустой список без объяснения был бы ошибкой.
+        _visibleFilter = matched.Count > 0 ? matched : null;
+        OnPropertyChanged(nameof(VisibleRows), nameof(IsFiltered), nameof(FilterLineRu));
+        ClearFilterCommand.RaiseCanExecuteChanged();
+        StatusRu = matched.Count == 0
+            ? "Среди твиков каталога нет ни одного из перечисленных кодов — фильтр не включён, показан весь список."
+            : $"Фильтр: показаны только твики из проверки ({matched.Count} из {_rows.Count}). Отметки и пресеты не менялись.";
+    }
+
+    /// <summary>Убрать фильтр: снова виден весь каталог.</summary>
+    public void ClearFilter()
+    {
+        _visibleFilter = null;
+        OnPropertyChanged(nameof(VisibleRows), nameof(IsFiltered), nameof(FilterLineRu));
+        ClearFilterCommand.RaiseCanExecuteChanged();
+        StatusRu = "Фильтр снят: показан весь каталог твиков.";
+    }
 
     public IReadOnlyList<PresetViewModel> Presets { get; }
 

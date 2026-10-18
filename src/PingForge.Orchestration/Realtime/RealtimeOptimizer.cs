@@ -27,6 +27,14 @@ public sealed class RealtimeOptimizer
     private readonly List<PathMeasurement> _recentWindows = new();
     private readonly List<string> _warnings = new();
 
+    /// <summary>
+    /// История замеров сессии с метками времени — источник графика сети. Отдельно от
+    /// <see cref="_recentWindows"/>: то окно «последних N измерений» для логики контроля,
+    /// а здесь — вся сессия с датами, чтобы график показывал динамику, а не последнее значение.
+    /// </summary>
+    private readonly object _historyGate = new();
+    private readonly List<RealtimeMeasurementPoint> _history = new();
+
     private RealtimeOptions _options = new();
     private RealtimeOptimizationState _state = RealtimeOptimizationState.Idle;
     private string _statusRu = "Оптимизация не запущена.";
@@ -62,6 +70,25 @@ public sealed class RealtimeOptimizer
     public RealtimeOptimizationState State => _state;
 
     public RealtimeSnapshot Current => BuildSnapshot();
+
+    /// <summary>
+    /// История замеров этой сессии (с метками времени) — из неё строится график сети в окне.
+    /// Оценка сверху по объёму: <see cref="HistoryLimit"/> точек при контроле раз в 2 с — это
+    /// 30 минут. Неизмеренные окна лежат здесь точками с null-полями: разрыв на графике, а не ноль.
+    /// </summary>
+    public IReadOnlyList<RealtimeMeasurementPoint> RecentSamples
+    {
+        get
+        {
+            lock (_historyGate)
+            {
+                return _history.ToList();
+            }
+        }
+    }
+
+    /// <summary>Сколько точек истории храним: 900 окон по 2 с — 30 минут. Дальше старые уходят.</summary>
+    private const int HistoryLimit = 900;
 
     /// <summary>Событие для интерфейса: панель обновляется без опроса.</summary>
     public event Action<RealtimeSnapshot>? Updated;
@@ -116,6 +143,7 @@ public sealed class RealtimeOptimizer
             ct.ThrowIfCancellationRequested();
 
             PathMeasurement window = await MeasureAsync(ct).ConfigureAwait(false);
+            RecordHistory(window);
             if (!window.IsMeasurable)
             {
                 _warnings.Add($"Окно замера «до» не удалось: {window.MethodRu}");
@@ -181,6 +209,7 @@ public sealed class RealtimeOptimizer
 
         // Контрольное окно после применения: выигрыш должен быть подтверждён, а не заявлен.
         PathMeasurement confirmation = await MeasureAsync(ct).ConfigureAwait(false);
+        RecordHistory(confirmation);
         if (confirmation.IsMeasurable)
         {
             _confirmationRttMs = confirmation.RttMedianMs;
@@ -224,6 +253,7 @@ public sealed class RealtimeOptimizer
 
         PathMeasurement window = await MeasureAsync(ct).ConfigureAwait(false);
         _recentWindows.Add(window);
+        RecordHistory(window);
         if (_recentWindows.Count > RecentWindowLimit)
         {
             _recentWindows.RemoveAt(0);
@@ -340,6 +370,7 @@ public sealed class RealtimeOptimizer
 
         double? finalRttMs = _lastRttMs ?? _confirmationRttMs;
         PathMeasurement final = await MeasureAsync(ct).ConfigureAwait(false);
+        RecordHistory(final);
         if (final.IsMeasurable)
         {
             finalRttMs = final.RttMedianMs;
@@ -514,6 +545,34 @@ public sealed class RealtimeOptimizer
     private void UpdateFloor(double rttMs) =>
         _floorRttMs = _floorRttMs is null ? rttMs : Math.Min(_floorRttMs.Value, rttMs);
 
+    /// <summary>
+    /// Записать окно замера в историю графика. Измеренное — с числами, неизмеренное — точкой
+    /// с null-полями и причиной: на графике это разрыв с подписью, а не «пинг 0 мс».
+    /// </summary>
+    private void RecordHistory(PathMeasurement window)
+    {
+        lock (_historyGate)
+        {
+            _history.Add(window.IsMeasurable
+                ? new RealtimeMeasurementPoint(
+                    _clock(),
+                    true,
+                    window.RttMinMs,
+                    window.RttMedianMs,
+                    window.RttP95Ms,
+                    window.JitterMs,
+                    window.LossPercent,
+                    window.Samples,
+                    window.MethodRu)
+                : RealtimeMeasurementPoint.Unmeasured(_clock(), window.MethodRu));
+
+            if (_history.Count > HistoryLimit)
+            {
+                _history.RemoveRange(0, _history.Count - HistoryLimit);
+            }
+        }
+    }
+
     private string BuildRunningStatus(PathMeasurement window)
     {
         double? improvement = _baselineRttMs is { } baseline ? Math.Round(baseline - window.RttMedianMs, 1) : null;
@@ -643,6 +702,10 @@ public sealed class RealtimeOptimizer
         _baselineWindows.Clear();
         _recentWindows.Clear();
         _warnings.Clear();
+        lock (_historyGate)
+        {
+            _history.Clear();
+        }
         _flow = null;
         _baselineRttMs = null;
         _floorRttMs = null;

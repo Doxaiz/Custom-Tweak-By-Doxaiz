@@ -141,3 +141,133 @@ public sealed class SystemHostResolver : IHostResolver
         }
     }
 }
+
+/// <summary>
+/// Настоящий UDP-транспорт DNS-запросов для бенчмарка резолверов. До задачи F контракт
+/// <see cref="IDnsQueryTransport"/> существовал только с двойником из тестов: бенчмарк был
+/// «мёртвым» кодом. Транспорт собирает минимальный A-запрос (заголовок + вопрос), отправляет
+/// на 53-й порт и разбирает ответ ровно настолько, насколько нужно бенчмаркеру для проверки:
+/// ID, признак ответа, имя вопроса, код возврата и число ответов.
+///
+/// Валидация — не здесь: транспорт честно возвращает null при таймауте и любое число ответов
+/// как есть, а решения (перехват, доля успеха, скорость) принимает бенчмаркер.
+/// </summary>
+public sealed class UdpDnsQueryTransport : IDnsQueryTransport
+{
+    public async Task<DnsRawResponse?> QueryAsync(
+        IPAddress server,
+        string domain,
+        ushort transactionId,
+        TimeSpan timeout,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(domain) || domain.Length > 253)
+        {
+            return null;
+        }
+
+        byte[] query = BuildQuery(domain, transactionId);
+
+        try
+        {
+            using var client = new UdpClient();
+            client.Connect(new IPEndPoint(server, 53));
+
+            // .NET 10: SendAsync/ReceiveAsync с токеном работают с ReadOnlyMemory и ValueTask.
+            await client.SendAsync(query.AsMemory(), ct).ConfigureAwait(false);
+
+            Task<UdpReceiveResult> receive = client.ReceiveAsync(ct).AsTask();
+            Task completed = await Task.WhenAny(receive, Task.Delay(timeout, ct)).ConfigureAwait(false);
+            if (completed != receive || !receive.IsCompletedSuccessfully)
+            {
+                return null;   // таймаут или отмена — это «нет ответа», а не «пустой ответ»
+            }
+
+            UdpReceiveResult result = receive.Result;
+            return ParseResponse(result.Buffer, result.RemoteEndPoint);
+        }
+        catch (Exception ex) when (ex is SocketException or OperationCanceledException or ObjectDisposedException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Минимальный DNS-запрос: заголовок (RD=1, QDCOUNT=1) + вопрос A/IN.</summary>
+    private static byte[] BuildQuery(string domain, ushort transactionId)
+    {
+        using var buffer = new MemoryStream();
+        buffer.Write([(byte)(transactionId >> 8), (byte)(transactionId & 0xFF)]);        // ID
+        buffer.Write([0x01, 0x00]);                                                     // флаги: рекурсия желательна
+        buffer.Write([0x00, 0x01]);                                                     // QDCOUNT = 1
+        buffer.Write([0x00, 0x00]);                                                     // ANCOUNT
+        buffer.Write([0x00, 0x00]);                                                     // NSCOUNT
+        buffer.Write([0x00, 0x00]);                                                     // ARCOUNT
+
+        foreach (string label in domain.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            byte[] bytes = System.Text.Encoding.ASCII.GetBytes(label);
+            buffer.Write([(byte)bytes.Length]);
+            buffer.Write(bytes);
+        }
+
+        buffer.Write([0x00]);                                                           // конец имени
+        buffer.Write([0x00, 0x01]);                                                     // QTYPE = A
+        buffer.Write([0x00, 0x01]);                                                     // QCLASS = IN
+        return buffer.ToArray();
+    }
+
+    /// <summary>Разбор ответа до полей, которые проверяет бенчмаркер. Битый пакет → null.</summary>
+    private static DnsRawResponse? ParseResponse(byte[] data, IPEndPoint source)
+    {
+        if (data.Length < 12)
+        {
+            return null;
+        }
+
+        ushort id = (ushort)((data[0] << 8) | data[1]);
+        bool isResponse = (data[2] & 0x80) != 0;
+        int responseCode = data[3] & 0x0F;
+        int answerCount = (data[6] << 8) | data[7];
+
+        // Имя вопроса: метки до нулевого байта; сжатие (указатель 0xC0…) — следуем один раз.
+        int offset = 12;
+        var name = new System.Text.StringBuilder();
+        int jumps = 0;
+        while (offset < data.Length && jumps < 2)
+        {
+            byte length = data[offset];
+            if (length == 0)
+            {
+                offset++;
+                break;
+            }
+
+            if ((length & 0xC0) == 0xC0)
+            {
+                if (offset + 1 >= data.Length || jumps > 0)
+                {
+                    return null;
+                }
+
+                offset = ((length & 0x3F) << 8) | data[offset + 1];
+                jumps++;
+                continue;
+            }
+
+            if ((length & 0xC0) != 0 || offset + 1 + length > data.Length)
+            {
+                return null;
+            }
+
+            if (name.Length > 0)
+            {
+                name.Append('.');
+            }
+
+            name.Append(System.Text.Encoding.ASCII.GetString(data, offset + 1, length));
+            offset += 1 + length;
+        }
+
+        return new DnsRawResponse(source, id, isResponse, name.Length > 0 ? name.ToString() : "?", responseCode, answerCount);
+    }
+}

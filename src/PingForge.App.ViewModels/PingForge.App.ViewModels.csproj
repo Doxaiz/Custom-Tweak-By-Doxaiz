@@ -16,6 +16,9 @@
     <ProjectReference Include="..\PingForge.Tweaks\PingForge.Tweaks.csproj" />
     <!-- Список известных игр — тот же, по которому движок ищет игровой процесс: один источник правды. -->
     <ProjectReference Include="..\PingForge.Network\PingForge.Network.csproj" />
+    <!-- Слой анализа (задача F): график сети, советник задержки ввода и разбор конфликтов —
+         готовый код PingForge.Analysis, подключённый к окну, а не переписанный заново. -->
+    <ProjectReference Include="..\PingForge.Analysis\PingForge.Analysis.csproj" />
   </ItemGroup>
 
 </Project>

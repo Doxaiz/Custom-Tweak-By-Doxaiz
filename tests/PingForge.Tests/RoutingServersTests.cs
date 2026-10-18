@@ -147,6 +147,165 @@ public sealed class RoutingServersTests
         Assert.Contains(found, node => node.SourceRu == RoutingNodeSourceRu.CurrentGateway);
     }
 
+    // ── B1a. бесплатный туннель Cloudflare WARP: узнаём по имени и честно объясняем границы ────
+
+    [Fact]
+    public void Адаптер_CloudflareWARP_узнаётся_как_бесплатный_VPN_туннель()
+    {
+        // Реальные имена адаптера из Windows: «CloudflareWARP» / описание «Cloudflare WARP Interface Tunnel».
+        var warp = new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]);
+        var sccmWarp = new AdapterInfo(32, "CloudflareWARP", "(SCCM) Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]);
+        var wifi = new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]);
+        var wireGuard = new AdapterInfo(21, "WireGuard", "Wintun Userspace Tunnel", true, ["10.8.0.2"]);
+
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(warp));
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(sccmWarp));
+        Assert.True(AdapterDirectoryParser.LooksLikeCloudflareWarp(warp));
+        Assert.True(AdapterDirectoryParser.LooksLikeCloudflareWarp(sccmWarp));
+        Assert.False(AdapterDirectoryParser.LooksLikeVpn(wifi));
+        Assert.False(AdapterDirectoryParser.LooksLikeCloudflareWarp(wifi));
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(wireGuard));
+        Assert.False(AdapterDirectoryParser.LooksLikeCloudflareWarp(wireGuard));
+    }
+
+    [Fact]
+    public void WARP_с_настоящим_шлюзом_в_таблице_становится_узлом_с_честной_подписью()
+    {
+        // Если у туннеля в таблице маршрутов есть IPv4-шлюз (так бывает у некоторых режимов WARP
+        // и других туннелей) — он честно предлагается узлом «VPN-адаптер “CloudflareWARP”».
+        IReadOnlyList<RouteTableEntry> routes =
+        [
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
+            new RouteTableEntry("172.16.0.0", "255.255.255.0", "172.16.0.1", "172.16.0.2", 2),
+        ];
+        IReadOnlyList<AdapterInfo> adapters =
+        [
+            new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]),
+            new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]),
+        ];
+
+        RouteDiscoveryResult discovery = RoutingNodeDiscovery.DiscoverWithNotes(routes, adapters);
+
+        RoutingNodeEntry warpNode = Assert.Single(discovery.Nodes, node => node.Address == "172.16.0.1");
+        Assert.Equal("CloudflareWARP", warpNode.Name);
+        Assert.Equal(RoutingNodeSourceRu.VpnAdapter("CloudflareWARP"), warpNode.SourceRu);
+        Assert.True(RoutingNodeSourceRu.IsHonest(warpNode.SourceRu));
+
+        // Шлюз у туннеля есть — пояснение «узлом стать не может» не появляется.
+        Assert.DoesNotContain(discovery.NotesRu, note => note.Contains("Cloudflare WARP", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void WARP_без_шлюза_on_link_не_выдумывает_узел_а_объясняет_почему()
+    {
+        // WARP в режиме Split Tunnel Include: через туннель идут только свои диапазоны Zero Trust
+        // (маршруты «On-link», IPv4-шлюза у туннеля нет). Интернет идёт через Wi-Fi.
+        // Узел из туннеля не делается — вместо него честное пояснение.
+        IReadOnlyList<RouteTableEntry> routes =
+        [
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
+            new RouteTableEntry("100.64.0.0", "255.192.0.0", "On-link", "172.16.0.2", 281, IsOnLink: true),
+            new RouteTableEntry("162.159.0.0", "255.255.0.0", "On-link", "172.16.0.2", 281, IsOnLink: true),
+            new RouteTableEntry("172.16.0.2", "255.255.255.255", "On-link", "172.16.0.2", 281, IsOnLink: true),
+        ];
+        IReadOnlyList<AdapterInfo> adapters =
+        [
+            new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]),
+            new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]),
+        ];
+
+        RouteDiscoveryResult discovery = RoutingNodeDiscovery.DiscoverWithNotes(routes, adapters);
+
+        // Единственный узел — текущий шлюз Wi-Fi. Ни 172.16.0.2 (свой адрес туннеля), ни
+        // какого-либо «виртуального шлюза» в списке нет: выдуманных адресов не бывает.
+        RoutingNodeEntry current = Assert.Single(discovery.Nodes);
+        Assert.Equal("192.168.1.1", current.Address);
+        Assert.Equal(RoutingNodeSourceRu.CurrentGateway, current.SourceRu);
+
+        // Пояснение честное: туннель работает, шлюза нет, маршрут «через узел» невозможен.
+        string note = Assert.Single(discovery.NotesRu);
+        Assert.Contains("Cloudflare WARP", note, StringComparison.Ordinal);
+        Assert.Contains("бесплатный", note, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("On-link", note, StringComparison.Ordinal);
+        Assert.Contains("невозможно", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Когда_маршрут_по_умолчанию_сам_идёт_через_WARP_физический_шлюз_не_называется_текущим()
+    {
+        // Режим «туннелировать всё»: у WARP-маршрута по умолчанию метрика ниже, и весь трафик
+        // идёт в туннель. Тогда Wi-Fi-роутер — НЕ «текущий шлюз» (трафик через него не идёт),
+        // и программа не должна его так подписывать. Пояснение о WARP обязано появиться.
+        IReadOnlyList<RouteTableEntry> routes =
+        [
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "On-link", "172.16.0.2", 1, IsOnLink: true),
+            new RouteTableEntry("172.16.0.2", "255.255.255.255", "On-link", "172.16.0.2", 281, IsOnLink: true),
+        ];
+        IReadOnlyList<AdapterInfo> adapters =
+        [
+            new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]),
+            new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]),
+        ];
+
+        RouteDiscoveryResult discovery = RoutingNodeDiscovery.DiscoverWithNotes(routes, adapters);
+
+        // Роутер есть в списке (это честная альтернатива), но «текущим шлюзом» не называется:
+        // путь по умолчанию сейчас идёт через туннель, и делать вид иначе было бы обманом.
+        RoutingNodeEntry router = Assert.Single(discovery.Nodes);
+        Assert.Equal("192.168.1.1", router.Address);
+        Assert.Equal(RoutingNodeSourceRu.SecondGateway, router.SourceRu);
+
+        // Никакого «текущего шлюза» в списке нет: у туннеля нет адреса, выдумывать его нельзя.
+        Assert.DoesNotContain(discovery.Nodes, node => node.SourceRu == RoutingNodeSourceRu.CurrentGateway);
+
+        // Пояснение о WARP на месте — человек видит, куда на самом деле уходит трафик.
+        Assert.Contains(discovery.NotesRu, note => note.Contains("Cloudflare WARP", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Другой_туннель_без_шлюза_получает_пояснение_без_имени_WARP()
+    {
+        IReadOnlyList<RouteTableEntry> routes =
+        [
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
+            new RouteTableEntry("10.66.0.0", "255.255.255.0", "On-link", "10.66.0.2", 5, IsOnLink: true),
+        ];
+        IReadOnlyList<AdapterInfo> adapters =
+        [
+            new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]),
+            new AdapterInfo(27, "wg0", "Wintun Userspace Tunnel", true, ["10.66.0.2"]),
+        ];
+
+        RouteDiscoveryResult discovery = RoutingNodeDiscovery.DiscoverWithNotes(routes, adapters);
+
+        Assert.Single(discovery.Nodes);
+        string note = Assert.Single(discovery.NotesRu);
+        Assert.Contains("wg0", note, StringComparison.Ordinal);
+        Assert.DoesNotContain("Cloudflare", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Поднятый_но_не_используемый_туннель_пояснением_не_шумит()
+    {
+        // Адаптер есть и работает, но маршрутов через него нет — новостью это не является.
+        IReadOnlyList<RouteTableEntry> routes =
+        [
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
+        ];
+        IReadOnlyList<AdapterInfo> adapters =
+        [
+            new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]),
+            new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]),
+            new AdapterInfo(33, "OldVPN", "TAP-Windows Adapter V9", false, ["10.9.0.5"]),
+        ];
+
+        RouteDiscoveryResult discovery = RoutingNodeDiscovery.DiscoverWithNotes(routes, adapters);
+
+        Assert.Single(discovery.Nodes);
+        Assert.Empty(discovery.NotesRu);
+    }
+
     [Fact]
     public void Петлевой_и_выключенный_адаптер_узлов_не_дает()
     {

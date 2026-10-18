@@ -148,10 +148,40 @@ public sealed class LiveEngineOperations : IEngineOperations
             snapshot?.QualityLabelRu,
             EngineNames.ProfileWireName(profile),
             ResourceBudgetOptions.DescribeProfile(profile),
-            pending));
+            pending,
+            ChartSamples()));
 
         return await Task.FromResult(EngineOperationResult.Success(message, data)).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Точки истории замеров для графика сети в разделе «Оптимизация» (задача F). Отдаются только
+    /// замеры этой сессии живой оптимизации: окно графика — максимум 15 минут, поэтому точки старше
+    /// не отдаются вовсе. Неизмеренное окно — точка с null-полями: разрыв на графике, а не ноль.
+    /// </summary>
+    private IReadOnlyList<ChartSampleData> ChartSamples()
+    {
+        if (_realtime is null)
+        {
+            return [];
+        }
+
+        DateTime cutoffUtc = DateTime.UtcNow - ChartWindowLimit;
+        return _realtime.RecentSamples
+            .Where(point => point.AtUtc >= cutoffUtc)
+            .Select(point => new ChartSampleData(
+                point.AtUtc,
+                point.IsMeasurable,
+                point.RttMinMs,
+                point.RttMedianMs,
+                point.RttP95Ms,
+                point.JitterMadMs,
+                point.LossPercent))
+            .ToList();
+    }
+
+    /// <summary>Максимальное окно графика: 15 минут. Дальше точки не отдаются — «за пределами запуска пусто».</summary>
+    private static readonly TimeSpan ChartWindowLimit = TimeSpan.FromMinutes(15);
 
     public async Task<EngineOperationResult> ApplyPresetAsync(
         TweakProfilePreset preset,
@@ -658,7 +688,18 @@ public sealed class LiveEngineOperations : IEngineOperations
         string? QualityLabelRu,
         string ProfileWire,
         string ProfileRu,
-        int PendingOperations);
+        int PendingOperations,
+        IReadOnlyList<ChartSampleData> ChartSamples);
+
+    /// <summary>Точка графика: все числа необязательные — «не измерялось» остаётся null, а не нулём.</summary>
+    private sealed record ChartSampleData(
+        DateTime AtUtc,
+        bool Measured,
+        double? RttMinMs,
+        double? RttMedianMs,
+        double? RttP95Ms,
+        double? JitterMadMs,
+        double? LossPercent);
 
     private sealed record BatchData(
         string SnapshotId,

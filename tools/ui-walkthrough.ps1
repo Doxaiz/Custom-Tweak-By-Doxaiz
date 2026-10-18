@@ -166,6 +166,23 @@ function Find-AllByName($root, [string]$name)
     return @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition))
 }
 
+function Test-TextInWindow($root, [string]$needle)
+{
+    # Задача F: честные состояния новых блоков («Данных пока нет», кнопки проверок) обязаны
+    # быть видны человеку — ищем их среди всех текстов и кнопок окна.
+    foreach ($element in @($root.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition)))
+    {
+        try
+        {
+            if ($null -ne $element.Current.Name -and $element.Current.Name.Contains($needle)) { return $true }
+        }
+        catch { }
+    }
+    return $false
+}
+
 function Get-TextOfMainScreen($root)
 {
     # Собираем все тексты, которые видит человек: по ним понятно, что программа ответила.
@@ -545,6 +562,13 @@ $sections = @(
     @{ Name = 'Оптимизация'; Shot = 'раздел-оптимизация';  X = 120; Y = 118 }
 )
 
+# Задача F: в трёх разделах обязаны быть новые блоки. Ожидания — подстроки, которые видит человек.
+$sectionExpectations = @{
+    'Твики'       = @(@('Задержка ввода', 'карточка задержки ввода'), @('Проверить задержку ввода', 'кнопка проверки задержки ввода'))
+    'Настройки'   = @(@('Проверка настроек', 'блок проверки настроек'), @('Проверить настройки', 'кнопка проверки настроек'))
+    'Оптимизация' = @(@('График сети', 'карточка графика сети'), @('Данных пока нет', 'честная надпись пустого графика'))
+}
+
 # Диагностика: что вообще видит Windows в окне. Если пункты не находятся — по этому файлу видно почему.
 $rect = New-Object PfWin+RECT
 [PfWin]::GetWindowRect((Get-Process -Id $process.Id).MainWindowHandle, [ref]$rect) | Out-Null
@@ -584,6 +608,20 @@ foreach ($section in $sections)
     Start-Sleep -Milliseconds 1200
     Close-Dialogs $process.Id $handle ('сообщение-' + $section.Shot) | Out-Null
     Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) $section.Shot
+
+    # Задача F: новые блоки обязаны быть видны — снимок без блока был бы «красивой картинкой».
+    if ($sectionExpectations.ContainsKey($section.Name))
+    {
+        $sectionRoot = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+        foreach ($expectation in $sectionExpectations[$section.Name])
+        {
+            if (-not (Test-TextInWindow $sectionRoot $expectation[0]))
+            {
+                throw "В разделе «$($section.Name)» не видно: $($expectation[1]) (искал текст «$($expectation[0])»)"
+            }
+            Say "раздел «$($section.Name)»: $($expectation[1]) — на месте"
+        }
+    }
 }
 
 # ── 4. Итог ─────────────────────────────────────────────────────────────────────────────────────

@@ -118,7 +118,7 @@ public sealed class FakeEngineChannel : IEngineChannel
             return EngineResponse.Success(
                 request.Id,
                 "Оптимизация не запущена.",
-                $$"""{"realtimeState":"idle","realtimeStateRu":"не запущена","isElevationAvailable":{{Bool(IsElevationAvailable)}},"tweakCount":47,"pendingOperations":0}""");
+                $$"""{"realtimeState":"idle","realtimeStateRu":"не запущена","isElevationAvailable":{{Bool(IsElevationAvailable)}},"tweakCount":47,"pendingOperations":0,"chartSamples":[]}""");
         }
 
         return EngineResponse.Success(
@@ -126,7 +126,12 @@ public sealed class FakeEngineChannel : IEngineChannel
             "Идёт контроль качества.",
             $$"""
             {"realtimeState":"active-monitoring","realtimeStateRu":"идёт контроль качества","isElevationAvailable":{{Bool(IsElevationAvailable)}},"tweakCount":47,"pendingOperations":0,
-             "gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6","baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},"qualityLabelRu":"хорошо"}
+             "gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6","baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},"qualityLabelRu":"хорошо",
+             "chartSamples":[
+               {"atUtc":"2026-10-18T12:00:00.0000000Z","measured":true,"rttMinMs":38,"rttMedianMs":40,"rttP95Ms":44,"jitterMadMs":1.5,"lossPercent":0},
+               {"atUtc":"2026-10-18T12:00:02.0000000Z","measured":false},
+               {"atUtc":"2026-10-18T12:00:04.0000000Z","measured":true,"rttMedianMs":41,"jitterMadMs":2,"lossPercent":0}
+             ]}
             """);
     }
 

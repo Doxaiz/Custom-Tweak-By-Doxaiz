@@ -127,6 +127,72 @@ public sealed class ServiceEngineTests : IDisposable
         Assert.Contains("\"pendingOperations\":1", result.DataJson);
     }
 
+    // ── Задача F: график сети питается ответами команды status ─────────────────────────────────
+
+    [Fact]
+    public async Task Статус_во_время_оптимизации_отдаёт_точки_графика_а_провалы_без_нулей()
+    {
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "fortniteclient-win64-shipping.exe",
+                GameTitleRu: "Fortnite",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 3074,
+                Transport: "UDP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (SIO_TCP_INFO)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (SIO_TCP_INFO)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (SIO_TCP_INFO)."),
+                new PathMeasurement(true, 80, 2, 0, 12, "Замер живого потока игры (SIO_TCP_INFO)."),
+                PathMeasurement.Unmeasurable("поток игры пропал")),
+            new NoopActionRunner());
+
+        RealtimeSnapshot started = await optimizer.StartAsync();
+        Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, started.State);
+
+        await optimizer.TickOnceAsync(); // окно не измерилось — на графике это разрыв
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+
+        EngineOperationResult result = await ops.StatusAsync();
+
+        // Точки графика доходят до окна в одном ответе со статусом: график ничего не зондирует сам.
+        Assert.Contains("\"chartSamples\":[", result.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"measured\":true", result.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"rttMedianMs\":80", result.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"measured\":false", result.DataJson, StringComparison.Ordinal);
+
+        // Честность: точка без измерения не несёт чисел — null не превращается в ноль.
+        Assert.DoesNotContain("\"rttMedianMs\":0,", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"rttMedianMs\":null", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"jitterMadMs\":0,", result.DataJson, StringComparison.Ordinal);
+    }
+
+    private sealed class SingleGameWatcher(GameFlowInfo flow) : IGameFlowWatcher
+    {
+        public Task<IReadOnlyList<GameFlowInfo>> FindActiveGameFlowsAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<GameFlowInfo>>([flow]);
+    }
+
+    private sealed class QueuedMeasurements(params PathMeasurement[] windows) : IRealtimeMeasurementSource
+    {
+        private readonly Queue<PathMeasurement> _windows = new(windows);
+
+        public Task<PathMeasurement> MeasurePathAsync(string endpoint, int port, CancellationToken ct = default) =>
+            Task.FromResult(_windows.Count > 0 ? _windows.Dequeue() : PathMeasurement.Unmeasurable("источник закончился"));
+    }
+
+    private sealed class NoopActionRunner : IOptimizationActionRunner
+    {
+        public Task<OptimizationActionOutcome> ApplyAsync(OptimizationActionDescriptor action, CancellationToken ct = default) =>
+            Task.FromResult(OptimizationActionOutcome.Ok("применено"));
+
+        public Task<OptimizationActionOutcome> RevertAsync(OptimizationActionDescriptor action, CancellationToken ct = default) =>
+            Task.FromResult(OptimizationActionOutcome.Ok("снято"));
+    }
+
     // ── применение пресетов ─────────────────────────────────────────────────────────────────────
 
     [Fact]

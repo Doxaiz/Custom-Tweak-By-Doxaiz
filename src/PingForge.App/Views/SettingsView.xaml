@@ -45,6 +45,69 @@
       </StackPanel>
     </Border>
 
+    <!-- Проверка настроек (задача F): разбор конфликтов и советы по твикам на готовом коде
+         PingForge.Analysis. Ничего не применяет — только показывает и предлагает перейти к твику. -->
+    <Border Style="{StaticResource Card}" x:Name="SettingsCheckBlock">
+      <StackPanel DataContext="{Binding Check}">
+        <TextBlock Text="Проверка настроек" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
+                   Text="Что мешает (активный туннель, два подключения), что стоит изменить по каталогу и что не проверено. Советы по MTU и DNS включают замеры до игрового сервера. Проверка ничего не применяет." />
+
+        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+          <Button Style="{StaticResource GhostButton}" Content="Проверить настройки" Command="{Binding CheckCommand}" Margin="0,0,12,0" />
+          <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" MaxWidth="520" Text="{Binding StatusRu}" />
+        </StackPanel>
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" FontWeight="SemiBold" Text="{Binding SummaryRu}" />
+
+        <TextBlock Text="Мешает" FontWeight="SemiBold" Margin="0,10,0,0"
+                   Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibility}}" />
+        <ItemsControl ItemsSource="{Binding Interference}" Margin="0,4,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,7,0,7">
+                <StackPanel>
+                  <TextBlock Text="{Binding TitleRu}" FontWeight="SemiBold" />
+                  <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" Text="{Binding DetailRu}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Text="Стоит изменить" FontWeight="SemiBold" Margin="0,10,0,0"
+                   Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibility}}" />
+        <ItemsControl ItemsSource="{Binding Recommended}" Margin="0,4,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,7,0,7">
+                <StackPanel>
+                  <TextBlock Text="{Binding TitleRu}" FontWeight="SemiBold" />
+                  <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" Text="{Binding DetailRu}" />
+                  <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" Foreground="{StaticResource Accent2}" Text="{Binding LinkRu}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Text="Не проверено" FontWeight="SemiBold" Margin="0,10,0,0"
+                   Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibility}}" />
+        <ItemsControl ItemsSource="{Binding SkippedChecks}" Margin="0,4,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Style="{StaticResource Caption}" FontSize="11.5" Text="{Binding}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+          <Button Style="{StaticResource GhostButton}" Content="Показать в твиках" Command="{Binding ShowRecommendedTweaksCommand}" Margin="0,0,12,0" />
+          <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" Text="{Binding CountsRu}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
     <!-- Сервер маршрутизации (задача B): только реальные шлюзы и замер путей, без выдуманных узлов. -->
     <Border Style="{StaticResource Card}" x:Name="RoutingBlock">
       <StackPanel DataContext="{Binding Routing}">

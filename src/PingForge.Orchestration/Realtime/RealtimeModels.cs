@@ -64,16 +64,43 @@ public interface IGameFlowReporter : IGameFlowWatcher
         CancellationToken ct = default);
 }
 
-/// <summary>Одно окно замеров живого потока. Неизмеримо — это честный результат, а не нули.</summary>
+/// <summary>
+/// Одно окно замеров живого потока. Неизмеримо — это честный результат, а не нули.
+/// Минимум/среднее/p95 — необязательные поля: не каждый способ замера даёт распределение
+/// (живой поток игры отдаёт одно число за окно), и тогда их место честно занимает null.
+/// </summary>
 public sealed record PathMeasurement(
     bool IsMeasurable,
     double RttMedianMs,
     double JitterMs,
     double LossPercent,
     int Samples,
-    string MethodRu)
+    string MethodRu,
+    double? RttMinMs = null,
+    double? RttAvgMs = null,
+    double? RttP95Ms = null)
 {
     public static PathMeasurement Unmeasurable(string reasonRu) => new(false, 0, 0, 0, 0, reasonRu);
+}
+
+/// <summary>
+/// Одна точка истории замеров сессии живой оптимизации — источник данных графика сети.
+/// Неизмеренное окно записывается точкой с null-полями: на графике это разрыв линии
+/// с подписью «не измерялось», а не ноль.
+/// </summary>
+public sealed record RealtimeMeasurementPoint(
+    DateTime AtUtc,
+    bool IsMeasurable,
+    double? RttMinMs,
+    double? RttMedianMs,
+    double? RttP95Ms,
+    double? JitterMadMs,
+    double? LossPercent,
+    int Samples,
+    string MethodRu)
+{
+    public static RealtimeMeasurementPoint Unmeasured(DateTime atUtc, string reasonRu) =>
+        new(atUtc, false, null, null, null, null, null, 0, reasonRu);
 }
 
 /// <summary>
