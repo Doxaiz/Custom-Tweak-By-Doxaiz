@@ -571,9 +571,9 @@ jobs:
             if (Get-Service PingForge -ErrorAction SilentlyContinue) { throw 'T: service left behind' }
             if (Test-Path $dataDir) { throw 'T: data left behind after -RemoveData' }
             if (Test-Path $installDir) { throw 'T: install dir left behind' }
-            Write-Host '::notice T-cycleA OK: applied tweak -> refusal -> rollback + clean removal'
+            Write-Host "::notice $ann::T-cycleA OK: applied tweak -> refusal -> rollback + clean removal"
 
-            # ── цикл B: установка поверх работыющей службы (требование 3) ─────────────────────
+            # ── цикл B: установка поверх работающей службы (требование 3) ─────────────────────
             Install-Quiet $setup
             $apply2 = Query-Engine $mainPipe 'apply-tweaks' @{ tweaks = 'TCP_NO_DELAY' }
             if (-not $apply2 -or -not $apply2.ok) { throw 'T: apply-tweaks failed on cycle B' }
@@ -603,7 +603,7 @@ jobs:
             $rb = Query-Engine $mainPipe 'rollback'
             Write-Host "::notice $ann::T rollback-from-old-snapshot ok=$($rb.ok) msg=$(Clean-Answer $rb.messageRu)"
             if (-not $rb -or -not $rb.ok) { throw 'T: rollback from pre-update snapshot failed' }
-            Write-Host '::notice T-cycleB OK: over-install kept settings/journal/snapshot, version updated, rollback works'
+            Write-Host "::notice $ann::T-cycleB OK: over-install kept settings/journal/snapshot, version updated, rollback works"
 
             # ── цикл C: апгрейд поверх ПОСЛЕДНЕЙ подтверждённой стабильной версии ────────────
             # Базу не выдумываем и не хардкодим: просим GitHub API. Если latest — это уже текущая
@@ -632,14 +632,14 @@ jobs:
                 if (-not $journal3 -or -not $journal3.ok) { throw "T: journal from $($baseRelease.tag_name) unreadable after upgrade" }
                 $rb3 = Query-Engine $mainPipe 'rollback'
                 if (-not $rb3 -or -not $rb3.ok) { throw "T: rollback of $($baseRelease.tag_name)-era snapshot failed" }
-                Write-Host "::notice T-cycleC OK: $($baseRelease.tag_name) -> $version, journal kept, rollback works"
+                Write-Host "::notice $ann::T-cycleC OK: $($baseRelease.tag_name) -> $version, journal kept, rollback works"
             } catch {
                 Write-Host "::notice $ann::T baseline-release stage did not run: $(Clean-Answer $_.Exception.Message)"
             }
 
             Purge-All
             Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
-            Write-Host '::notice T-live OK: uninstall asks and reverts, update keeps everything'
+            Write-Host "::notice $ann::T-live OK: uninstall asks and reverts, update keeps everything"
           } catch {
             Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
             Write-Host "::error $ann::T failed: $(($_.Exception.Message -replace '[\r\n]+',' ') -replace '%','%25')"

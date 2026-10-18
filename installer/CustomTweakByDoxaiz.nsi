@@ -191,7 +191,7 @@ Section "Служба PingForge (регистрируется и запуска�
   ; Тот же скрипт, что лежит в архиве: одна логика на всех, а не две разные.
   ; Вывод уходит в файл рядом с программой: если служба не встанет, будет что показать
   ; человеку и проверке на сборочной машине, а не пустое окно.
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Transcript -Path $\'$INSTDIR\install-service.log$\' -Force | Out-Null; try { & $\'$INSTDIR\install-service.ps1$\' -NoShortcut; $code = $LASTEXITCODE } catch { $_ | Out-String | Write-Host; $code = 1 } finally { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }; exit $code"'
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Transcript -Path $\'$INSTDIR\install-service.log$\' -Force | Out-Null; try { & $\'$INSTDIR\install-service.ps1$\' -NoShortcut -Force; $code = $LASTEXITCODE } catch { $_ | Out-String | Write-Host; $code = 1 } finally { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }; exit $code"'
   Pop $0
   ${If} $0 != "0"
     DetailPrint "Служба не зарегистрировалась, код возврата: $0"
