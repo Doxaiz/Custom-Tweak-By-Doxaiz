@@ -172,9 +172,11 @@ public sealed class UdpDnsQueryTransport : IDnsQueryTransport
         {
             using var client = new UdpClient();
             client.Connect(new IPEndPoint(server, 53));
-            await client.SendAsync(query, query.Length, ct).ConfigureAwait(false);
 
-            Task<UdpReceiveResult> receive = client.ReceiveAsync(ct);
+            // .NET 10: SendAsync/ReceiveAsync с токеном работают с ReadOnlyMemory и ValueTask.
+            await client.SendAsync(query.AsMemory(), ct).ConfigureAwait(false);
+
+            Task<UdpReceiveResult> receive = client.ReceiveAsync(ct).AsTask();
             Task completed = await Task.WhenAny(receive, Task.Delay(timeout, ct)).ConfigureAwait(false);
             if (completed != receive || !receive.IsCompletedSuccessfully)
             {

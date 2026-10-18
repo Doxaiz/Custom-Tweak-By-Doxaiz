@@ -41,7 +41,8 @@ internal static class AnalysisWiring
                 new DfMtuDiscoveryService(new SystemNetIcmpProbe()),
                 new LiveSessionEndpointProvider(currentEndpoint),
                 new SystemNetworkContextReader()),
-            new DnsAdviceProvider(new DnsResolverBenchmarker(new UdpDnsQueryTransport())),
+            new DnsAdviceProvider(new DnsResolverBenchmarkRunner(
+                new DnsResolverBenchmarker(new UdpDnsQueryTransport()))),
             new SystemNetworkContextReader(),
             catalog);
 
