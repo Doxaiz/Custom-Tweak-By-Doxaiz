@@ -3,6 +3,7 @@ using System.Security.Principal;
 using System.Threading;
 using System.Windows;
 using PingForge.App.ViewModels;
+using PingForge.Network.Windows;
 using PingForge.Tweaks;
 
 namespace PingForge.App;
@@ -162,7 +163,10 @@ public partial class App : Application
             networkCheck: new NetworkCheckViewModel(
                 NetworkCheckWiring.Build(analysisPlatform, Engine, () => MainScreen?.Endpoint, IsAdministrator()),
                 ApplyRecommendedInTweaks,
-                tweakRows.Select(row => row.Code).ToList()));
+                tweakRows.Select(row => row.Code).ToList()),
+            serverPath: new ServerPathViewModel(
+                new IcmpServerPathRunner(new SystemNetIcmpProbe()),
+                () => MainScreen?.LiveGameEndpoint));
         Tweaks = new TweaksViewModel(
             Engine,
             dialogs,

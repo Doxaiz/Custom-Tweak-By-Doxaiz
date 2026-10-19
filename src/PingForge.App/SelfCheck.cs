@@ -62,6 +62,7 @@ internal static class SelfCheck
         CheckAnalysisIntegration(app, problems);
         CheckUpdateChecker(app, problems);
         CheckNetworkSelfCheck(app, problems);
+        CheckServerPath(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -730,6 +731,95 @@ internal static class SelfCheck
         {
             problems.Add($"проверка сети (задача G): проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ПРОВЕРКА СЕТИ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Задача H: блок «Путь до сервера» в «Оптимизации». Что доказывается без живой игры:
+    /// блок и кнопка на месте, до нажатия трасса не строилась и в сеть не ушло ни одной пробы,
+    /// а разбор «где растёт задержка» честно разделяет первый шаг (дом) и путь дальше (провайдер),
+    /// подсказывая альтернативный маршрут. Анонимный хоп остаётся без чисел — «не отвечает».
+    ///
+    /// Саму трассу на живой Windows строит сценарий tools/ui-walkthrough.ps1: самопроверка
+    /// кнопку не нажимает — она стартовый дым, а не сеть.
+    /// </summary>
+    private static void CheckServerPath(App app, List<string> problems)
+    {
+        try
+        {
+            ServerPathViewModel path = app.MainScreen.ServerPath;
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "ServerPathCard") is null
+                        || FindNamed<FrameworkElement>(root, "ServerPathButton") is null
+                        || !HasText(root, "Путь до сервера")
+                        || !HasText(root, "Показать путь"))
+                    {
+                        problems.Add("путь до сервера: нет блока «Путь до сервера» или кнопки «Показать путь» в разделе «Оптимизация»");
+                    }
+                }
+            }
+
+            if (path.Hops.Count != 0 || path.HasResult || path.SentPackets != 0 || path.IsRunning)
+            {
+                problems.Add("путь до сервера: трасса началась без нажатия кнопки — при старте программа в сеть не ходит");
+                StartupLog.Note("ПУТЬ ДО СЕРВЕРА: НЕ работает — трасса запустилась сама");
+                return;
+            }
+
+            var home = new List<ServerPathProbeHop>
+            {
+                new(1, "192.168.1.1", 3, 3, new[] { 9.0, 10.0, 11.0 }),
+                new(2, "10.0.0.1", 3, 3, new[] { 10.0, 11.0, 12.0 }),
+            };
+            var provider = new List<ServerPathProbeHop>
+            {
+                new(1, "192.168.1.1", 3, 3, new[] { 2.0, 3.0, 2.0 }),
+                new(2, "10.0.0.1", 3, 3, new[] { 3.0, 4.0, 3.0 }),
+                new(3, "203.0.113.9", 3, 3, new[] { 42.0, 44.0, 43.0 }),
+            };
+            var silent = new List<ServerPathProbeHop>
+            {
+                new(1, null, 3, 0, Array.Empty<double>()),
+            };
+
+            string homeNote = ServerPathGrowth.DescribeRu(home);
+            string providerNote = ServerPathGrowth.DescribeRu(provider);
+            string silentNote = ServerPathGrowth.DescribeRu(silent);
+
+            bool homeOk = homeNote.Contains("домашней сети", StringComparison.Ordinal);
+            bool providerOk = providerNote.Contains("Сервер маршрутизации", StringComparison.Ordinal)
+                && providerNote.Contains("WARP", StringComparison.Ordinal)
+                && providerNote.Contains("/32", StringComparison.Ordinal);
+            bool silentOk = silent[0].AvgRttMs is null
+                && silent[0].P95RttMs is null
+                && silent[0].LossPercent is null
+                && ServerPathGrowth.Bottleneck(silent) is null
+                && silentNote.Contains("Ни один хоп не ответил", StringComparison.Ordinal);
+            bool idleOk = path.StatusRu.Contains("не строился", StringComparison.Ordinal);
+
+            if (!homeOk || !providerOk || !silentOk || !idleOk)
+            {
+                problems.Add("путь до сервера: разбор прироста задержки работает неверно (дом, провайдер или анонимный хоп)");
+                StartupLog.Note($"ПУТЬ ДО СЕРВЕРА: НЕ работает — дом: {(homeOk ? "да" : "нет")}, " +
+                    $"провайдер: {(providerOk ? "да" : "нет")}, анонимный: {(silentOk ? "да" : "нет")}, " +
+                    $"покой: {(idleOk ? "да" : "нет")}");
+                return;
+            }
+
+            StartupLog.Note("ПУТЬ ДО СЕРВЕРА: блок в «Оптимизации» на месте, до нажатия проб нет (0 пакетов), " +
+                "скачок на первом шаге называется домашней сетью, дальше — подсказывает альтернативный маршрут");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"путь до сервера (задача H): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ПУТЬ ДО СЕРВЕРА: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 

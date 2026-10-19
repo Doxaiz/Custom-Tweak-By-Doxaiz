@@ -761,7 +761,50 @@ $bloatOutcome = if ($netText -match 'под нагрузкой \S+ мс') { 'з�
     else { 'bufferbloat честно не измерился (точка замера или ICMP недоступны на раннере)' }
 Say "исход bufferbloat: $bloatOutcome"
 
-# ── 8. Итог ─────────────────────────────────────────────────────────────────────────────────────
+# ── 8. Путь до сервера (задача H) ──────────────────────────────────────────────────────────────
+# На сборочной машине игры нет, значит живой сессии нет — и трасса обязана честно отказаться,
+# не отправив ни одного пакета. Это и проверяем: кнопка есть, нажимается, текст честный,
+# строк «Проб отправлено» (признак реальной трассы) на экране быть не должно.
+Say ''
+Say '── Шаг 8: нажимаю «Показать путь» в разделе «Оптимизация» (живой игры на раннере нет)'
+$handle = (Get-Process -Id $process.Id).MainWindowHandle
+$mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+$optimizeNav = Find-ByName $mainWindow 'Оптимизация' 8000
+if ($null -eq $optimizeNav) { throw 'В меню нет раздела «Оптимизация»' }
+Invoke-Element $optimizeNav 'Оптимизация' | Out-Null
+Start-Sleep -Milliseconds 900
+
+$pathButton = Find-ByName $mainWindow 'Показать путь' 8000
+if ($null -eq $pathButton) { throw 'Кнопки «Показать путь» нет в разделе «Оптимизация» — блок «Путь до сервера» потерялся' }
+Invoke-Element $pathButton 'Показать путь' | Out-Null
+
+$pathText = ''
+$pathDeadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $pathDeadline)
+{
+    Start-Sleep -Milliseconds 700
+    if ($process.HasExited) { break }
+
+    $rootNow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $pathText = Get-TextOfMainScreen $rootNow
+
+    if ($pathText -match 'Сначала запустите игру') { break }
+}
+
+Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) 'путь-до-сервера'
+
+if ($pathText -notmatch 'Сначала запустите игру')
+{
+    $shown = ($pathText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 20) -join ' / '
+    throw "Блок «Путь до сервера» не сказал честно «Сначала запустите игру». Что было на экране: $shown"
+}
+if ($pathText -match 'Проб отправлено')
+{
+    throw 'Трасса отчиталась об отправленных пробах без живой игры — так быть не должно'
+}
+Say 'путь до сервера: без игры ни одного пакета, на экране честное «Сначала запустите игру»'
+
+# ── 9. Итог ─────────────────────────────────────────────────────────────────────────────────────
 Say ''
 if ($process.HasExited)
 {

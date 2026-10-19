@@ -188,6 +188,102 @@
       </StackPanel>
     </Border>
 
+    <!-- Путь до сервера (задача H): трасса только до адреса найденного игрового сервера и только
+         при живой сессии. Без игры — честный текст «сначала запустите игру» и ноль пакетов.
+         Результат раскрывается под кнопкой: таблица хопов, итог и подсказка «где растёт задержка». -->
+    <Border Style="{StaticResource Card}" x:Name="ServerPathCard">
+      <StackPanel DataContext="{Binding ServerPath}">
+        <TextBlock Text="Путь до сервера" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding ExplanationRu}" />
+
+        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+          <Button x:Name="ServerPathButton" Style="{StaticResource GhostButton}" Content="Показать путь"
+                  Command="{Binding TraceCommand}" Margin="0,0,8,0" />
+          <Button Style="{StaticResource GhostButton}" Content="Отмена" Command="{Binding CancelCommand}"
+                  Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}" />
+        </StackPanel>
+
+        <TextBlock x:Name="ServerPathStatusText" Style="{StaticResource Caption}" Margin="0,8,0,0"
+                   Text="{Binding StatusRu}" />
+
+        <!-- Таблица: адрес, средний и 95-й RTT, потери. Анонимный хоп — строка «не отвечает»,
+             неизмеренное — прочерк. Подсветка — хоп с наибольшим приростом, а не «виновник». -->
+        <Border Background="#0C1420" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
+                Padding="10" Margin="0,10,0,0"
+                Visibility="{Binding HasHops, Converter={StaticResource BoolToVisibility}}">
+          <StackPanel>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="44" />
+                <ColumnDefinition Width="170" />
+                <ColumnDefinition Width="86" />
+                <ColumnDefinition Width="86" />
+                <ColumnDefinition Width="70" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Style="{StaticResource Caption}" Text="Хоп" />
+              <TextBlock Grid.Column="1" Style="{StaticResource Caption}" Text="Узел" />
+              <TextBlock Grid.Column="2" Style="{StaticResource Caption}" Text="Средний" />
+              <TextBlock Grid.Column="3" Style="{StaticResource Caption}" Text="95-й" />
+              <TextBlock Grid.Column="4" Style="{StaticResource Caption}" Text="Потери" />
+              <TextBlock Grid.Column="5" Style="{StaticResource Caption}" Text="Прирост" />
+            </Grid>
+
+            <ItemsControl ItemsSource="{Binding Hops}" Margin="0,4,0,0">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type vm:ServerPathHopRow}">
+                  <Grid Margin="0,2,0,2">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="44" />
+                      <ColumnDefinition Width="170" />
+                      <ColumnDefinition Width="86" />
+                      <ColumnDefinition Width="86" />
+                      <ColumnDefinition Width="70" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{Binding HopNumberRu}" />
+                    <TextBlock Grid.Column="1" Text="{Binding AddressRu}" FontWeight="SemiBold">
+                      <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                          <Setter Property="Foreground" Value="{StaticResource Text}" />
+                          <Setter Property="TextWrapping" Value="Wrap" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsBottleneck}" Value="True">
+                              <Setter Property="Foreground" Value="{StaticResource Accent2}" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Grid.Column="2" Text="{Binding AvgRttRu}" />
+                    <TextBlock Grid.Column="3" Text="{Binding P95RttRu}" />
+                    <TextBlock Grid.Column="4" Text="{Binding LossRu}" />
+                    <TextBlock Grid.Column="5" Text="{Binding GrowthRu}" FontWeight="SemiBold">
+                      <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                          <Setter Property="Foreground" Value="{StaticResource Muted}" />
+                          <Setter Property="TextWrapping" Value="Wrap" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsBottleneck}" Value="True">
+                              <Setter Property="Foreground" Value="{StaticResource Accent2}" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </TextBlock.Style>
+                    </TextBlock>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0" Text="{Binding SummaryRu}" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" FontWeight="SemiBold"
+                   Text="{Binding GrowthNoteRu}" />
+      </StackPanel>
+    </Border>
+
     <!-- График сети (задача F): вместо статичной сводки чисел. Данные — только из замеров
          живой оптимизации: график не запускает собственных зондов и не отправляет пакетов. -->
     <Border Style="{StaticResource Card}" x:Name="ChartCard">
