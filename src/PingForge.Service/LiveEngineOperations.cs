@@ -31,6 +31,13 @@ public sealed class LiveEngineOperations : IEngineOperations
     private readonly string _appVersion;
     private readonly ISystemStateReader? _stateReader;
     private readonly IRoutingService? _routing;
+    private readonly OptimizationSessionRepository? _sessions;
+
+    /// <summary>
+    /// Сессия, начатая этой службой и ещё не закрытая. Именно она дописывается «после» при остановке;
+    /// после перезапуска службы незакрытая запись остаётся в базе и честно показывается незавершённой.
+    /// </summary>
+    private OptimizationSessionRecord? _currentSession;
 
     public LiveEngineOperations(
         ITweakCatalog catalog,
@@ -44,7 +51,8 @@ public sealed class LiveEngineOperations : IEngineOperations
         string productName = "Custom Tweak By Doxaiz",
         string? appVersion = null,
         ISystemStateReader? stateReader = null,
-        IRoutingService? routing = null)
+        IRoutingService? routing = null,
+        OptimizationSessionRepository? sessions = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
@@ -57,6 +65,7 @@ public sealed class LiveEngineOperations : IEngineOperations
         _appVersion = appVersion ?? typeof(LiveEngineOperations).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
         _stateReader = stateReader;
         _routing = routing;
+        _sessions = sessions;
         IsElevationAvailable = isElevationAvailable;
     }
 
@@ -376,6 +385,7 @@ public sealed class LiveEngineOperations : IEngineOperations
         if (!start)
         {
             RealtimeStopReport report = await _realtime.StopAsync(ct).ConfigureAwait(false);
+            await RecordSessionStopAsync(report, ct).ConfigureAwait(false);
             string message = report.HonestSummaryRu +
                 (report.EverythingReverted
                     ? " Все свои изменения сняты."
@@ -399,9 +409,14 @@ public sealed class LiveEngineOperations : IEngineOperations
         PerfProfile profile = _readProfile?.Invoke() ?? PerfProfile.Balanced;
         var options = new RealtimeOptions(Budget: new ResourceBudgetOptions(profile));
 
+        DateTime startedUtc = DateTime.UtcNow;
+        string sessionId = Guid.NewGuid().ToString("N");
+
         RealtimeSnapshot snapshot = await _realtime
             .StartAsync(options, isAdministrator: IsElevationAvailable, preferredGame: null, ct: ct)
             .ConfigureAwait(false);
+
+        await RecordSessionStartAsync(sessionId, startedUtc, snapshot, ct).ConfigureAwait(false);
         // При отказе не добавляем хвост «Игра: не найдена, задержка: не измерено»: человек и так
         // читает причину отказа, а хвост превращает её в длинную склейку из двух предложений.
         string startMessage = snapshot.State switch
@@ -424,6 +439,184 @@ public sealed class LiveEngineOperations : IEngineOperations
 
         return new EngineOperationResult(snapshot.State != RealtimeOptimizationState.Failed, startMessage, startData);
     }
+
+    public async Task<EngineOperationResult> SessionsAsync(int limit, CancellationToken ct = default)
+    {
+        if (_sessions is null)
+        {
+            return EngineOperationResult.Failure("История сессий не подключена: показать записи нечем.");
+        }
+
+        IReadOnlyList<OptimizationSessionRecord> records = await _sessions.GetRecentAsync(limit, ct).ConfigureAwait(false);
+        if (records.Count == 0)
+        {
+            return EngineOperationResult.Success(
+                "История сессий пуста: живая оптимизация ещё не запускалась. Это не ошибка — записывать пока нечего.",
+                Encode(new SessionsData(0, [])));
+        }
+
+        int completed = records.Count(record => record.IsCompleted);
+        int unfinished = records.Count - completed;
+        string message = $"Сессий: {records.Count}, завершено: {completed}, без итога: {unfinished}. " +
+            "Измеренные числа — только из сессий; «не завершена» никогда не превращается в улучшение.";
+
+        var rows = records
+            .Select(record => new SessionRowData(
+                record.SessionId,
+                record.StartedUtc,
+                record.StoppedUtc,
+                record.GameTitleRu,
+                record.Endpoint,
+                record.HasGame,
+                record.IsMeasurable,
+                record.BaselineRttMs,
+                record.FinalRttMs,
+                record.ImprovementMs,
+                record.Actions,
+                record.RollbackState,
+                RollbackStateRu(record.RollbackState),
+                record.IsCompleted,
+                record.StatusNoteRu,
+                record.Outcome))
+            .ToList();
+
+        return await Task.FromResult(EngineOperationResult.Success(
+            message, Encode(new SessionsData(records.Count, rows)))).ConfigureAwait(false);
+    }
+
+    public async Task<EngineOperationResult> ClearSessionsAsync(CancellationToken ct = default)
+    {
+        if (_sessions is null)
+        {
+            return EngineOperationResult.Failure("История сессий не подключена: очищать нечего.");
+        }
+
+        if (_currentSession is not null)
+        {
+            return EngineOperationResult.Failure(
+                "Живая оптимизация ещё идёт: её сессия пишется прямо сейчас. Остановите оптимизацию и очистите историю после этого — " +
+                "иначе запись вернулась бы при остановке.");
+        }
+
+        int deleted = await _sessions.DeleteAllAsync(ct).ConfigureAwait(false);
+        return EngineOperationResult.Success(
+            deleted == 0
+                ? "История сессий уже была пуста — удалять было нечего. Журнал изменений системы не тронут."
+                : $"История сессий очищена: удалено записей — {deleted}. Журнал изменений системы не тронут: он остался как был.");
+    }
+
+    /// <summary>
+    /// Начало сессии: пишется сразу, ещё до исхода. Если служба упадёт или сессия оборвётся,
+    /// запись останется с честным «не завершена, итог неизвестен» — без выдуманного улучшения.
+    /// </summary>
+    private async Task RecordSessionStartAsync(
+        string sessionId, DateTime startedUtc, RealtimeSnapshot snapshot, CancellationToken ct)
+    {
+        if (_sessions is null)
+        {
+            return;
+        }
+
+        bool noGame = snapshot.State == RealtimeOptimizationState.Failed
+            && string.IsNullOrWhiteSpace(snapshot.GameTitleRu);
+
+        var record = new OptimizationSessionRecord(
+            sessionId,
+            startedUtc,
+            StoppedUtc: null,
+            GameTitleRu: noGame ? "Игра не найдена" : snapshot.GameTitleRu ?? "Игра не определена",
+            ProcessExeName: string.Empty,
+            Endpoint: snapshot.Endpoint ?? string.Empty,
+            IsMeasurable: snapshot.BaselineRttMs is not null,
+            BaselineRttMs: snapshot.BaselineRttMs,
+            FinalRttMs: null,
+            ImprovementMs: null,
+            Actions: [],
+            RollbackState: SessionRollbackStates.Unknown,
+            IsCompleted: false,
+            Outcome: noGame ? SessionOutcomes.NoGame : SessionOutcomes.NotFinished,
+            StatusNoteRu: noGame
+                ? "Игра не найдена: замер не состоялся — итог неизвестен."
+                : "Сессия не завершена: итог неизвестен, «после» ещё не измерено.");
+
+        _currentSession = record;
+        await TrySaveSessionAsync(record, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Остановка: та же запись дописывается настоящими «после», действиями и пометкой откатa.
+    /// Нет измеренного «после» — сессия остаётся незавершённой, и это написано словами.
+    /// </summary>
+    private async Task RecordSessionStopAsync(RealtimeStopReport report, CancellationToken ct)
+    {
+        if (_sessions is null || _currentSession is not { } session)
+        {
+            return;
+        }
+
+        bool measured = report.BaselineRttMs is not null && report.FinalRttMs is not null;
+        bool noGame = session.Outcome == SessionOutcomes.NoGame;
+
+        var completed = session with
+        {
+            StoppedUtc = DateTime.UtcNow,
+            GameTitleRu = noGame ? session.GameTitleRu : report.GameTitleRu,
+            Endpoint = string.IsNullOrWhiteSpace(report.Endpoint) || report.Endpoint == "—"
+                ? session.Endpoint
+                : report.Endpoint,
+            IsMeasurable = measured || session.BaselineRttMs is not null,
+            BaselineRttMs = report.BaselineRttMs ?? session.BaselineRttMs,
+            FinalRttMs = report.FinalRttMs,
+            ImprovementMs = report.ImprovementMs,
+            Actions = report.AppliedActionTitles,
+            RollbackState = noGame
+                ? SessionRollbackStates.Unknown
+                : report.EverythingReverted
+                    ? SessionRollbackStates.EverythingReverted
+                    : SessionRollbackStates.PartiallyReverted,
+            IsCompleted = measured,
+            Outcome = noGame ? SessionOutcomes.NoGame : measured ? SessionOutcomes.Completed : SessionOutcomes.NotFinished,
+            StatusNoteRu = noGame
+                ? "Игра не найдена: замер не состоялся — итог неизвестен."
+                : measured
+                    ? (report.EverythingReverted
+                        ? "Сессия завершена: «после» измерено, свои изменения сняты."
+                        : "Сессия завершена: «после» измерено, но снять удалось не всё — смотрите пометку откатa.")
+                    : "Сессия не завершена, итог неизвестен: «после» не измерено."
+        };
+
+        await TrySaveSessionAsync(completed, ct).ConfigureAwait(false);
+        _currentSession = null;
+    }
+
+    /// <summary>
+    /// История не должна ломать саму оптимизацию: сбой записи в базу не отменяет применение
+    /// и откат. Молчаливым это не остаётся — сессии в журнале просто не появится, и это видно.
+    /// </summary>
+    private async Task TrySaveSessionAsync(OptimizationSessionRecord record, CancellationToken ct)
+    {
+        if (_sessions is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _sessions.SaveAsync(record, ct).ConfigureAwait(false);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            // Сбой базы не должен отменять уже выполненные действия оптимизации.
+        }
+    }
+
+    private static string RollbackStateRu(string state) => state switch
+    {
+        SessionRollbackStates.EverythingReverted => "Изменения сняты полностью",
+        SessionRollbackStates.PartiallyReverted => "Сняты не все изменения",
+        SessionRollbackStates.NotReverted => "Изменения не сняты",
+        _ => "Неизвестно (сессия без итога)",
+    };
 
     public async Task<EngineOperationResult> SetPerfProfileAsync(PerfProfile profile, CancellationToken ct = default)
     {
@@ -739,6 +932,30 @@ public sealed class LiveEngineOperations : IEngineOperations
         string ExplanationRu);
 
     private sealed record JournalData(int Count, IReadOnlyList<JournalRow> Records);
+
+    /// <summary>
+    /// Строка истории сессий. Все числа nullable: у незавершённой сессии «после» нет, и это
+    /// остаётся null, а не нулём и не «улучшением на 0 мс».
+    /// </summary>
+    private sealed record SessionRowData(
+        string SessionId,
+        DateTime StartedUtc,
+        DateTime? StoppedUtc,
+        string GameTitleRu,
+        string Endpoint,
+        bool HasGame,
+        bool IsMeasurable,
+        double? BaselineRttMs,
+        double? FinalRttMs,
+        double? ImprovementMs,
+        IReadOnlyList<string> Actions,
+        string RollbackState,
+        string RollbackStateRu,
+        bool IsCompleted,
+        string StatusRu,
+        string Outcome);
+
+    private sealed record SessionsData(int Count, IReadOnlyList<SessionRowData> Records);
 
     private sealed record RealtimeData(
         string State,

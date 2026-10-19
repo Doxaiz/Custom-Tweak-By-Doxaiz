@@ -99,6 +99,9 @@ public static class ServiceProgram
 
         var snapshotRepository = new SnapshotRepository(database);
         var journal = new AuditJournalRepository(database);
+
+        // История сессий (задача J) — в той же базе, что снапшоты и журнал изменений.
+        var sessions = new OptimizationSessionRepository(database);
         var snapshotService = new SnapshotService(
             snapshotRepository,
             catalog,
@@ -219,7 +222,8 @@ public static class ServiceProgram
             readProfile: readProfile,
             applyProfile: writeProfile,
             stateReader: systemState,
-            routing: routingService);
+            routing: routingService,
+            sessions: sessions);
 
         var dispatcher = new EngineDispatcher(operations);
         var server = new EnginePipeServer(dispatcher, Log);

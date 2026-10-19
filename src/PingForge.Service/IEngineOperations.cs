@@ -69,4 +69,15 @@ public interface IEngineOperations
     /// </summary>
     Task<EngineOperationResult> UninstallCheckAsync(CancellationToken ct = default) =>
         Task.FromResult(EngineOperationResult.Failure("Журнал изменений не подключён: проверить следы перед удалением нечем."));
+
+    /// <summary>
+    /// История сессий оптимизации (задача J). Без базы — честный отказ, а не «сессий не было»:
+    /// пустая история и непрочитанная история — разные вещи.
+    /// </summary>
+    Task<EngineOperationResult> SessionsAsync(int limit, CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("История сессий не подключена: показать записи нечем."));
+
+    /// <summary>Очистить историю сессий; журнал изменений системы не трогается.</summary>
+    Task<EngineOperationResult> ClearSessionsAsync(CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("История сессий не подключена: очищать нечего."));
 }
