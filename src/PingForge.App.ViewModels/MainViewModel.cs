@@ -40,13 +40,15 @@ public sealed class MainViewModel : ObservableObject
         IUserDialogs dialogs,
         bool runsAsAdministrator = false,
         bool pollStatusWhileOptimizing = false,
-        NetworkCheckViewModel? networkCheck = null)
+        NetworkCheckViewModel? networkCheck = null,
+        ServerPathViewModel? serverPath = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
         _hasRights = runsAsAdministrator;
         _pollStatusWhileOptimizing = pollStatusWhileOptimizing;
         NetworkCheck = networkCheck ?? NetworkCheckViewModel.Unavailable();
+        ServerPath = serverPath ?? ServerPathViewModel.Unavailable();
 
         OptimizeCommand = new AsyncRelayCommand(ToggleOptimizationAsync, () => true);
         RefreshStatusCommand = new AsyncRelayCommand(RefreshStatusAsync, () => true);
@@ -67,6 +69,13 @@ public sealed class MainViewModel : ObservableObject
     /// Ничего не меняет: рекомендации применяются обычным путём раздела «Твики».
     /// </summary>
     public NetworkCheckViewModel NetworkCheck { get; }
+
+    /// <summary>
+    /// «Путь до сервера» (задача H): трасса до адреса найденного игрового сервера, только при живой
+    /// сессии. Собирается приложением с настоящим ICMP-транспортом; по умолчанию — честный отказ
+    /// без единого пакета. Ничего не меняет: это эхо-запросы с TTL.
+    /// </summary>
+    public ServerPathViewModel ServerPath { get; }
 
     /// <summary>
     /// Проверка обновлений (задача I) для раздела «О программе» — той же страницы, что показывает
@@ -184,6 +193,12 @@ public sealed class MainViewModel : ObservableObject
         get => _improvementMs;
         private set => Set(ref _improvementMs, value);
     }
+
+    /// <summary>
+    /// Адрес игрового сервера для трассы «Путь до сервера»: отдаётся только при живой сессии.
+    /// Оптимизация остановлена — адрес неизвестен, и трасса честно скажет «сначала запустите игру».
+    /// </summary>
+    public string? LiveGameEndpoint => IsOptimizing ? Endpoint : null;
 
     /// <summary>Есть ли права: без них кнопка оптимизации честно говорит, что будут только замеры.</summary>
     public bool HasRights

@@ -3,6 +3,7 @@ using System.Security.Principal;
 using System.Threading;
 using System.Windows;
 using PingForge.App.ViewModels;
+using PingForge.Network.Windows;
 using PingForge.Tweaks;
 
 namespace PingForge.App;
@@ -162,7 +163,10 @@ public partial class App : Application
             networkCheck: new NetworkCheckViewModel(
                 NetworkCheckWiring.Build(analysisPlatform, Engine, () => MainScreen?.Endpoint, IsAdministrator()),
                 ApplyRecommendedInTweaks,
-                tweakRows.Select(row => row.Code).ToList()));
+                tweakRows.Select(row => row.Code).ToList()),
+            serverPath: new ServerPathViewModel(
+                new IcmpServerPathRunner(new SystemNetIcmpProbe()),
+                () => MainScreen?.LiveGameEndpoint));
         Tweaks = new TweaksViewModel(
             Engine,
             dialogs,
@@ -174,7 +178,9 @@ public partial class App : Application
             AnalysisWiring.BuildInputLatency(analysisPlatform, Catalog),
             Tweaks.ShowOnlyCodes));
 
-        Journal = new JournalViewModel(Engine, settings.JournalRowsShown);
+        // Задача J: «Журнал» получает вторую вкладку «Сессии»; очистка истории спрашивает
+        // подтверждение тем же окном, что и остальные необратимые действия.
+        Journal = new JournalViewModel(Engine, settings.JournalRowsShown, dialogs);
 
         // Блок «Проверка настроек» (задача F): разбор конфликтов и советы по твикам, только чтение.
         // Кнопка «Показать в твиках» фильтрует список и переключает раздел — тот же путь, что клик по меню.

@@ -23,6 +23,9 @@ public sealed class EngineDispatcher
 
     public const int MaxJournalLimit = 500;
 
+    /// <summary>Сколько сессий отдавать по умолчанию: месяц ежедневных запусков ещё виден целиком.</summary>
+    public const int DefaultSessionsLimit = 50;
+
     private readonly IEngineOperations _operations;
 
     /// <summary>Какой канал обслуживает этот разборщик: от этого зависит набор доступных команд.</summary>
@@ -175,6 +178,11 @@ public sealed class EngineDispatcher
                 EngineCommandKind.RouteMeasure => await _operations.MeasureRoutingPathsAsync(ct).ConfigureAwait(false),
 
                 EngineCommandKind.UninstallCheck => await _operations.UninstallCheckAsync(ct).ConfigureAwait(false),
+
+                EngineCommandKind.Sessions => await _operations.SessionsAsync(
+                    args.GetInt("limit", DefaultSessionsLimit, 1, MaxJournalLimit), ct).ConfigureAwait(false),
+
+                EngineCommandKind.SessionsClear => await _operations.ClearSessionsAsync(ct).ConfigureAwait(false),
 
                 _ => EngineOperationResult.Failure($"Команда «{descriptor.WireName}» объявлена, но не подключена."),
             };

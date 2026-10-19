@@ -490,10 +490,12 @@ public sealed class NetworkSelfCheckTests
         }
     }
 
+    // Сроки с запасом: на загруженном сборочном раннере Task.Delay(25) легко превращается
+    // в полсотни миллисекунд, и слишком короткая фаза честно не набирала минимум проб.
     private static BufferbloatOptions Quick => new(
-        IdleDuration: TimeSpan.FromMilliseconds(300),
-        LoadDuration: TimeSpan.FromMilliseconds(800),
-        SampleInterval: TimeSpan.FromMilliseconds(25),
+        IdleDuration: TimeSpan.FromMilliseconds(600),
+        LoadDuration: TimeSpan.FromSeconds(3),
+        SampleInterval: TimeSpan.FromMilliseconds(10),
         ParallelStreams: 2);
 
     [Fact]

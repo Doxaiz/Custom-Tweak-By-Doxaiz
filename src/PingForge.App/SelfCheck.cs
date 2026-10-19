@@ -62,6 +62,8 @@ internal static class SelfCheck
         CheckAnalysisIntegration(app, problems);
         CheckUpdateChecker(app, problems);
         CheckNetworkSelfCheck(app, problems);
+        CheckServerPath(app, problems);
+        CheckSessionHistory(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -74,7 +76,8 @@ internal static class SelfCheck
             || problem.Contains("потеряла данные", StringComparison.Ordinal)
             || problem.Contains("нет надписей", StringComparison.Ordinal)
             || problem.Contains("нет карточки ответа", StringComparison.Ordinal)
-            || problem.Contains("не переносятся", StringComparison.Ordinal)))
+            || problem.Contains("не переносятся", StringComparison.Ordinal)
+            || problem.Contains("история сессий", StringComparison.Ordinal)))
         {
             windowCode = WindowFailed;
         }
@@ -730,6 +733,225 @@ internal static class SelfCheck
         {
             problems.Add($"проверка сети (задача G): проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ПРОВЕРКА СЕТИ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Задача H: блок «Путь до сервера» в «Оптимизации». Что доказывается без живой игры:
+    /// блок и кнопка на месте, до нажатия трасса не строилась и в сеть не ушло ни одной пробы,
+    /// а разбор «где растёт задержка» честно разделяет первый шаг (дом) и путь дальше (провайдер),
+    /// подсказывая альтернативный маршрут. Анонимный хоп остаётся без чисел — «не отвечает».
+    ///
+    /// Саму трассу на живой Windows строит сценарий tools/ui-walkthrough.ps1: самопроверка
+    /// кнопку не нажимает — она стартовый дым, а не сеть.
+    /// </summary>
+    private static void CheckServerPath(App app, List<string> problems)
+    {
+        try
+        {
+            ServerPathViewModel path = app.MainScreen.ServerPath;
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "ServerPathCard") is null
+                        || FindNamed<FrameworkElement>(root, "ServerPathButton") is null
+                        || !HasText(root, "Путь до сервера")
+                        || !HasText(root, "Показать путь"))
+                    {
+                        problems.Add("путь до сервера: нет блока «Путь до сервера» или кнопки «Показать путь» в разделе «Оптимизация»");
+                    }
+                }
+            }
+
+            if (path.Hops.Count != 0 || path.HasResult || path.SentPackets != 0 || path.IsRunning)
+            {
+                problems.Add("путь до сервера: трасса началась без нажатия кнопки — при старте программа в сеть не ходит");
+                StartupLog.Note("ПУТЬ ДО СЕРВЕРА: НЕ работает — трасса запустилась сама");
+                return;
+            }
+
+            var home = new List<ServerPathProbeHop>
+            {
+                new(1, "192.168.1.1", 3, 3, new[] { 9.0, 10.0, 11.0 }),
+                new(2, "10.0.0.1", 3, 3, new[] { 10.0, 11.0, 12.0 }),
+            };
+            var provider = new List<ServerPathProbeHop>
+            {
+                new(1, "192.168.1.1", 3, 3, new[] { 2.0, 3.0, 2.0 }),
+                new(2, "10.0.0.1", 3, 3, new[] { 3.0, 4.0, 3.0 }),
+                new(3, "203.0.113.9", 3, 3, new[] { 42.0, 44.0, 43.0 }),
+            };
+            var silent = new List<ServerPathProbeHop>
+            {
+                new(1, null, 3, 0, Array.Empty<double>()),
+            };
+
+            string homeNote = ServerPathGrowth.DescribeRu(home);
+            string providerNote = ServerPathGrowth.DescribeRu(provider);
+            string silentNote = ServerPathGrowth.DescribeRu(silent);
+
+            bool homeOk = homeNote.Contains("домашней сети", StringComparison.Ordinal);
+            bool providerOk = providerNote.Contains("Сервер маршрутизации", StringComparison.Ordinal)
+                && providerNote.Contains("WARP", StringComparison.Ordinal)
+                && providerNote.Contains("/32", StringComparison.Ordinal);
+            bool silentOk = silent[0].AvgRttMs is null
+                && silent[0].P95RttMs is null
+                && silent[0].LossPercent is null
+                && ServerPathGrowth.Bottleneck(silent) is null
+                && silentNote.Contains("Ни один хоп не ответил", StringComparison.Ordinal);
+            bool idleOk = path.StatusRu.Contains("не строился", StringComparison.Ordinal);
+
+            if (!homeOk || !providerOk || !silentOk || !idleOk)
+            {
+                problems.Add("путь до сервера: разбор прироста задержки работает неверно (дом, провайдер или анонимный хоп)");
+                StartupLog.Note($"ПУТЬ ДО СЕРВЕРА: НЕ работает — дом: {(homeOk ? "да" : "нет")}, " +
+                    $"провайдер: {(providerOk ? "да" : "нет")}, анонимный: {(silentOk ? "да" : "нет")}, " +
+                    $"покой: {(idleOk ? "да" : "нет")}");
+                return;
+            }
+
+            StartupLog.Note("ПУТЬ ДО СЕРВЕРА: блок в «Оптимизации» на месте, до нажатия проб нет (0 пакетов), " +
+                "скачок на первом шаге называется домашней сетью, дальше — подсказывает альтернативный маршрут");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"путь до сервера (задача H): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ПУТЬ ДО СЕРВЕРА: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// История сессий (задача J): вкладка «Сессии» в «Журнале» — «до → после», сравнение двух
+    /// сессий и график среднего RTT по дням. Проверка идёт без службы: на старте программа не
+    /// читает историю и ничего не меняет, поэтому записи обязаны быть пустыми до нажатия.
+    /// </summary>
+    private static void CheckSessionHistory(App app, List<string> problems)
+    {
+        try
+        {
+            SessionHistoryViewModel sessions = app.Journal.Sessions;
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<TabControl>(root, "JournalTabs") is not { } tabs)
+                    {
+                        problems.Add("история сессий: в разделе «Журнал» нет вкладок");
+                    }
+                    else
+                    {
+                        TabItem? page = tabs.Items.OfType<TabItem>().FirstOrDefault(item =>
+                            string.Equals(item.Header as string, "Сессии", StringComparison.Ordinal));
+
+                        if (page is null)
+                        {
+                            problems.Add("история сессий: в разделе «Журнал» нет вкладки «Сессии»");
+                        }
+                        else
+                        {
+                            // Вкладка создаёт содержимое только когда её показали: без этого проверять
+                            // кнопки бессмысленно, а ошибки разметки внутри вкладки остались бы незамеченными.
+                            int previous = tabs.SelectedIndex;
+                            tabs.SelectedItem = page;
+                            root.UpdateLayout();
+
+                            bool hasRefresh = FindNamed<FrameworkElement>(root, "SessionsRefreshButton") is not null;
+                            bool hasCompare = FindNamed<FrameworkElement>(root, "CompareSessionsButton") is not null;
+                            bool hasClear = FindNamed<FrameworkElement>(root, "SessionsClearButton") is not null;
+
+                            if (previous >= 0 && previous < tabs.Items.Count)
+                            {
+                                tabs.SelectedIndex = previous;
+                            }
+
+                            root.UpdateLayout();
+
+                            if (!hasRefresh || !hasCompare || !hasClear)
+                            {
+                                problems.Add("история сессий: на вкладке «Сессии» нет кнопок обновления, сравнения или очистки");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (sessions.Rows.Count != 0 || sessions.IsLoading)
+            {
+                problems.Add("история сессий: записи появились до нажатия «Обновить сессии» — на старте программа ничего не читает");
+                StartupLog.Note("ИСТОРИЯ СЕССИЙ: НЕ работает — записи загрузились сами");
+                return;
+            }
+
+            // Честность чисел: у незавершённой сессии нет «после», и она так и называется.
+            var unfinished = new SessionHistoryRow(
+                SessionId: "self-check-unfinished",
+                StartedUtc: DateTime.UtcNow,
+                StoppedUtc: null,
+                GameTitleRu: "Проверка",
+                Endpoint: "203.0.113.9",
+                HasGame: true,
+                IsMeasurable: true,
+                BaselineRttMs: 100,
+                FinalRttMs: null,
+                ImprovementMs: null,
+                Actions: [],
+                RollbackStateRu: "Неизвестно (сессия без итога)",
+                IsCompleted: false,
+                StatusRu: string.Empty,
+                Outcome: "NotFinished");
+
+            var other = new SessionHistoryRow(
+                SessionId: "self-check-other-server",
+                StartedUtc: DateTime.UtcNow.AddDays(-1),
+                StoppedUtc: DateTime.UtcNow.AddDays(-1).AddMinutes(20),
+                GameTitleRu: "Проверка",
+                Endpoint: "198.51.100.7",
+                HasGame: true,
+                IsMeasurable: true,
+                BaselineRttMs: 90,
+                FinalRttMs: 80,
+                ImprovementMs: 10,
+                Actions: [],
+                RollbackStateRu: "Изменения сняты полностью",
+                IsCompleted: true,
+                StatusRu: string.Empty,
+                Outcome: "Completed");
+
+            bool honestText = unfinished.ResultRu.Contains("сессия не завершена", StringComparison.Ordinal);
+            bool noInventedNumber = unfinished.FinalRttMs is null && unfinished.ImprovementMs is null;
+
+            SessionComparisonResult comparison = SessionComparison.Compare(unfinished, other);
+            bool refusesDifferentServers = !comparison.Comparable
+                && comparison.Lines.Any(line => line.Contains("разным серверам", StringComparison.Ordinal));
+
+            IReadOnlyList<DailyRttPoint> daily = DailyRttHistory.Build([unfinished, other], "203.0.113.9");
+            bool singleServerDaily = daily.Count == 1 && Math.Abs(daily[0].AverageRttMs - 100) < 0.01;
+
+            if (!honestText || !noInventedNumber || !refusesDifferentServers || !singleServerDaily)
+            {
+                problems.Add("история сессий: разбор «до/после» или график по дням работает неверно " +
+                    $"(незавершённая: {(honestText ? "да" : "нет")}, без выдуманных чисел: {(noInventedNumber ? "да" : "нет")}, " +
+                    $"разные серверы: {(refusesDifferentServers ? "отказ" : "сравнил")}, график: {(singleServerDaily ? "да" : "нет")})");
+                StartupLog.Note("ИСТОРИЯ СЕССИЙ: НЕ работает — числа или сравнение сессий расходятся с правилом честности");
+                return;
+            }
+
+            StartupLog.Note("ИСТОРИЯ СЕССИЙ: вкладка «Сессии» на месте, до нажатия записей нет, " +
+                "незавершённая сессия называется незавершённой, разные серверы не сравниваются, график — по одному серверу");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"история сессий (задача J): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ИСТОРИЯ СЕССИЙ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 

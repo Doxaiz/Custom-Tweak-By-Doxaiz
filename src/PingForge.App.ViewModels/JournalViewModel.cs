@@ -25,12 +25,21 @@ public sealed class JournalViewModel : ObservableObject
     /// <summary>Пытались ли читать журнал вообще. Отличает «ещё не читали» от «прочитать не смогли».</summary>
     private bool _loadAttempted;
 
-    public JournalViewModel(EngineClient engine, int rowsToAsk = 20)
+    public JournalViewModel(EngineClient engine, int rowsToAsk = 20, IUserDialogs? dialogs = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         RowsToAsk = Math.Clamp(rowsToAsk, 1, EngineDispatcherLimits.MaxJournalLimit);
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
+
+        // Задача J: вторая вкладка «Сессии» — история замеров «до/после», сравнение и график по дням.
+        Sessions = new SessionHistoryViewModel(engine, dialogs);
     }
+
+    /// <summary>
+    /// Вкладка «Сессии» (задача J): история оптимизаций в той же базе, что журнал изменений.
+    /// Читается отдельной командой службы и не смешивается с «что менялось в системе».
+    /// </summary>
+    public SessionHistoryViewModel Sessions { get; }
 
     /// <summary>Сколько записей просить у службы.</summary>
     public int RowsToAsk { get; }

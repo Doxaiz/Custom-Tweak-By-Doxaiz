@@ -169,6 +169,23 @@ public sealed class RoutingServersTests
     }
 
     [Fact]
+    public void Адаптер_Cloudflare_WARP_узнаётся_по_всем_маркерам_бесплатного_туннеля()
+    {
+        // Задача H: WARP — бесплатный магистральный туннель и законный узел маршрутизации.
+        // Разные сборки WARP называют адаптер по-разному, и ни одно из имён не должно потеряться:
+        // «Cloudflare WARP», Zero Trust — вариант с «1.1.1.1» в описании.
+        var cloudflareWarp = new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]);
+        var spaced = new AdapterInfo(32, "Cloudflare WARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]);
+        var zeroTrust = new AdapterInfo(33, "Cloudflare WARP", "Cloudflare Zero Trust — 1.1.1.1", true, ["172.16.0.2"]);
+
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(cloudflareWarp));
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(spaced));
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(zeroTrust));
+        Assert.True(AdapterDirectoryParser.LooksLikeCloudflareWarp(spaced));
+        Assert.True(AdapterDirectoryParser.LooksLikeCloudflareWarp(zeroTrust));
+    }
+
+    [Fact]
     public void WARP_с_настоящим_шлюзом_в_таблице_становится_узлом_с_честной_подписью()
     {
         // Если у туннеля в таблице маршрутов есть IPv4-шлюз (так бывает у некоторых режимов WARP

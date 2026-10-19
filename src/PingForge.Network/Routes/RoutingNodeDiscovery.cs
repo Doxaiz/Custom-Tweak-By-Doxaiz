@@ -75,15 +75,17 @@ public static class AdapterDirectoryParser
     /// Список ключевых слов — это НЕ «поддержка сервисов»: так программа понимает, что шлюз принадлежит
     /// туннельному адаптеру, и подписывает узел честно: «VPN-адаптер …».
     ///
-    /// «cloudflare» и «warp» — отдельные слова для бесплатного туннеля Cloudflare WARP: его адаптер
-    /// называется «CloudflareWARP» и не содержит ни одного другого маркера из списка. Это бесплатный
-    /// и безопасный способ сократить путь, поэтому программа обязана его узнавать по имени.
+    /// «cloudflare», «warp», «1.1.1.1» и «zero trust» — маркеры бесплатного туннеля Cloudflare WARP:
+    /// его адаптер называется «CloudflareWARP», описание — «Cloudflare WARP Interface Tunnel», у
+    /// Zero Trust-сборки в имени бывает и адрес 1.1.1.1. Это бесплатный и безопасный способ сократить
+    /// путь, поэтому программа обязана узнавать туннель по имени и предлагать его узлом маршрутизации,
+    /// а не заставлять человека искать адаптер вручную.
     /// </summary>
     public static bool LooksLikeVpn(AdapterInfo adapter) =>
         Matches(adapter,
             "wireguard", "wintun", "tun", "tap", "openvpn", "ikev2", "l2tp", "pptp", "vpn",
             "tunnel", "expressvpn", "nordvpn", "proton", "tailscale", "amnezia", "впн",
-            "cloudflare", "warp");
+            "cloudflare", "warp", "1.1.1.1", "zero trust");
 
     /// <summary>
     /// Бесплатный туннель Cloudflare WARP: адаптер «CloudflareWARP» (описание — «Cloudflare WARP

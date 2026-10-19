@@ -187,6 +187,31 @@ public static class EngineCommandCatalog
             OptionalArgs: [],
             ExampleRu: """{"id":"15","command":"uninstall-check"}""",
             TimeoutSeconds: 20),
+
+        new(
+            EngineCommandKind.Sessions,
+            "sessions",
+            "История сессий оптимизации",
+            "Список сессий: когда, какая игра и сервер, «до» и «после», действия и пометка «снялось / не снялось». " +
+            "Сессия без измеренного «после» честно называется незавершённой. Только чтение, по умолчанию 50 записей, " +
+            "предел 500.",
+            NeedsElevation: false,
+            RequiredArgs: [],
+            OptionalArgs: ["limit"],
+            ExampleRu: """{"id":"16","command":"sessions","args":{"limit":"50"}}""",
+            TimeoutSeconds: 20),
+
+        new(
+            EngineCommandKind.SessionsClear,
+            "sessions-clear",
+            "Очистить историю сессий",
+            "Удаляет историю замеров сессий. Журнал изменений системы не трогается: «забыть замеры» не значит " +
+            "«забыть, что программа меняла». Действие необратимо, поэтому требует прав администратора.",
+            NeedsElevation: true,
+            RequiredArgs: [],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"17","command":"sessions-clear"}""",
+            TimeoutSeconds: 30),
     ];
 
     /// <summary>Все команды в порядке объявления — он же порядок вывода в интерфейсе.</summary>
@@ -211,6 +236,7 @@ public static class EngineCommandCatalog
         EngineCommandKind.RouteDiscover,
         EngineCommandKind.RealtimeStop,
         EngineCommandKind.UninstallCheck,
+        EngineCommandKind.Sessions,
     ];
 
     /// <summary>Имена тех же команд по каналу — для сверки с документами и текстов отказов.</summary>
