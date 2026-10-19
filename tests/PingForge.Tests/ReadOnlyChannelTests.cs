@@ -30,6 +30,7 @@ public sealed class ReadOnlyChannelTests
         { "repair-network", """{"id":"4","command":"repair-network"}""" },
         { "realtime-start", """{"id":"5","command":"realtime-start"}""" },
         { "perf-profile", """{"id":"6","command":"perf-profile","args":{"profile":"economy"}}""" },
+        { "sessions-clear", """{"id":"7","command":"sessions-clear"}""" },
     };
 
     [Theory]
@@ -141,7 +142,7 @@ public sealed class ReadOnlyChannelTests
 
         Assert.Equal(wireNames.Count, wireNames.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.All(wireNames, name => Assert.NotNull(EngineCommandCatalog.Find(name)));
-        Assert.Equal("ping, capabilities, status, journal-tail, system-state, route-discover, realtime-stop, uninstall-check",
+        Assert.Equal("ping, capabilities, status, journal-tail, system-state, route-discover, realtime-stop, uninstall-check, sessions",
             EngineCommandCatalog.ReadOnlyChannelWireNamesRu());
     }
 
@@ -223,6 +224,12 @@ public sealed class ReadOnlyChannelTests
 
         public Task<EngineOperationResult> ReadSystemStateAsync(CancellationToken ct = default) =>
             Record("system-state", EngineOperationResult.Success("прочитано"));
+
+        public Task<EngineOperationResult> SessionsAsync(int limit, CancellationToken ct = default) =>
+            Record($"sessions:{limit}", EngineOperationResult.Success("история сессий", """{"count":0,"records":[]}"""));
+
+        public Task<EngineOperationResult> ClearSessionsAsync(CancellationToken ct = default) =>
+            Record("sessions-clear", EngineOperationResult.Success("история сессий очищена"));
 
         public Task<EngineOperationResult> UninstallCheckAsync(CancellationToken ct = default) =>
             Record("uninstall-check", EngineOperationResult.Success(
