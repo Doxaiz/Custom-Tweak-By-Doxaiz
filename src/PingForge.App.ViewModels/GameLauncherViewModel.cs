@@ -1,4 +1,4 @@
-using PingForge.Core.Models;
+﻿using PingForge.Core.Models;
 using PingForge.Network;
 
 namespace PingForge.App.ViewModels;
@@ -34,6 +34,7 @@ public sealed class GameCardViewModel : ObservableObject
 {
     private readonly Func<GameCardViewModel, Task> _open;
     private readonly Func<GameCardViewModel, Task> _choose;
+    private readonly GameRegionsViewModel? _regions;
     private string _statusRu;
     private string? _executablePath;
     private bool _isRunning;
@@ -43,11 +44,13 @@ public sealed class GameCardViewModel : ObservableObject
         KnownGame game,
         string? executablePath,
         Func<GameCardViewModel, Task> open,
-        Func<GameCardViewModel, Task> choose)
+        Func<GameCardViewModel, Task> choose,
+        GameRegionsViewModel? regions = null)
     {
         Game = game ?? throw new ArgumentNullException(nameof(game));
         _open = open ?? throw new ArgumentNullException(nameof(open));
         _choose = choose ?? throw new ArgumentNullException(nameof(choose));
+        _regions = regions;
         _executablePath = executablePath;
 
         OpenCommand = new AsyncRelayCommand(() => _open(this), () => !IsBusy);
@@ -74,6 +77,16 @@ public sealed class GameCardViewModel : ObservableObject
     public string ProcessName => Game.ProcessName;
 
     public string AntiCheatRu => $"{Game.AntiCheatName}: {AnticheatText(Game.AntiCheat)}";
+
+    /// <summary>
+    /// Задача D: где серверы этой игры. Данные — из GameRouteCatalog, для игры вне справочника —
+    /// честное «неизвестно». «Пинга до региона» здесь нет: измеряется только выданный сервер.
+    /// </summary>
+    public string RegionsHeadingRu => GameRegionsViewModel.HeadingRu;
+
+    public string RegionsLineRu => _regions?.RegionsLineRu(ProcessName) ?? GameRegionsViewModel.UnknownRegionsRu;
+
+    public string PortsLineRu => _regions?.PortsLineRu(ProcessName) ?? GameRegionsViewModel.UnpublishedPortsRu;
 
     /// <summary>Что игра значит для сетевого слоя: маршрут и QoS разрешены всем, фильтр — нет.</summary>
     public string NoteRu => string.IsNullOrWhiteSpace(Game.NoteRu)
@@ -176,13 +189,15 @@ public sealed class GameLauncherViewModel : ObservableObject
         IExecutablePicker picker,
         IAppSettingsStore store,
         MainViewModel main,
-        IReadOnlyList<KnownGame>? games = null)
+        IReadOnlyList<KnownGame>? games = null,
+        GameRegionsViewModel? regions = null)
     {
         _probe = probe ?? throw new ArgumentNullException(nameof(probe));
         _starter = starter ?? throw new ArgumentNullException(nameof(starter));
         _picker = picker ?? throw new ArgumentNullException(nameof(picker));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _main = main ?? throw new ArgumentNullException(nameof(main));
+        Regions = regions ?? new GameRegionsViewModel();
 
         AppSettings loaded = store.Load();
         IReadOnlyList<KnownGame> catalog = games ?? GameProcessCatalog.DefaultGames;
@@ -202,13 +217,17 @@ public sealed class GameLauncherViewModel : ObservableObject
                 game,
                 remembered.TryGetValue(game.ProcessName, out string? path) && File.Exists(path) ? path : null,
                 OpenAsync,
-                ChoosePathAsync)));
+                ChoosePathAsync,
+                Regions)));
 
         FindGamesCommand = new AsyncRelayCommand(FindInstalledAsync);
         AddGameCommand = new AsyncRelayCommand(AddGameFromPickerAsync);
     }
 
     public IReadOnlyList<GameCardViewModel> Cards => _cards;
+
+    /// <summary>Справочник регионов и портов (задача D): один на окно, данные из GameRouteCatalog.</summary>
+    public GameRegionsViewModel Regions { get; }
 
     public AsyncRelayCommand FindGamesCommand { get; }
 

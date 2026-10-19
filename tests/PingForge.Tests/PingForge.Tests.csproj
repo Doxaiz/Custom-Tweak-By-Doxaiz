@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <AssemblyName>PingForge.Tests</AssemblyName>
@@ -37,6 +37,8 @@
     <None Include="..\..\src\PingForge.App.ViewModels\UpdateCheckViewModel.cs" Link="checked-UpdateCheckViewModel.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\Views\OptimizeView.xaml" Link="checked-OptimizeView.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\Views\TweaksView.xaml" Link="checked-TweaksView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Задача D: «Игры» показывают регионы и порты из справочника — это проверяется по разметке. -->
+    <None Include="..\..\src\PingForge.App\Views\GamesView.xaml" Link="checked-GamesView.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\Views\SettingsView.xaml" Link="checked-SettingsView.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeAclFactory.cs" Link="checked-PipeAclFactory.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeClientInspector.cs" Link="checked-PipeClientInspector.cs" CopyToOutputDirectory="PreserveNewest" />

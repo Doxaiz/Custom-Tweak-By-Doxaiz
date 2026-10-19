@@ -270,20 +270,70 @@ jobs:
       - name: Установщик — собрать (NSIS)
         run: |
           $ErrorActionPreference = 'Stop'
-
-          # NSIS есть не на всякой сборочной машине: если его нет — ставим пакетным менеджером.
-          $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
-          if (-not (Test-Path $makensis)) {
-            $found = Get-Command makensis -ErrorAction SilentlyContinue
-            if ($found) {
-              $makensis = $found.Source
-            } else {
-              Write-Host 'NSIS не найден — ставлю через choco.'
-              choco install nsis --no-progress -y | Out-Null
-              $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
-            }
+          # Ошибку makensis видно только в журнале, а журнал из песочницы не скачать: поэтому
+          # причина уходит в аннотацию — её читает и человек, и автоматическая проверка.
+          trap {
+            Write-Host "::error file=installer/CustomTweakByDoxaiz.nsi,line=1::NSIS: $($_.Exception.Message)"
+            exit 1
           }
-          if (-not (Test-Path $makensis)) { throw "Не нашёл makensis: $makensis" }
+
+          # NSIS есть не на всякой сборочной машине: если его нет — ставим и ищем в нескольких
+          # местах. Путь проверяем оба (x86 и x64): пакет может лечь в любой, а Get-Command в
+          # текущей сессии PATH не видит — Chocolatey обновляет его только для новых процессов.
+          function Find-Makensis {
+            foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+              if (-not $base) { continue }
+              $candidate = Join-Path $base 'NSIS\makensis.exe'
+              if (Test-Path $candidate) { return $candidate }
+            }
+
+            $found = Get-Command makensis -ErrorAction SilentlyContinue
+            if ($found) { return $found.Source }
+
+            return $null
+          }
+
+          # Chocolatey правит PATH только для новых процессов — текущему его надо перечитать.
+          function Update-PathFromRegistry {
+            $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+            $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+            $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ';'
+          }
+
+          $chocoExit = $null
+          $wingetExit = $null
+          $makensis = Find-Makensis
+          if (-not $makensis) {
+            Write-Host 'NSIS не найден — ставлю через choco.'
+            $chocoOutput = choco install nsis --no-progress -y 2>&1
+            $chocoExit = $LASTEXITCODE
+            Write-Host "choco exit: $chocoExit"
+            $chocoOutput | Select-Object -Last 25 | ForEach-Object { Write-Host $_ }
+            Update-PathFromRegistry
+            $makensis = Find-Makensis
+          }
+
+          if (-not $makensis) {
+            Write-Host 'choco не помог — пробую winget.'
+            $wingetOutput = winget install --id NSIS.NSIS --silent --accept-package-agreements --accept-source-agreements 2>&1
+            $wingetExit = $LASTEXITCODE
+            Write-Host "winget exit: $wingetExit"
+            $wingetOutput | Select-Object -Last 15 | ForEach-Object { Write-Host $_ }
+            Update-PathFromRegistry
+            $makensis = Find-Makensis
+          }
+
+          if (-not $makensis) {
+            Write-Host 'choco и winget не помогли — ищу makensis на диске.'
+            $makensis = (Get-ChildItem 'C:\Program Files*' -Filter makensis.exe -Recurse -ErrorAction SilentlyContinue |
+                Select-Object -First 1).FullName
+          }
+
+          if (-not $makensis) {
+            $tail = (($chocoOutput | Select-Object -Last 10) -join ' | ')
+            Write-Host "::error file=installer/CustomTweakByDoxaiz.nsi,line=1::NSIS не установился (choco exit $chocoExit, winget exit $wingetExit): $tail"
+            throw "Не нашёл makensis ни в Program Files, ни в PATH, ни на диске"
+          }
           Write-Host "makensis: $makensis"
 
           $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
@@ -296,8 +346,13 @@ jobs:
           Write-Host 'Файлы, из которых собирается установщик:'
           Get-ChildItem $sourceDir -File | Select-Object Name, @{n='МБ';e={[math]::Round($_.Length / 1MB, 1)}}
 
-          & $makensis -INPUTCHARSET UTF8 "-DVERSION=$version" "-DSOURCE_DIR=$sourceDir" "-DOUT_DIR=$outDir" "installer\CustomTweakByDoxaiz.nsi"
-          if ($LASTEXITCODE -ne 0) { throw "makensis вернул код $LASTEXITCODE" }
+          $makensisOutput = & $makensis -INPUTCHARSET UTF8 "-DVERSION=$version" "-DSOURCE_DIR=$sourceDir" "-DOUT_DIR=$outDir" "installer\CustomTweakByDoxaiz.nsi" 2>&1
+          $makensisOutput | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) {
+            $tail = ($makensisOutput | Select-Object -Last 12) -join ' | '
+            Write-Host "::error file=installer/CustomTweakByDoxaiz.nsi,line=1::makensis exit $LASTEXITCODE : $tail"
+            throw "makensis вернул код $LASTEXITCODE"
+          }
 
           Get-Item "dist\CustomTweakByDoxaiz-Setup-$version.exe" | Select-Object Name, @{n='МБ';e={[math]::Round($_.Length / 1MB, 1)}}
         shell: pwsh

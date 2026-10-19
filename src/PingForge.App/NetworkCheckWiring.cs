@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using PingForge.Analysis;
@@ -130,7 +130,8 @@ internal static class NetworkCheckWiring
 
         private async Task<NetworkCheckItemResult> CheckDnsAsync(NetworkContextSnapshot context, CancellationToken ct)
         {
-            var candidates = new List<(string Name, string Primary, string Secondary)>(DnsResolverBenchmarker.DefaultCandidates);
+            // Тот же список, что в «Твиках» и совете DNS: резолверы не переписываются по месту.
+            var candidates = new List<(string Name, string Primary, string Secondary)>(GameRegionsViewModel.BenchmarkCandidates);
 
             string? current = context.ConfiguredDnsServers.FirstOrDefault();
             if (!string.IsNullOrWhiteSpace(current) && candidates.All(c => c.Primary != current))

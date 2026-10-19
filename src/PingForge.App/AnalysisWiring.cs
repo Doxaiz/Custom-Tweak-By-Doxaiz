@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using PingForge.Analysis;
 using PingForge.App.ViewModels;
 using PingForge.Core.Abstractions;
@@ -41,8 +41,10 @@ internal static class AnalysisWiring
                 new DfMtuDiscoveryService(new SystemNetIcmpProbe()),
                 new LiveSessionEndpointProvider(currentEndpoint),
                 new SystemNetworkContextReader()),
+            // Список резолверов — тот же, что в «Твиках» и «Проверить сеть»: один источник правды.
             new DnsAdviceProvider(new DnsResolverBenchmarkRunner(
-                new DnsResolverBenchmarker(new UdpDnsQueryTransport()))),
+                new DnsResolverBenchmarker(new UdpDnsQueryTransport()),
+                GameRegionsViewModel.BenchmarkCandidates)),
             new SystemNetworkContextReader(),
             catalog);
 

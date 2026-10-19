@@ -1,4 +1,4 @@
-using PingForge.App.ViewModels;
+﻿using PingForge.App.ViewModels;
 using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
 using PingForge.Network;
@@ -801,6 +801,41 @@ public sealed class RoutingServersTests
         Assert.True(probe.Count > probesAfterStart);
 
         // И после всего таблица такая же, какой была (пустой).
+        Assert.Empty(system.Table);
+    }
+
+    [Fact]
+    public async Task Автовыбор_пересчитывает_путь_когда_матчмейкер_дал_другой_сервер()
+    {
+        FakeRouteSystem system = new();
+        ScriptedMeasurement probe = new(system, hop => hop is null ? Window(40) : Window(30));
+        var comparison = new RoutePathComparisonService(system.Command, system.Reader, probe);
+
+        GameFlowInfo firstMatch = Flow();
+        GameFlowInfo secondMatch = firstMatch with { RemoteEndpoint = "34.16.9.77", RemotePort = 3080 };
+
+        var provider = new RoutingPathOptionsProvider(
+            () => new RoutingSettings([Node("10.8.0.1", "WG")], null, AutoSelectBest: true),
+            _ => { },
+            _ => { },
+            comparison);
+
+        await provider.GetOptionsAsync(firstMatch);
+        int afterFirstMeasure = probe.Count;
+        Assert.True(afterFirstMeasure > 0);
+
+        // Тот же сервер и тот же процесс — решение свежее, повторного замера нет.
+        await provider.GetOptionsAsync(firstMatch);
+        Assert.Equal(afterFirstMeasure, probe.Count);
+
+        // Игра не перезапускалась, но матчмейкер выдал другой сервер: это другой матч,
+        // и вердикт первого матча к нему не применяется — путь меряется заново.
+        await provider.GetOptionsAsync(secondMatch);
+        Assert.True(probe.Count > afterFirstMeasure);
+        Assert.NotEqual(
+            RoutingPathOptionsProvider.DecisionKey(firstMatch),
+            RoutingPathOptionsProvider.DecisionKey(secondMatch));
+
         Assert.Empty(system.Table);
     }
 

@@ -22,6 +22,9 @@
     <!-- Пробы (задача G): типы результатов замеров (bufferbloat), на которых строятся пункты
          проверки сети. Ссылка явная, а не транзитивная через Analysis: зависимость видна. -->
     <ProjectReference Include="..\PingForge.Probing\PingForge.Probing.csproj" />
+    <!-- Справочник игр и бесплатных DNS (задача D): регионы, порты и резолверы берутся из
+         GameRouteCatalog, а не переписываются в разметке. -->
+    <ProjectReference Include="..\PingForge.Routing\PingForge.Routing.csproj" />
   </ItemGroup>
 
 </Project>

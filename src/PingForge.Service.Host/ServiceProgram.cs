@@ -125,7 +125,19 @@ public static class ServiceProgram
             Log($"Свои игры из настроек: {customGames.Count} (анти-чит у них неизвестен).");
         }
 
-        using var network = new WindowsGameNetworkPlatform(platform, GameProcessCatalog.WithCustomGames(customGames));
+        // UDP-собеседники игры: таблица соединений удалённую сторону у UDP не знает, поэтому
+        // наблюдение идёт из событий сетевого стека Windows (ETW, только чтение). Сбой наблюдения
+        // не роняет службу: без него UDP-игры просто не находятся, как и до этой части.
+        using var udpPeers = new EtwUdpPeerListener(Log);
+        udpPeers.Start();
+        Log(udpPeers.IsRunning
+            ? "UDP-собеседники: наблюдение идёт, служба увидит UDP-поток игры."
+            : $"UDP-собеседники: наблюдение не идёт — {udpPeers.ProblemRu ?? "причина не названа"}. Остальное работает.");
+
+        using var network = new WindowsGameNetworkPlatform(
+            platform,
+            GameProcessCatalog.WithCustomGames(customGames),
+            peerTracker: udpPeers);
 
         // Настоящие транспорты: ICMP-эхо, время TCP-рукопожатия, системный DNS.
         var icmp = new SystemNetIcmpProbe();

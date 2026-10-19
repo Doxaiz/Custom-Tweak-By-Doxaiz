@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -6,6 +6,7 @@ using PingForge.App.ViewModels;
 using PingForge.App.Views;
 using PingForge.Core.Models;
 using PingForge.Probing;
+using PingForge.Routing;
 
 namespace PingForge.App;
 
@@ -64,6 +65,7 @@ internal static class SelfCheck
         CheckNetworkSelfCheck(app, problems);
         CheckServerPath(app, problems);
         CheckSessionHistory(app, problems);
+        CheckGameRegionsAndDns(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -822,6 +824,67 @@ internal static class SelfCheck
         {
             problems.Add($"путь до сервера (задача H): проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ПУТЬ ДО СЕРВЕРА: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Регионы игр и DNS (задача D): у карточек «Игры» видно, где серверы игры и какие порты она
+    /// публикует; в «Твиках» есть карточка «DNS — это про вход, а не про пинг» со списком резолверов.
+    /// Проверяется без сети: данные — из GameRouteCatalog, а не из прогона. Поэтому «пинга до
+    /// региона» здесь и быть не может: у игр нет опубликованных адресов дата-центров.
+    /// </summary>
+    private static void CheckGameRegionsAndDns(App app, List<string> problems)
+    {
+        try
+        {
+            GameRegionsViewModel regions = app.Games.Regions;
+            DnsCardViewModel dns = app.Tweaks.Dns;
+
+            bool cardsOk = regions.Cards.Count == GameRouteCatalog.Targets.Count;
+            bool knownOk = regions.RegionsLineRu("cs2.exe").Contains("Европа", StringComparison.Ordinal)
+                && regions.RegionsLineRu("cs2.exe").Contains("матчмейкер", StringComparison.Ordinal);
+            bool unknownOk = regions.RegionsLineRu("игры-вне-справочника.exe").Contains("неизвестны", StringComparison.Ordinal)
+                && regions.PortsLineRu("игры-вне-справочника.exe").Contains("не публикуются", StringComparison.Ordinal);
+            bool dnsOk = dns.Resolvers.Count == GameRouteCatalog.FreeDnsRoutes.Count
+                && dns.ExplanationRu.Contains("не снижает пинг в матче", StringComparison.Ordinal)
+                && !dns.ExplanationRu.Contains("снизил пинг", StringComparison.Ordinal);
+            bool oneListOk = GameRegionsViewModel.BenchmarkCandidates.Count == GameRouteCatalog.FreeDnsRoutes.Count;
+
+            if (!cardsOk || !knownOk || !unknownOk || !dnsOk || !oneListOk)
+            {
+                problems.Add($"нет карточки регионов и DNS: карточки — {(cardsOk ? "да" : "нет")}, " +
+                    $"регионы CS2 — {(knownOk ? "да" : "нет")}, честное «неизвестно» — {(unknownOk ? "да" : "нет")}, " +
+                    $"DNS — {(dnsOk ? "да" : "нет")}, один список — {(oneListOk ? "да" : "нет")}");
+                StartupLog.Note("РЕГИОНЫ И DNS: НЕ работает — данные каталога не дошли до окна");
+                return;
+            }
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "GameRegionsCard") is null
+                        || FindNamed<FrameworkElement>(root, "DnsCard") is null
+                        || !HasText(root, GameRegionsViewModel.HeadingRu)
+                        || !HasText(root, "DNS — это про вход"))
+                    {
+                        problems.Add("нет карточки регионов и DNS: блока нет в разметке разделов «Игры» или «Твики»");
+                        StartupLog.Note("РЕГИОНЫ И DNS: НЕ работает — блок есть в модели, но не в окне");
+                        return;
+                    }
+                }
+            }
+
+            StartupLog.Note($"РЕГИОНЫ И DNS: карточек игр {regions.Cards.Count}, резолверов {dns.Resolvers.Count}, " +
+                "«пинга до региона» не обещаем — измеряется только выданный сервер");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"нет карточки регионов и DNS (задача D): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"РЕГИОНЫ И DNS: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 

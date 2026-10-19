@@ -1,4 +1,4 @@
-using PingForge.Core.Models;
+﻿using PingForge.Core.Models;
 using PingForge.Service.Protocol;
 
 namespace PingForge.App.ViewModels;
@@ -52,6 +52,13 @@ public sealed class TweaksViewModel : ObservableObject
     }
 
     public IReadOnlyList<TweakRowViewModel> Rows => _rows;
+
+    /// <summary>
+    /// Карточка «DNS — это про вход, а не про пинг» (задача D). Список резолверов — из
+    /// GameRouteCatalog.FreeDnsRoutes, тот же, что меряет «Проверить сеть». Ничего не применяет:
+    /// это объяснение и выбор входа, а не «ускоритель пинга».
+    /// </summary>
+    public DnsCardViewModel Dns { get; } = new();
 
     /// <summary>
     /// Карточка «Задержка ввода» (задача F): советник из PingForge.Analysis, подключённый к окну.
