@@ -1,4 +1,4 @@
-﻿name: Сборка, тесты и готовые .exe
+name: Сборка, тесты и готовые .exe
 
 # Что делает этот сценарий:
 #   1) собирает решение и прогоняет все 450 тестов;
@@ -277,19 +277,63 @@ jobs:
             exit 1
           }
 
-          # NSIS есть не на всякой сборочной машине: если его нет — ставим пакетным менеджером.
-          $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
-          if (-not (Test-Path $makensis)) {
-            $found = Get-Command makensis -ErrorAction SilentlyContinue
-            if ($found) {
-              $makensis = $found.Source
-            } else {
-              Write-Host 'NSIS не найден — ставлю через choco.'
-              choco install nsis --no-progress -y | Out-Null
-              $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+          # NSIS есть не на всякой сборочной машине: если его нет — ставим и ищем в нескольких
+          # местах. Путь проверяем оба (x86 и x64): пакет может лечь в любой, а Get-Command в
+          # текущей сессии PATH не видит — Chocolatey обновляет его только для новых процессов.
+          function Find-Makensis {
+            foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+              if (-not $base) { continue }
+              $candidate = Join-Path $base 'NSIS\makensis.exe'
+              if (Test-Path $candidate) { return $candidate }
             }
+
+            $found = Get-Command makensis -ErrorAction SilentlyContinue
+            if ($found) { return $found.Source }
+
+            return $null
           }
-          if (-not (Test-Path $makensis)) { throw "Не нашёл makensis: $makensis" }
+
+          # Chocolatey правит PATH только для новых процессов — текущему его надо перечитать.
+          function Update-PathFromRegistry {
+            $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+            $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+            $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ';'
+          }
+
+          $chocoExit = $null
+          $wingetExit = $null
+          $makensis = Find-Makensis
+          if (-not $makensis) {
+            Write-Host 'NSIS не найден — ставлю через choco.'
+            $chocoOutput = choco install nsis --no-progress -y 2>&1
+            $chocoExit = $LASTEXITCODE
+            Write-Host "choco exit: $chocoExit"
+            $chocoOutput | Select-Object -Last 25 | ForEach-Object { Write-Host $_ }
+            Update-PathFromRegistry
+            $makensis = Find-Makensis
+          }
+
+          if (-not $makensis) {
+            Write-Host 'choco не помог — пробую winget.'
+            $wingetOutput = winget install --id NSIS.NSIS --silent --accept-package-agreements --accept-source-agreements 2>&1
+            $wingetExit = $LASTEXITCODE
+            Write-Host "winget exit: $wingetExit"
+            $wingetOutput | Select-Object -Last 15 | ForEach-Object { Write-Host $_ }
+            Update-PathFromRegistry
+            $makensis = Find-Makensis
+          }
+
+          if (-not $makensis) {
+            Write-Host 'choco и winget не помогли — ищу makensis на диске.'
+            $makensis = (Get-ChildItem 'C:\Program Files*' -Filter makensis.exe -Recurse -ErrorAction SilentlyContinue |
+                Select-Object -First 1).FullName
+          }
+
+          if (-not $makensis) {
+            $tail = (($chocoOutput | Select-Object -Last 10) -join ' | ')
+            Write-Host "::error file=installer/CustomTweakByDoxaiz.nsi,line=1::NSIS не установился (choco exit $chocoExit, winget exit $wingetExit): $tail"
+            throw "Не нашёл makensis ни в Program Files, ни в PATH, ни на диске"
+          }
           Write-Host "makensis: $makensis"
 
           $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
