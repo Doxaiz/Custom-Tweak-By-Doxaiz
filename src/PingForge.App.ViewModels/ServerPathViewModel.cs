@@ -191,7 +191,7 @@ public sealed class ServerPathViewModel : ObservableObject
     private const string IdleRu =
         "Путь ещё не строился: нажмите «Показать путь» — трасса пойдёт только до адреса игрового сервера.";
 
-    private const string ExplanationRu =
+    private const string ExplanationTextRu =
         "Трасса до адреса игрового сервера: до 30 хопов, по 3 пробы на хоп, не дольше 60 секунд. " +
         "Ничего не меняет — только эхо-запросы с TTL. Анонимный хоп показан строкой «не отвечает», " +
         "а неизмеренное время — прочерком, а не нулём.";
@@ -205,7 +205,7 @@ public sealed class ServerPathViewModel : ObservableObject
     private string _statusRu = IdleRu;
     private string _summaryRu = string.Empty;
     private string _growthNoteRu = string.Empty;
-    private string _explanationRu = ExplanationRu;
+    private string _explanationRu = ExplanationTextRu;
     private bool _isRunning;
     private bool _hasResult;
     private int _sentPackets;
