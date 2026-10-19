@@ -178,7 +178,9 @@ public partial class App : Application
             AnalysisWiring.BuildInputLatency(analysisPlatform, Catalog),
             Tweaks.ShowOnlyCodes));
 
-        Journal = new JournalViewModel(Engine, settings.JournalRowsShown);
+        // Задача J: «Журнал» получает вторую вкладку «Сессии»; очистка истории спрашивает
+        // подтверждение тем же окном, что и остальные необратимые действия.
+        Journal = new JournalViewModel(Engine, settings.JournalRowsShown, dialogs);
 
         // Блок «Проверка настроек» (задача F): разбор конфликтов и советы по твикам, только чтение.
         // Кнопка «Показать в твиках» фильтрует список и переключает раздел — тот же путь, что клик по меню.

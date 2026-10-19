@@ -63,6 +63,7 @@ internal static class SelfCheck
         CheckUpdateChecker(app, problems);
         CheckNetworkSelfCheck(app, problems);
         CheckServerPath(app, problems);
+        CheckSessionHistory(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -75,7 +76,8 @@ internal static class SelfCheck
             || problem.Contains("потеряла данные", StringComparison.Ordinal)
             || problem.Contains("нет надписей", StringComparison.Ordinal)
             || problem.Contains("нет карточки ответа", StringComparison.Ordinal)
-            || problem.Contains("не переносятся", StringComparison.Ordinal)))
+            || problem.Contains("не переносятся", StringComparison.Ordinal)
+            || problem.Contains("история сессий", StringComparison.Ordinal)))
         {
             windowCode = WindowFailed;
         }
@@ -820,6 +822,136 @@ internal static class SelfCheck
         {
             problems.Add($"путь до сервера (задача H): проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ПУТЬ ДО СЕРВЕРА: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// История сессий (задача J): вкладка «Сессии» в «Журнале» — «до → после», сравнение двух
+    /// сессий и график среднего RTT по дням. Проверка идёт без службы: на старте программа не
+    /// читает историю и ничего не меняет, поэтому записи обязаны быть пустыми до нажатия.
+    /// </summary>
+    private static void CheckSessionHistory(App app, List<string> problems)
+    {
+        try
+        {
+            SessionHistoryViewModel sessions = app.Journal.Sessions;
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<TabControl>(root, "JournalTabs") is not { } tabs)
+                    {
+                        problems.Add("история сессий: в разделе «Журнал» нет вкладок");
+                    }
+                    else
+                    {
+                        TabItem? page = tabs.Items.OfType<TabItem>().FirstOrDefault(item =>
+                            string.Equals(item.Header as string, "Сессии", StringComparison.Ordinal));
+
+                        if (page is null)
+                        {
+                            problems.Add("история сессий: в разделе «Журнал» нет вкладки «Сессии»");
+                        }
+                        else
+                        {
+                            // Вкладка создаёт содержимое только когда её показали: без этого проверять
+                            // кнопки бессмысленно, а ошибки разметки внутри вкладки остались бы незамеченными.
+                            int previous = tabs.SelectedIndex;
+                            tabs.SelectedItem = page;
+                            root.UpdateLayout();
+
+                            bool hasRefresh = FindNamed<FrameworkElement>(root, "SessionsRefreshButton") is not null;
+                            bool hasCompare = FindNamed<FrameworkElement>(root, "CompareSessionsButton") is not null;
+                            bool hasClear = FindNamed<FrameworkElement>(root, "SessionsClearButton") is not null;
+
+                            if (previous >= 0 && previous < tabs.Items.Count)
+                            {
+                                tabs.SelectedIndex = previous;
+                            }
+
+                            root.UpdateLayout();
+
+                            if (!hasRefresh || !hasCompare || !hasClear)
+                            {
+                                problems.Add("история сессий: на вкладке «Сессии» нет кнопок обновления, сравнения или очистки");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (sessions.Rows.Count != 0 || sessions.IsLoading)
+            {
+                problems.Add("история сессий: записи появились до нажатия «Обновить сессии» — на старте программа ничего не читает");
+                StartupLog.Note("ИСТОРИЯ СЕССИЙ: НЕ работает — записи загрузились сами");
+                return;
+            }
+
+            // Честность чисел: у незавершённой сессии нет «после», и она так и называется.
+            var unfinished = new SessionHistoryRow(
+                SessionId: "self-check-unfinished",
+                StartedUtc: DateTime.UtcNow,
+                StoppedUtc: null,
+                GameTitleRu: "Проверка",
+                Endpoint: "203.0.113.9",
+                HasGame: true,
+                IsMeasurable: true,
+                BaselineRttMs: 100,
+                FinalRttMs: null,
+                ImprovementMs: null,
+                Actions: [],
+                RollbackStateRu: "Неизвестно (сессия без итога)",
+                IsCompleted: false,
+                StatusRu: string.Empty,
+                Outcome: "NotFinished");
+
+            var other = new SessionHistoryRow(
+                SessionId: "self-check-other-server",
+                StartedUtc: DateTime.UtcNow.AddDays(-1),
+                StoppedUtc: DateTime.UtcNow.AddDays(-1).AddMinutes(20),
+                GameTitleRu: "Проверка",
+                Endpoint: "198.51.100.7",
+                HasGame: true,
+                IsMeasurable: true,
+                BaselineRttMs: 90,
+                FinalRttMs: 80,
+                ImprovementMs: 10,
+                Actions: [],
+                RollbackStateRu: "Изменения сняты полностью",
+                IsCompleted: true,
+                StatusRu: string.Empty,
+                Outcome: "Completed");
+
+            bool honestText = unfinished.ResultRu.Contains("сессия не завершена", StringComparison.Ordinal);
+            bool noInventedNumber = unfinished.FinalRttMs is null && unfinished.ImprovementMs is null;
+
+            SessionComparisonResult comparison = SessionComparison.Compare(unfinished, other);
+            bool refusesDifferentServers = !comparison.Comparable
+                && comparison.Lines.Any(line => line.Contains("разным серверам", StringComparison.Ordinal));
+
+            IReadOnlyList<DailyRttPoint> daily = DailyRttHistory.Build([unfinished, other], "203.0.113.9");
+            bool singleServerDaily = daily.Count == 1 && Math.Abs(daily[0].AverageRttMs - 100) < 0.01;
+
+            if (!honestText || !noInventedNumber || !refusesDifferentServers || !singleServerDaily)
+            {
+                problems.Add("история сессий: разбор «до/после» или график по дням работает неверно " +
+                    $"(незавершённая: {(honestText ? "да" : "нет")}, без выдуманных чисел: {(noInventedNumber ? "да" : "нет")}, " +
+                    $"разные серверы: {(refusesDifferentServers ? "отказ" : "сравнил")}, график: {(singleServerDaily ? "да" : "нет")})");
+                StartupLog.Note("ИСТОРИЯ СЕССИЙ: НЕ работает — числа или сравнение сессий расходятся с правилом честности");
+                return;
+            }
+
+            StartupLog.Note("ИСТОРИЯ СЕССИЙ: вкладка «Сессии» на месте, до нажатия записей нет, " +
+                "незавершённая сессия называется незавершённой, разные серверы не сравниваются, график — по одному серверу");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"история сессий (задача J): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ИСТОРИЯ СЕССИЙ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 
