@@ -116,7 +116,7 @@ public sealed class SessionHistoryTests
                         logged_utc, event_kind, tweak_code, tweak_title, resource_locator,
                         previous_value_text, applied_value_text, verified_actual_text,
                         succeeded, reboot_needed, explanation)
-                    VALUES ($ts, 'TWEAK_APPLY', 'TCP_NO_DELAY', 'Отключение алгоритма Нейгла', 'Tcpip',
+                    VALUES ($ts, 'APPLY', 'TCP_NO_DELAY', 'Отключение алгоритма Нейгла', 'Tcpip',
                         '0', '1', '1', 1, 0, 'VerifiedEffective');
                     """;
                 command.Parameters.AddWithValue("$ts", DateTime.UtcNow.ToString("O"));
