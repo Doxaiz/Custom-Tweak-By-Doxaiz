@@ -568,7 +568,7 @@ $sections = @(
 $sectionExpectations = @{
     'Твики'       = @(@('Задержка ввода', 'карточка задержки ввода'), @('Проверить задержку ввода', 'кнопка проверки задержки ввода'))
     'Настройки'   = @(@('Проверка настроек', 'блок проверки настроек'), @('Проверить настройки', 'кнопка проверки настроек'))
-    'Оптимизация' = @(@('График сети', 'карточка графика сети'), @('Данных пока нет', 'честная надпись пустого графика'))
+    'Оптимизация' = @(@('График сети', 'карточка графика сети'), @('Данных пока нет', 'честная надпись пустого графика'), @('Проверить сеть', 'кнопка проверки сети'), @('ещё не запускалась', 'честный статус проверки сети до нажатия'))
     'О программе' = @(@('Проверить обновления', 'кнопка проверки обновлений'), @('Обновления ещё не проверяли', 'честный статус до нажатия'), @('Текущая версия', 'строка текущей версии'))
 }
 
@@ -672,7 +672,96 @@ $updateOutcome = if ($updateText -match 'Доступна версия') { 'на
     else { 'проверить не удалось — GitHub не отдал релизы анонимно, и программа сказала об этом честно' }
 Say "исход проверки обновлений: $updateOutcome"
 
-# ── 7. Итог ─────────────────────────────────────────────────────────────────────────────────────
+# ── 7. Проверка сети (задача G) ────────────────────────────────────────────────────────────────
+Say ''
+Say '── Шаг 7: нажимаю «Проверить сеть» в разделе «Оптимизация»'
+$handle = (Get-Process -Id $process.Id).MainWindowHandle
+$mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+$optimizeNav = Find-ByName $mainWindow 'Оптимизация' 8000
+if ($null -eq $optimizeNav) { throw 'В меню нет раздела «Оптимизация»' }
+Invoke-Element $optimizeNav 'Оптимизация' | Out-Null
+Start-Sleep -Milliseconds 900
+
+$checkNetwork = Find-ByName $mainWindow 'Проверить сеть' 8000
+if ($null -eq $checkNetwork) { throw 'Кнопки «Проверить сеть» нет рядом с главной кнопкой' }
+Invoke-Element $checkNetwork 'Проверить сеть' | Out-Null
+
+# Прогон настоящий: DF-пробы, бенчмарк DNS, первые хопы — на живой сети раннера этому нужно время.
+# Ждём строку итога и предупреждение bufferbloat: оно обязано появиться ДО любой нагрузки канала.
+$netText = ''
+$netDeadline = (Get-Date).AddSeconds(150)
+while ((Get-Date) -lt $netDeadline)
+{
+    Start-Sleep -Milliseconds 900
+    if ($process.HasExited) { break }
+
+    $rootNow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $netText = Get-TextOfMainScreen $rootNow
+
+    if ($netText -match 'Итог из 7 пунктов' -and $netText -match 'на 10 секунд займём канал') { break }
+}
+
+if ($netText -notmatch 'Итог из 7 пунктов')
+{
+    $shown = ($netText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 20) -join ' / '
+    throw "Проверка сети не дошла до итога за 150 секунд. Что было на экране: $shown"
+}
+if ($netText -notmatch 'на 10 секунд займём канал')
+{
+    throw 'Предупреждения о нагрузке канала нет — bufferbloat обязан предупреждать до запуска'
+}
+if ($netText -notmatch 'Не применимо')
+{
+    throw 'Пункт Wi-Fi не сказал «не применимо» на проводном виртуальном адаптере раннера'
+}
+Say 'проверка отработала: итог из 7 пунктов на экране, Wi-Fi честно «не применимо», bufferbloat ждёт согласия'
+foreach ($line in ($netText -split "`r?`n" | Where-Object { $_.Trim() -match 'Итог из|приоритет|Проверено и в порядке|Без вывода|не предлагаем|можно применить' } | Select-Object -First 12))
+{
+    Say "    $($line.Trim())"
+}
+
+# Даём согласие. Кнопок «Понятно» может быть две: закрывашка карточки ответа и само согласие —
+# нажимаем все, что находятся: первая убирает ответ, последняя запускает нагрузку.
+Say 'даю согласие на замер bufferbloat (кнопка «Понятно»)'
+$tries = 0
+while ($tries -lt 5)
+{
+    $rootNow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $okButtons = Find-AllByName $rootNow 'Понятно'
+    if ($okButtons.Count -eq 0) { break }
+    Invoke-Element $okButtons[0] 'Понятно' | Out-Null
+    Start-Sleep -Milliseconds 900
+    $tries++
+}
+
+# Финал bufferbloat виден по итогу «не проверено — 0»: согласие принято, замер завершён.
+# Дальше — либо измеренные числа, либо честное «не удалось»: оба исхода настоящие.
+$bloatDone = $false
+$bloatDeadline = (Get-Date).AddSeconds(90)
+while ((Get-Date) -lt $bloatDeadline)
+{
+    Start-Sleep -Milliseconds 900
+    if ($process.HasExited) { break }
+
+    $rootNow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $netText = Get-TextOfMainScreen $rootNow
+
+    if ($netText -match 'не проверено — 0') { $bloatDone = $true; break }
+}
+
+Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) 'сеть-проверена'
+
+if (-not $bloatDone)
+{
+    $shown = ($netText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 20) -join ' / '
+    throw "Bufferbloat после согласия не завершился за 90 секунд. Что было на экране: $shown"
+}
+
+$bloatOutcome = if ($netText -match 'под нагрузкой \S+ мс') { 'замер bufferbloat дал измеренные числа' }
+    else { 'bufferbloat честно не измерился (точка замера или ICMP недоступны на раннере)' }
+Say "исход bufferbloat: $bloatOutcome"
+
+# ── 8. Итог ─────────────────────────────────────────────────────────────────────────────────────
 Say ''
 if ($process.HasExited)
 {

@@ -108,6 +108,37 @@ public sealed class TweaksViewModel : ObservableObject
         StatusRu = "Фильтр снят: показан весь каталог твиков.";
     }
 
+    /// <summary>
+    /// Отметить ровно перечисленные коды — так работает «Применить рекомендованное» из проверки
+    /// сети (задача G). Ровно, а не «вдобавок»: чужие отметки человека не должны уехать в применение
+    /// незаметно. Само применение не запускается — его запускает обычная кнопка со всеми
+    /// подтверждениями; здесь только расставляются ползунки. Возвращает, сколько кодов нашлось.
+    /// </summary>
+    public int SelectCodesForApply(IReadOnlyList<string> codes)
+    {
+        ArgumentNullException.ThrowIfNull(codes);
+
+        var wanted = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+        int matched = 0;
+
+        foreach (TweakRowViewModel row in _rows)
+        {
+            bool shouldBeOn = wanted.Contains(row.Code);
+            if (shouldBeOn)
+            {
+                matched++;
+            }
+
+            row.IsOn = shouldBeOn;
+        }
+
+        StatusRu = matched == 0
+            ? "Проверка сети передала коды, которых нет в каталоге, — отметки сняты, применять нечего."
+            : $"Отмечено по проверке сети: {matched} твик(ов). Дальше — обычная кнопка применения с подтверждением.";
+
+        return matched;
+    }
+
     public IReadOnlyList<PresetViewModel> Presets { get; }
 
     public AsyncRelayCommand ApplyPresetCommand { get; }

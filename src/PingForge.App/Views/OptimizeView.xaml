@@ -124,6 +124,14 @@
                   HorizontalAlignment="Stretch" />
           <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" TextWrapping="Wrap"
                      Text="Одна кнопка: замер «до», поиск игры, выбор пути. Повторное нажатие возвращает всё как было." />
+
+          <!-- Проверка сети (задача G): рядом с главной кнопкой, но второстепенная. Только чтение
+               и замеры — применений здесь нет; рекомендации уходят обычным путём «Твиков». -->
+          <Button x:Name="CheckNetworkButton" Style="{StaticResource GhostButton}" Margin="0,10,0,0"
+                  Content="Проверить сеть" HorizontalAlignment="Stretch"
+                  Command="{Binding NetworkCheck.CheckCommand}" />
+          <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
+                     Text="Семь проверок одним нажатием: что не так с сетью и что с этим делать. Ничего не меняет." />
         </StackPanel>
 
         <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -131,6 +139,53 @@
           <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding StatusRu}" />
         </StackPanel>
       </Grid>
+    </Border>
+
+    <!-- Результаты «Проверить сеть» (задача G): семь пунктов со статусами и измеренными числами.
+         Bufferbloat в списке ждёт согласия кнопкой «Понятно»: канал нагружается только после неё. -->
+    <Border Style="{StaticResource Card}" x:Name="NetworkCheckCard">
+      <StackPanel DataContext="{Binding NetworkCheck}">
+        <TextBlock Text="Проверка сети" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
+                   Text="MTU, DNS, двойной NAT, bufferbloat, шум Wi-Fi, фоновые загрузки, права и служба. Проверка только читает и измеряет: что нашлось, насколько важно и что делать — ниже." />
+        <TextBlock x:Name="NetworkCheckStatusText" Style="{StaticResource Caption}" Margin="0,8,0,0" Text="{Binding StatusRu}" />
+
+        <ItemsControl ItemsSource="{Binding Items}" Margin="0,4,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="{x:Type vm:NetworkCheckItemViewModel}">
+              <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,7,0,7">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding TitleRu}" FontWeight="SemiBold" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="10,0,0,0" Text="{Binding StatusRu}" />
+                  </StackPanel>
+                  <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" Text="{Binding DetailRu}" />
+                  <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,0" Text="{Binding ActionRu}" />
+                  <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,0" Text="{Binding LinkRu}" />
+                  <Button Style="{StaticResource GhostButton}" Content="Понятно" HorizontalAlignment="Left" Margin="0,8,0,0"
+                          Command="{Binding ConsentCommand}"
+                          Visibility="{Binding NeedsConsent, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0" FontWeight="SemiBold" Text="{Binding SummaryRu}" />
+        <ItemsControl ItemsSource="{Binding FindingsRu}" Margin="0,4,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="{Binding}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" Text="{Binding RecommendationLineRu}" />
+        <Button x:Name="ApplyRecommendedButton" Style="{StaticResource PrimaryButton}" Padding="16,9"
+                Content="Применить рекомендованное" HorizontalAlignment="Left" Margin="0,10,0,0"
+                Command="{Binding ApplyRecommendedCommand}"
+                Visibility="{Binding HasRecommendations, Converter={StaticResource BoolToVisibility}}" />
+      </StackPanel>
     </Border>
 
     <!-- График сети (задача F): вместо статичной сводки чисел. Данные — только из замеров

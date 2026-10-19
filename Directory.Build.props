@@ -11,7 +11,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <Company>PingForge</Company>
     <Product>PingForge</Product>
-    <Version>0.5.1</Version>
+    <Version>0.5.2</Version>
     <NeutralLanguage>ru-RU</NeutralLanguage>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
