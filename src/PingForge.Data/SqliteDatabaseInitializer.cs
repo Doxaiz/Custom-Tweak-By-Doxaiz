@@ -10,7 +10,21 @@ namespace PingForge.Data;
 public sealed class SqliteDatabaseInitializer
 {
     // v4: в rollback_status добавлен статус RequiresManualVerification (твик исчез из каталога).
-    public const int SchemaVersion = 4;
+    // v5: сессии оптимизации получили итог, действия, пометку откатa и честный статус незавершённой.
+    public const int SchemaVersion = 5;
+
+    /// <summary>
+    /// Колонки, которых не было в схеме v4. База человека обновляется миграцией, а не удалением:
+    /// история сессий и журнал изменений должны пережить обновление программы.
+    /// </summary>
+    private static readonly (string Name, string Ddl)[] SessionColumnsV5 =
+    [
+        ("game_title_ru", "ALTER TABLE route_optimization_sessions ADD COLUMN game_title_ru TEXT NOT NULL DEFAULT ''"),
+        ("applied_actions_json", "ALTER TABLE route_optimization_sessions ADD COLUMN applied_actions_json TEXT NOT NULL DEFAULT '[]'"),
+        ("rollback_state", "ALTER TABLE route_optimization_sessions ADD COLUMN rollback_state TEXT NOT NULL DEFAULT 'Unknown'"),
+        ("outcome", "ALTER TABLE route_optimization_sessions ADD COLUMN outcome TEXT NOT NULL DEFAULT 'NotFinished'"),
+        ("is_completed", "ALTER TABLE route_optimization_sessions ADD COLUMN is_completed INTEGER NOT NULL DEFAULT 0"),
+    ];
 
     private const string SchemaResourceName = "PingForge.Data.Schema.pingforge_schema.sql";
 
@@ -93,6 +107,8 @@ public sealed class SqliteDatabaseInitializer
             await schemaCommand.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
 
+        await ApplySessionMigrationsAsync(connection, ct).ConfigureAwait(false);
+
         await using var checkCommand = connection.CreateCommand();
         checkCommand.CommandText = "SELECT COUNT(1) FROM schema_version_history WHERE version_number = $v;";
         checkCommand.Parameters.AddWithValue("$v", SchemaVersion);
@@ -106,11 +122,43 @@ public sealed class SqliteDatabaseInitializer
         await using var insertCommand = connection.CreateCommand();
         insertCommand.CommandText = """
             INSERT INTO schema_version_history (version_number, installed_utc, notes)
-            VALUES ($v, $ts, 'Схема v3: отдельные колонки GUID адаптера, nullable-метрики замеров, статус отката и точки восстановления');
+            VALUES ($v, $ts, 'Схема v5: сессии оптимизации — итог, действия, пометка откатa и честный статус незавершённой сессии');
             """;
         insertCommand.Parameters.AddWithValue("$v", SchemaVersion);
         insertCommand.Parameters.AddWithValue("$ts", DateTime.UtcNow.ToString("O"));
         await insertCommand.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Миграция v5 поверх существующей базы. Проверяются настоящие колонки таблицы
+    /// (<c>pragma_table_info</c>), а не только номер версии: база могла быть создана частично
+    /// обновлённой сборкой, и тогда «версия записана» ещё не значит «колонки есть».
+    /// </summary>
+    private static async Task ApplySessionMigrationsAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        await using (SqliteCommand info = connection.CreateCommand())
+        {
+            info.CommandText = "SELECT name FROM pragma_table_info('route_optimization_sessions');";
+            await using SqliteDataReader reader = await info.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                existing.Add(reader.GetString(0));
+            }
+        }
+
+        foreach ((string name, string ddl) in SessionColumnsV5)
+        {
+            if (existing.Contains(name))
+            {
+                continue;
+            }
+
+            await using SqliteCommand alter = connection.CreateCommand();
+            alter.CommandText = ddl;
+            await alter.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
     }
 
     public IReadOnlyList<int> GetSchemaVersions()
