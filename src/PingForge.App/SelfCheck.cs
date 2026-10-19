@@ -58,6 +58,7 @@ internal static class SelfCheck
         CheckCustomGames(app, problems);
         CheckRoutingServers(app, problems);
         CheckAnalysisIntegration(app, problems);
+        CheckUpdateChecker(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -544,6 +545,97 @@ internal static class SelfCheck
         {
             problems.Add($"анализ (задача F): проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"АНАЛИЗ (ЗАДАЧА F): НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Задача I: проверка обновлений в разделе «О программе». Что обязано быть видно человеку
+    /// и что самопроверка может доказать без сети: карточка и кнопка на месте, до нажатия статус
+    /// честно говорит «ещё не проверяли» (значит, в фоне запросов не было), кнопка страницы релиза
+    /// до проверки не предлагается. Сравнение версий и разбор ответа GitHub прогоняются на месте:
+    /// «v0.4.1» старше «0.5.0» быть не должно, а мусорный тег обязан отклоняться.
+    ///
+    /// Настоящий запрос к GitHub самопроверка не делает: проверка обновлений — действие человека
+    /// по кнопке, а не самодеятельность программы. Нажатие кнопки на живой Windows проверяет
+    /// сценарий tools/ui-walkthrough.ps1.
+    /// </summary>
+    private static void CheckUpdateChecker(App app, List<string> problems)
+    {
+        try
+        {
+            UpdateCheckViewModel updates = app.MainScreen.Updates;
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "UpdateBlock") is null
+                        || FindNamed<FrameworkElement>(root, "CheckUpdatesButton") is null
+                        || !HasText(root, "Проверить обновления"))
+                    {
+                        problems.Add("обновления: нет карточки «Обновления» с кнопкой «Проверить обновления» в разделе «О программе»");
+                    }
+
+                    if (!HasText(root, "Обновления ещё не проверяли"))
+                    {
+                        problems.Add("обновления: до нажатия кнопки статус не говорит честное «ещё не проверяли»");
+                    }
+
+                    if (!HasText(root, updates.CurrentVersionLineRu))
+                    {
+                        problems.Add("обновления: в карточке не видна текущая версия — сравнивать человеку не с чем");
+                    }
+
+                    if (FindNamed<FrameworkElement>(root, "OpenReleaseButton") is { Visibility: not Visibility.Collapsed })
+                    {
+                        problems.Add("обновления: кнопка «Открыть страницу релиза» видна до проверки — открывать пока нечего");
+                    }
+                }
+            }
+
+            // Главное правило задачи: до нажатия кнопки программа никуда не ходит. Модель только что
+            // построена вместе с окном и обязана стоять в исходном состоянии.
+            if (updates.State != UpdateCheckState.NotChecked || updates.HasReleasePage || updates.ReleasePageUrl is not null)
+            {
+                problems.Add("обновления: проверка началась без нажатия кнопки — фоновых запросов быть не должно");
+                StartupLog.Note("ОБНОВЛЕНИЯ: НЕ работает — проверка стартовала сама, без кнопки");
+            }
+
+            // Сравнение версий и разбор ответа — чистая логика, ей сеть не нужна.
+            bool versionsOk =
+                ReleaseTagVersion.TryParse("v0.4.1", out Version older)
+                && ReleaseTagVersion.TryParse("0.5.0", out Version newer)
+                && older.CompareTo(newer) < 0
+                && newer.CompareTo(older) > 0
+                && !ReleaseTagVersion.TryParse("nightly-build", out _)
+                && !ReleaseTagVersion.TryParse(null, out _);
+
+            var info = GitHubReleaseInfo.Parse(
+                "{\"tag_name\":\"v9.9.9\",\"html_url\":\"https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/tag/v9.9.9\"," +
+                "\"assets\":[{\"name\":\"SHA256SUMS.txt\",\"browser_download_url\":\"https://github.com/Doxaiz/x\"}]}");
+            var sums = Sha256SumsFile.Parse(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  CustomTweakByDoxaiz.exe\r\nмусорная строка");
+            bool parseOk = info.TagName == "v9.9.9" && info.FindChecksums() is not null
+                && sums.Count == 1 && sums[0].FileName == "CustomTweakByDoxaiz.exe";
+
+            if (!versionsOk || !parseOk)
+            {
+                problems.Add("обновления: сравнение версий или разбор ответа GitHub работает неверно");
+                StartupLog.Note($"ОБНОВЛЕНИЯ: НЕ работает — версии: {(versionsOk ? "да" : "нет")}, разбор: {(parseOk ? "да" : "нет")}");
+                return;
+            }
+
+            StartupLog.Note("ОБНОВЛЕНИЯ: кнопка в «О программе» на месте, до нажатия запросов нет " +
+                "(статус «ещё не проверяли»), кнопка страницы релиза до проверки скрыта, " +
+                "сравнение версий и разбор ответа GitHub работают");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"обновления (задача I): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ОБНОВЛЕНИЯ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 
