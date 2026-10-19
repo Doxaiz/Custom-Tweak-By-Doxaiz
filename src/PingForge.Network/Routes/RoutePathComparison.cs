@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using PingForge.Core.Abstractions;
@@ -440,6 +440,17 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
     /// <summary>Забыть решение: новая оптимизация обязана мерить заново, а не жить вчерашней победой.</summary>
     public void Invalidate() => _cachedFlowKey = null;
 
+    /// <summary>
+    /// Ключ решения. В него входят не только процесс и его PID, но и адрес и порт сервера:
+    /// матчмейкер выдаёт новый сервер, не перезапуская игру, и «тот же процесс» — это уже другой матч.
+    /// Без адреса и порта второй матч получил бы вердикт первого и не мерился бы заново.
+    /// </summary>
+    public static string DecisionKey(GameFlowInfo flow)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        return $"{flow.Key}|{flow.RemoteEndpoint}:{flow.RemotePort}";
+    }
+
     public async Task<IReadOnlyList<RealtimePathOption>> GetOptionsAsync(GameFlowInfo flow, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(flow);
@@ -484,8 +495,9 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
             return [];
         }
 
-        // Тот же поток и свежее решение — не мерим заново ради каждого контроля качества.
-        if (_cachedFlowKey == flow.Key && DateTime.UtcNow - _cachedUtc < DecisionTtl)
+        // Тот же поток, тот же сервер и свежее решение — не мерим заново ради каждого контроля
+        // качества. Сменился сервер матча — ключ другой, и путь меряется заново.
+        if (_cachedFlowKey == DecisionKey(flow) && DateTime.UtcNow - _cachedUtc < DecisionTtl)
         {
             return [];
         }
@@ -494,7 +506,7 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
             .CompareAsync(flow.RemoteEndpoint, flow.RemotePort, nodes, ct)
             .ConfigureAwait(false);
 
-        _cachedFlowKey = flow.Key;
+        _cachedFlowKey = DecisionKey(flow);
         _cachedUtc = DateTime.UtcNow;
 
         LastDecisionRu = report.VerdictRu;

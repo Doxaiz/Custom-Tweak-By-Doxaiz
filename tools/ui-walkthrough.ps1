@@ -865,7 +865,39 @@ if ($sessionsText -match 'было \d+([.,]\d+)? мс → стало')
 }
 Say 'история сессий: вкладка на месте, пустая история честно названа пустой, выдуманных чисел нет'
 
-# ── 10. Итог ────────────────────────────────────────────────────────────────────────────────────
+# ── 10. Регионы игр и честная карточка DNS (задача D) ───────────────────────────────────────────
+# Проверяем то, что видит человек: у карточек «Игры» есть регионы и порты из справочника, а в
+# «Твиках» — карточка «DNS — это про вход, а не про пинг» со списком резолверов. Никаких чисел
+# «пинга до региона» здесь быть не может: игра не публикует адреса дата-центров.
+Say ''
+Say '── Шаг 10: смотрю регионы игр и карточку DNS'
+foreach ($check in @(
+    @{ Section = 'Игры';  Shot = 'шаг10-регионы-игр';  Name = 'регионы игр';
+       Texts = @('Где серверы этой игры', 'Где серверы:', 'Порты') },
+    @{ Section = 'Твики'; Shot = 'шаг10-карточка-dns'; Name = 'карточка DNS';
+       Texts = @('DNS — это про вход, а не про пинг', '1.1.1.1', 'не снижает пинг в матче') }))
+{
+    $handle = (Get-Process -Id $process.Id).MainWindowHandle
+    $mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+    $nav = Find-ByName $mainWindow $check.Section 8000
+    if ($null -eq $nav) { throw "В меню нет раздела «$($check.Section)» — проверять $($check.Name) не на чем" }
+    Invoke-Element $nav $check.Section | Out-Null
+    Start-Sleep -Milliseconds 900
+
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    foreach ($text in $check.Texts)
+    {
+        if (-not (Test-TextInWindow $root $text))
+        {
+            throw "В разделе «$($check.Section)» не видно $($check.Name): искал текст «$text»"
+        }
+    }
+
+    Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) $check.Shot
+    Say "раздел «$($check.Section)»: $($check.Name) — на месте, тексты «$($check.Texts -join '», «')» найдены"
+}
+
+# ── 11. Итог ────────────────────────────────────────────────────────────────────────────────────
 Say ''
 if ($process.HasExited)
 {

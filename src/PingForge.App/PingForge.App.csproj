@@ -36,6 +36,8 @@
     <ProjectReference Include="..\PingForge.Analysis\PingForge.Analysis.csproj" />
     <ProjectReference Include="..\PingForge.Tweaks.Windows\PingForge.Tweaks.Windows.csproj" />
     <ProjectReference Include="..\PingForge.Probing\PingForge.Probing.csproj" />
+    <!-- Справочник игр и DNS (задача D): самопроверка окна сверяет карточки с каталогом. -->
+    <ProjectReference Include="..\PingForge.Routing\PingForge.Routing.csproj" />
     <ProjectReference Include="..\PingForge.Network.Windows\PingForge.Network.Windows.csproj" />
   </ItemGroup>
 
