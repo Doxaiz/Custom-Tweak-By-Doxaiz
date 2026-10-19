@@ -35,12 +35,18 @@ public sealed class MainViewModel : ObservableObject
     /// и ждало ответа службы: на снимке живой Windows выходило «Прав администратора нет» — при том, что
     /// журнал той же программы писал «есть». Права окна знает сама Windows; ответ службы их уточняет.
     /// </remarks>
-    public MainViewModel(EngineClient engine, IUserDialogs dialogs, bool runsAsAdministrator = false, bool pollStatusWhileOptimizing = false)
+    public MainViewModel(
+        EngineClient engine,
+        IUserDialogs dialogs,
+        bool runsAsAdministrator = false,
+        bool pollStatusWhileOptimizing = false,
+        NetworkCheckViewModel? networkCheck = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
         _hasRights = runsAsAdministrator;
         _pollStatusWhileOptimizing = pollStatusWhileOptimizing;
+        NetworkCheck = networkCheck ?? NetworkCheckViewModel.Unavailable();
 
         OptimizeCommand = new AsyncRelayCommand(ToggleOptimizationAsync, () => true);
         RefreshStatusCommand = new AsyncRelayCommand(RefreshStatusAsync, () => true);
@@ -54,6 +60,13 @@ public sealed class MainViewModel : ObservableObject
     /// все точки приходят из уже идущих замеров оптимизации.
     /// </summary>
     public NetworkChartViewModel Chart { get; } = new();
+
+    /// <summary>
+    /// «Проверить сеть» (задача G): семь проверок чтения и замеров рядом с главной кнопкой.
+    /// Собирается приложением с настоящими измерениями; по умолчанию — честное «не подключена».
+    /// Ничего не меняет: рекомендации применяются обычным путём раздела «Твики».
+    /// </summary>
+    public NetworkCheckViewModel NetworkCheck { get; }
 
     /// <summary>
     /// Проверка обновлений (задача I) для раздела «О программе» — той же страницы, что показывает

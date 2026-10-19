@@ -4,6 +4,8 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using PingForge.App.ViewModels;
 using PingForge.App.Views;
+using PingForge.Core.Models;
+using PingForge.Probing;
 
 namespace PingForge.App;
 
@@ -59,6 +61,7 @@ internal static class SelfCheck
         CheckRoutingServers(app, problems);
         CheckAnalysisIntegration(app, problems);
         CheckUpdateChecker(app, problems);
+        CheckNetworkSelfCheck(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -636,6 +639,97 @@ internal static class SelfCheck
         {
             problems.Add($"обновления (задача I): проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ОБНОВЛЕНИЯ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Задача G: «Проверить сеть» рядом с главной кнопкой. Что доказывается здесь без живой сети:
+    /// карточка и кнопка в окне на месте, до нажатия статус — «ещё не запускалась» (значит, ни
+    /// одного замера при старте), кнопки «Применить рекомендованное» нет, пока рекомендовать нечего.
+    /// Оценщики пунктов прогоняются прямыми вызовами: двойной NAT по двум частным хопам обязан
+    /// находиться, провод — давать «не применимо», рост задержки под нагрузкой — считаться из
+    /// измеренных медиан, а не из воздуха.
+    ///
+    /// Сам прогон проверки по кнопке (включая согласие на bufferbloat) на живой Windows делает
+    /// сценарий tools/ui-walkthrough.ps1: самопроверка кнопку не нажимает — она стартовый дым, а не сеть.
+    /// </summary>
+    private static void CheckNetworkSelfCheck(App app, List<string> problems)
+    {
+        try
+        {
+            NetworkCheckViewModel check = app.MainScreen.NetworkCheck;
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "NetworkCheckCard") is null
+                        || FindNamed<FrameworkElement>(root, "CheckNetworkButton") is null
+                        || !HasText(root, "Проверить сеть"))
+                    {
+                        problems.Add("проверка сети: нет кнопки «Проверить сеть» или карточки результатов в разделе «Оптимизация»");
+                    }
+
+                    if (!HasText(root, "ещё не запускалась"))
+                    {
+                        problems.Add("проверка сети: до нажатия статус не говорит честное «ещё не запускалась»");
+                    }
+
+                    if (FindNamed<FrameworkElement>(root, "ApplyRecommendedButton") is { Visibility: not Visibility.Collapsed })
+                    {
+                        problems.Add("проверка сети: кнопка «Применить рекомендованное» видна без единой рекомендации");
+                    }
+                }
+            }
+
+            if (check.HasResult || check.Items.Count != 0 || check.HasRecommendations)
+            {
+                problems.Add("проверка сети: замеры или рекомендации появились без нажатия кнопки");
+                StartupLog.Note("ПРОВЕРКА СЕТИ: НЕ работает — результаты есть до запуска");
+            }
+
+            // Чистая логика пунктов: те же функции, что строят настоящий результат по кнопке.
+            bool natOk =
+                NetworkCheckEvaluators.EvaluateDoubleNat(
+                    ["192.168.1.50"], "192.168.1.1",
+                    [new RouteHopMetric(1, "192.168.1.1", 1, false), new RouteHopMetric(2, "10.0.0.1", 2, false)]).Status
+                    == NetworkCheckStatus.Attention
+                && NetworkCheckEvaluators.EvaluateDoubleNat(["85.140.1.2"], null, []).Status == NetworkCheckStatus.Ok
+                && NetworkCheckEvaluators.EvaluateDoubleNat(["192.168.1.50"], null, []).Status == NetworkCheckStatus.CannotCheck;
+
+            var wifiScan = WifiNetworksParser.Parse(
+                "SSID 1 : Home\n    BSSID 1 : aa:bb\n         Channel            : 6\nSSID 2 : Neigh\n    BSSID 1 : cc:dd\n         Channel            : 11\n");
+            bool wifiOk = wifiScan.NetworkCount == 2 && wifiScan.BssidsPerChannel.GetValueOrDefault(6) == 1
+                && NetworkCheckEvaluators.EvaluateWifi(false, null, null).Status == NetworkCheckStatus.NotApplicable;
+
+            var mtuOkResult = NetworkCheckEvaluators.EvaluateMtu(
+                new PathMtuDiscoveryResult(MtuDiscoveryOutcome.OptimalFound, 576, 1500, 1500, 1472, "подтверждено"),
+                1500, "якоря");
+            var bloatResult = NetworkCheckEvaluators.EvaluateBufferbloat(new BufferbloatResult(
+                BufferbloatOutcome.Measured, 20, 140, 50_000_000, 10, "пробы"));
+            bool evaluatorsOk = mtuOkResult.Status == NetworkCheckStatus.Ok
+                && bloatResult.Status == NetworkCheckStatus.Attention
+                && bloatResult.DetailRu.Contains("140", StringComparison.Ordinal)
+                && NetworkCheckEvaluators.EvaluateBackground(null, 0, null, null).Status == NetworkCheckStatus.CannotCheck;
+
+            if (!natOk || !wifiOk || !evaluatorsOk)
+            {
+                problems.Add("проверка сети: оценщики пунктов работают неверно (NAT, Wi-Fi или числа bufferbloat/MTU)");
+                StartupLog.Note($"ПРОВЕРКА СЕТИ: НЕ работает — NAT: {(natOk ? "да" : "нет")}, Wi-Fi: {(wifiOk ? "да" : "нет")}, оценщики: {(evaluatorsOk ? "да" : "нет")}");
+                return;
+            }
+
+            StartupLog.Note("ПРОВЕРКА СЕТИ: кнопка рядом с главной на месте, карточка результатов построена, " +
+                "до нажатия замеров нет (статус «ещё не запускалась»), кнопки применения без рекомендаций не видно, " +
+                "оценщики пунктов работают");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"проверка сети (задача G): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ПРОВЕРКА СЕТИ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 

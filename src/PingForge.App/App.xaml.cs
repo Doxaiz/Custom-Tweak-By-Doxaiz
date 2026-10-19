@@ -151,11 +151,22 @@ public partial class App : Application
         // pollStatusWhileOptimizing: пока оптимизация идёт, окно редко (раз в 3 с) спрашивает status —
         // команда только читает. Так график сети живёт без собственных зондов: точки приходят
         // из тех же замеров, что уже делает оптимизация.
-        MainScreen = new MainViewModel(Engine, dialogs, runsAsAdministrator: IsAdministrator(), pollStatusWhileOptimizing: true);
+        // «Проверить сеть» (задача G) собирается здесь же: ей нужны настоящий движок, адрес живой
+        // сессии и список кодов каталога — рекомендации сверяются с ним, а не верятся на слово.
+        var tweakRows = TweakRowFactory.BuildAll(Catalog);
+        MainScreen = new MainViewModel(
+            Engine,
+            dialogs,
+            runsAsAdministrator: IsAdministrator(),
+            pollStatusWhileOptimizing: true,
+            networkCheck: new NetworkCheckViewModel(
+                NetworkCheckWiring.Build(analysisPlatform, Engine, () => MainScreen?.Endpoint, IsAdministrator()),
+                ApplyRecommendedInTweaks,
+                tweakRows.Select(row => row.Code).ToList()));
         Tweaks = new TweaksViewModel(
             Engine,
             dialogs,
-            TweakRowFactory.BuildAll(Catalog),
+            tweakRows,
             TweakRowFactory.BuildPresets(Catalog));
 
         // Карточка «Задержка ввода» (задача F): советник из PingForge.Analysis, подключённый к окну.
@@ -390,6 +401,28 @@ public partial class App : Application
     {
         Tweaks.ShowOnlyCodes(codes);
         Shell?.ShowTweaksSection();
+    }
+
+    /// <summary>
+    /// Задача G: «Применить рекомендованное» из проверки сети. Никакого своего применения:
+    /// отмечаем ровно рекомендованные коды в разделе «Твики», переходим туда и запускаем обычную
+    /// кнопку применения — подтверждение, точка восстановления, снапшот и проверка живут там.
+    /// Если коды в каталоге не нашлись (не должны: модель сверяется с каталогом заранее),
+    /// честно говорим, что применять нечего, а не делаем вид, что применили.
+    /// </summary>
+    private void ApplyRecommendedInTweaks(IReadOnlyList<string> codes)
+    {
+        int matched = Tweaks.SelectCodesForApply(codes);
+        if (matched == 0)
+        {
+            MainScreen.ShowNotice(
+                "Применить нечего",
+                "Проверка сети передала коды, которых нет в каталоге этой сборки. Ничего не применялось.");
+            return;
+        }
+
+        Shell?.ShowTweaksSection();
+        _ = Tweaks.ApplySelectedCommand.ExecuteAsync();
     }
 
     protected override void OnExit(ExitEventArgs e)
