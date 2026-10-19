@@ -358,6 +358,97 @@ public sealed class SessionHistoryTests
         Assert.Contains("отменена", sessions.StatusRu);
     }
 
+    // ── запись сессии службой ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Начало_без_игры_даёт_отдельный_исход_и_честную_подпись()
+    {
+        DateTime started = new(2026, 10, 18, 12, 0, 0, DateTimeKind.Utc);
+
+        OptimizationSessionRecord record = OptimizationSessionMapping.FromStart(
+            "no-game",
+            started,
+            Snapshot(RealtimeOptimizationState.Failed, game: null, endpoint: null, baseline: null));
+
+        Assert.Equal(SessionOutcomes.NoGame, record.Outcome);
+        Assert.False(record.HasGame);
+        Assert.False(record.IsCompleted);
+        Assert.Null(record.BaselineRttMs);
+        Assert.Null(record.FinalRttMs);
+        Assert.Contains("Игра не найдена", record.GameTitleRu);
+        Assert.Contains("итог неизвестен", record.StatusNoteRu);
+        Assert.Equal(SessionOutcomes.NoGame, record.Outcome);
+    }
+
+    [Fact]
+    public void Остановка_без_измеренного_после_оставляет_сессию_незавершённой()
+    {
+        DateTime started = new(2026, 10, 18, 12, 0, 0, DateTimeKind.Utc);
+
+        OptimizationSessionRecord startedRecord = OptimizationSessionMapping.FromStart(
+            "no-after",
+            started,
+            Snapshot(RealtimeOptimizationState.ActiveMonitoring, game: "Fortnite", endpoint: SameServer, baseline: 120));
+
+        OptimizationSessionRecord completed = OptimizationSessionMapping.Complete(
+            startedRecord,
+            new RealtimeStopReport(
+                GameTitleRu: "Fortnite",
+                Endpoint: SameServer,
+                BaselineRttMs: 120,
+                FinalRttMs: null,
+                FloorRttMs: null,
+                ImprovementMs: null,
+                QualityLabelRu: "не измерено",
+                Duration: TimeSpan.FromMinutes(3),
+                AppliedActionTitles: ["Маршрут для игры"],
+                RevertMessagesRu: [],
+                EverythingReverted: true,
+                HonestSummaryRu: "Честный итог."),
+            stoppedUtc: started.AddMinutes(3));
+
+        Assert.False(completed.IsCompleted);
+        Assert.Equal(SessionOutcomes.NotFinished, completed.Outcome);
+        Assert.Null(completed.FinalRttMs);
+        Assert.Null(completed.ImprovementMs);
+        Assert.Contains("не завершена", completed.StatusNoteRu);
+    }
+
+    [Fact]
+    public void Остановка_с_измеренным_после_закрывает_сессию_и_называет_неполный_откат()
+    {
+        DateTime started = new(2026, 10, 18, 12, 0, 0, DateTimeKind.Utc);
+
+        OptimizationSessionRecord startedRecord = OptimizationSessionMapping.FromStart(
+            "measured",
+            started,
+            Snapshot(RealtimeOptimizationState.ActiveMonitoring, game: "Fortnite", endpoint: SameServer, baseline: 120));
+
+        OptimizationSessionRecord completed = OptimizationSessionMapping.Complete(
+            startedRecord,
+            new RealtimeStopReport(
+                GameTitleRu: "Fortnite",
+                Endpoint: SameServer,
+                BaselineRttMs: 120,
+                FinalRttMs: 95,
+                FloorRttMs: 90,
+                ImprovementMs: 25,
+                QualityLabelRu: "хорошо",
+                Duration: TimeSpan.FromMinutes(20),
+                AppliedActionTitles: ["Маршрут для игры"],
+                RevertMessagesRu: ["Маршрут остался: нет прав"],
+                EverythingReverted: false,
+                HonestSummaryRu: "Честный итог."),
+            stoppedUtc: started.AddMinutes(20));
+
+        Assert.True(completed.IsCompleted);
+        Assert.Equal(SessionOutcomes.Completed, completed.Outcome);
+        Assert.Equal(25, completed.ImprovementMs);
+        Assert.Equal(SessionRollbackStates.PartiallyReverted, completed.RollbackState);
+        Assert.Contains("снять удалось не всё", completed.StatusNoteRu);
+        Assert.Contains("Сняты не все изменения", OptimizationSessionMapping.RollbackStateRu(completed.RollbackState));
+    }
+
     // ── служба: команды и канал чтения ─────────────────────────────────────────────────────────
 
     [Fact]
@@ -434,6 +525,24 @@ public sealed class SessionHistoryTests
         return EngineResponse.Success(request.Id,
             "История сессий очищена: удалено записей — 1. Журнал изменений системы не тронут: он остался как был.");
     }
+
+    private static RealtimeSnapshot Snapshot(
+        RealtimeOptimizationState state, string? game, string? endpoint, double? baseline) =>
+        new(
+            State: state,
+            StatusRu: "состояние",
+            GameTitleRu: game,
+            Endpoint: endpoint,
+            BaselineRttMs: baseline,
+            CurrentRttMs: baseline,
+            FloorRttMs: null,
+            CurrentJitterMs: null,
+            CurrentLossPercent: null,
+            ImprovementMs: null,
+            QualityLabelRu: "не измерено",
+            AppliedActions: [],
+            Warnings: [],
+            UpdatedUtc: DateTime.UtcNow);
 
     private static OptimizationSessionRecord Session(
         string id, DateTime started, bool completed, double? baseline, double? final) =>

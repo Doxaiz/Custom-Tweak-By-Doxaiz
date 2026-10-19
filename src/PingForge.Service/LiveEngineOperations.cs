@@ -474,7 +474,7 @@ public sealed class LiveEngineOperations : IEngineOperations
                 record.ImprovementMs,
                 record.Actions,
                 record.RollbackState,
-                RollbackStateRu(record.RollbackState),
+                OptimizationSessionMapping.RollbackStateRu(record.RollbackState),
                 record.IsCompleted,
                 record.StatusNoteRu,
                 record.Outcome))
@@ -517,28 +517,7 @@ public sealed class LiveEngineOperations : IEngineOperations
             return;
         }
 
-        bool noGame = snapshot.State == RealtimeOptimizationState.Failed
-            && string.IsNullOrWhiteSpace(snapshot.GameTitleRu);
-
-        var record = new OptimizationSessionRecord(
-            sessionId,
-            startedUtc,
-            StoppedUtc: null,
-            GameTitleRu: noGame ? "Игра не найдена" : snapshot.GameTitleRu ?? "Игра не определена",
-            ProcessExeName: string.Empty,
-            Endpoint: snapshot.Endpoint ?? string.Empty,
-            IsMeasurable: snapshot.BaselineRttMs is not null,
-            BaselineRttMs: snapshot.BaselineRttMs,
-            FinalRttMs: null,
-            ImprovementMs: null,
-            Actions: [],
-            RollbackState: SessionRollbackStates.Unknown,
-            IsCompleted: false,
-            Outcome: noGame ? SessionOutcomes.NoGame : SessionOutcomes.NotFinished,
-            StatusNoteRu: noGame
-                ? "Игра не найдена: замер не состоялся — итог неизвестен."
-                : "Сессия не завершена: итог неизвестен, «после» ещё не измерено.");
-
+        OptimizationSessionRecord record = OptimizationSessionMapping.FromStart(sessionId, startedUtc, snapshot);
         _currentSession = record;
         await TrySaveSessionAsync(record, ct).ConfigureAwait(false);
     }
@@ -554,36 +533,7 @@ public sealed class LiveEngineOperations : IEngineOperations
             return;
         }
 
-        bool measured = report.BaselineRttMs is not null && report.FinalRttMs is not null;
-        bool noGame = session.Outcome == SessionOutcomes.NoGame;
-
-        var completed = session with
-        {
-            StoppedUtc = DateTime.UtcNow,
-            GameTitleRu = noGame ? session.GameTitleRu : report.GameTitleRu,
-            Endpoint = string.IsNullOrWhiteSpace(report.Endpoint) || report.Endpoint == "—"
-                ? session.Endpoint
-                : report.Endpoint,
-            IsMeasurable = measured || session.BaselineRttMs is not null,
-            BaselineRttMs = report.BaselineRttMs ?? session.BaselineRttMs,
-            FinalRttMs = report.FinalRttMs,
-            ImprovementMs = report.ImprovementMs,
-            Actions = report.AppliedActionTitles,
-            RollbackState = noGame
-                ? SessionRollbackStates.Unknown
-                : report.EverythingReverted
-                    ? SessionRollbackStates.EverythingReverted
-                    : SessionRollbackStates.PartiallyReverted,
-            IsCompleted = measured,
-            Outcome = noGame ? SessionOutcomes.NoGame : measured ? SessionOutcomes.Completed : SessionOutcomes.NotFinished,
-            StatusNoteRu = noGame
-                ? "Игра не найдена: замер не состоялся — итог неизвестен."
-                : measured
-                    ? (report.EverythingReverted
-                        ? "Сессия завершена: «после» измерено, свои изменения сняты."
-                        : "Сессия завершена: «после» измерено, но снять удалось не всё — смотрите пометку откатa.")
-                    : "Сессия не завершена, итог неизвестен: «после» не измерено."
-        };
+        OptimizationSessionRecord completed = OptimizationSessionMapping.Complete(session, report, DateTime.UtcNow);
 
         await TrySaveSessionAsync(completed, ct).ConfigureAwait(false);
         _currentSession = null;
@@ -609,14 +559,6 @@ public sealed class LiveEngineOperations : IEngineOperations
             // Сбой базы не должен отменять уже выполненные действия оптимизации.
         }
     }
-
-    private static string RollbackStateRu(string state) => state switch
-    {
-        SessionRollbackStates.EverythingReverted => "Изменения сняты полностью",
-        SessionRollbackStates.PartiallyReverted => "Сняты не все изменения",
-        SessionRollbackStates.NotReverted => "Изменения не сняты",
-        _ => "Неизвестно (сессия без итога)",
-    };
 
     public async Task<EngineOperationResult> SetPerfProfileAsync(PerfProfile profile, CancellationToken ct = default)
     {
