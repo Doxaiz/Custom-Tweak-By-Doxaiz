@@ -804,7 +804,68 @@ if ($pathText -match 'Проб отправлено')
 }
 Say 'путь до сервера: без игры ни одного пакета, на экране честное «Сначала запустите игру»'
 
-# ── 9. Итог ─────────────────────────────────────────────────────────────────────────────────────
+# ── 9. История сессий (задача J) ──────────────────────────────────────────────────────────────
+# Оптимизацию на раннере никто не запускал, значит история обязана быть пустой. Проверяем, что
+# вкладка «Сессии» есть, кнопка обновления работает и на экране честный ответ: «пуста» (служба
+# ответила) или «не отвечает» (службы нет). Строк «было … → стало …» появиться не может.
+Say ''
+Say '── Шаг 9: открываю «Журнал» → вкладку «Сессии» и читаю историю'
+$journalNav = Find-ByName $mainWindow 'Журнал' 8000
+if ($null -eq $journalNav) { throw 'В меню нет раздела «Журнал»' }
+Invoke-Element $journalNav 'Журнал' | Out-Null
+Start-Sleep -Milliseconds 900
+
+# Вкладка — элемент выбора, а не кнопка: ищем именно тот, у которого есть SelectionItemPattern.
+$sessionsTab = $null
+$tabDeadline = (Get-Date).AddSeconds(8)
+while ((Get-Date) -lt $tabDeadline -and $null -eq $sessionsTab)
+{
+    foreach ($candidate in (Find-AllByName $mainWindow 'Сессии'))
+    {
+        $pattern = $null
+        if ($candidate.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$pattern))
+        {
+            $sessionsTab = $candidate
+            break
+        }
+    }
+    if ($null -eq $sessionsTab) { Start-Sleep -Milliseconds 300 }
+}
+if ($null -eq $sessionsTab) { throw 'В разделе «Журнал» нет вкладки «Сессии» — история сессий потерялась' }
+Invoke-Element $sessionsTab 'Сессии' | Out-Null
+Start-Sleep -Milliseconds 700
+
+$sessionsButton = Find-ByName $mainWindow 'Обновить сессии' 8000
+if ($null -eq $sessionsButton) { throw 'На вкладке «Сессии» нет кнопки «Обновить сессии»' }
+Invoke-Element $sessionsButton 'Обновить сессии' | Out-Null
+
+$sessionsText = ''
+$sessionsDeadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $sessionsDeadline)
+{
+    Start-Sleep -Milliseconds 700
+    if ($process.HasExited) { break }
+
+    $rootNow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $sessionsText = Get-TextOfMainScreen $rootNow
+
+    if ($sessionsText -match 'История сессий пуста' -or $sessionsText -match 'не отвечает') { break }
+}
+
+Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) 'история-сессий'
+
+if ($sessionsText -notmatch 'История сессий пуста' -and $sessionsText -notmatch 'не отвечает')
+{
+    $shown = ($sessionsText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 25) -join ' / '
+    throw "Вкладка «Сессии» не ответила ни «история пуста», ни «служба не отвечает». Что было на экране: $shown"
+}
+if ($sessionsText -match 'было \d+([.,]\d+)? мс → стало')
+{
+    throw 'История сессий показала «было → стало» без единой сессии — числа выдуманы'
+}
+Say 'история сессий: вкладка на месте, пустая история честно названа пустой, выдуманных чисел нет'
+
+# ── 10. Итог ────────────────────────────────────────────────────────────────────────────────────
 Say ''
 if ($process.HasExited)
 {
