@@ -263,9 +263,9 @@ public sealed class ServerPathTests
     {
         var hops = new List<ServerPathProbeHop>
         {
-            Hop(1, "192.168.1.1", 5, 5, 5),
+            Hop(1, "192.168.1.1", 12, 12, 12),
             new(2, null, 3, 0, Array.Empty<double>()),
-            Hop(3, "203.0.113.9", 6, 6, 6),
+            Hop(3, "203.0.113.9", 12.5, 12.5, 12.5),
         };
 
         IReadOnlyList<ServerPathGrowthPoint> points = ServerPathGrowth.Points(hops);

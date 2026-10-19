@@ -104,6 +104,13 @@ public static class ServerPathGrowth
     /// <summary>Прирост меньше миллисекунды — шум измерения, а не находка.</summary>
     public const double NoticeableGrowthMs = 1.0;
 
+    /// <summary>
+    /// Порог для первого хопа: 2 мс до своего роутера — это норма, а не «рост». Домашняя сеть
+    /// становится находкой, когда первый шаг сам по себе стоит десяток миллисекунд (плохой Wi-Fi,
+    /// загруженный роутер). Без этого порога первый хоп объявлялся бы виновником всегда.
+    /// </summary>
+    public const double FirstHopNoticeableMs = 10.0;
+
     public static IReadOnlyList<ServerPathGrowthPoint> Points(IReadOnlyList<ServerPathProbeHop> hops)
     {
         ArgumentNullException.ThrowIfNull(hops);
@@ -126,12 +133,19 @@ public static class ServerPathGrowth
         return points;
     }
 
-    /// <summary>Хоп с самым большим заметным приростом; null — заметного прироста нет.</summary>
+    /// <summary>
+    /// Хоп с самым большим заметным приростом; null — заметного прироста нет. Первый ответивший
+    /// хоп сравнивается с нулём, поэтому к нему применяется отдельный порог
+    /// <see cref="FirstHopNoticeableMs"/>: обычные 1–2 мс до своего роутера — не «узкое место».
+    /// </summary>
     public static ServerPathGrowthPoint? Bottleneck(IReadOnlyList<ServerPathProbeHop> hops) =>
         Points(hops)
-            .Where(point => point.GrowthMs >= NoticeableGrowthMs)
+            .Where(point => point.GrowthMs >= Threshold(point.HopNumber))
             .OrderByDescending(point => point.GrowthMs)
             .FirstOrDefault();
+
+    private static double Threshold(int hopNumber) =>
+        hopNumber == 1 ? FirstHopNoticeableMs : NoticeableGrowthMs;
 
     /// <summary>
     /// Честная подсказка по трассе. Дом — только тогда, когда скачок случился на первом шаге
