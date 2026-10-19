@@ -55,6 +55,13 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public NetworkChartViewModel Chart { get; } = new();
 
+    /// <summary>
+    /// Проверка обновлений (задача I) для раздела «О программе» — той же страницы, что показывает
+    /// эту модель. Живёт здесь, а не собственной моделью окна: «О программе» привязана к главному
+    /// экрану. Сама по себе никуда не ходит: запрос уходит только по кнопке.
+    /// </summary>
+    public UpdateCheckViewModel Updates { get; } = new();
+
     /// <summary>Закрыть ответ программы, когда он прочитан.</summary>
     public RelayCommand DismissNoticeCommand { get; }
 
