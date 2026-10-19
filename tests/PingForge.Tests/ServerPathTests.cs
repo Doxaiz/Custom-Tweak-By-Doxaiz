@@ -2,6 +2,7 @@ using System.Net;
 using PingForge.App.ViewModels;
 using PingForge.Core.Models;
 using PingForge.Probing;
+using Xunit;
 
 namespace PingForge.Tests;
 
