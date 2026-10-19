@@ -77,6 +77,7 @@ public sealed class DnsResolverBenchmarkRunner : IDnsBenchmarkRunner
     private readonly DnsResolverBenchmarker _benchmarker;
     private readonly IReadOnlyList<(string Name, string Primary, string Secondary)>? _candidates;
 
+    /// <param name="benchmarker">Бенчмарк, который выполняет сами замеры резолверов.</param>
     /// <param name="candidates">
     /// Какие резолверы мерить. Продукт передаёт сюда GameRouteCatalog.FreeDnsRoutes: список
     /// резолверов один на «Твики», «Проверить сеть» и совет DNS. null — архивный набор бенчмаркера

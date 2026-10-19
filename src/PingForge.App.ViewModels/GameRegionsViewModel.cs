@@ -23,7 +23,7 @@ public sealed record FreeDnsRowViewModel(string ProviderRu, string AddressesRu, 
 /// Карточка «DNS — это про вход, а не про пинг» для раздела «Твики».
 ///
 /// Список резолверов не написан в разметке: он собран из <see cref="GameRouteCatalog.FreeDnsRoutes"/>.
-/// Тот же список уходит в «Проверить сеть» (<see cref="BenchmarkCandidates"/>) и в совет DNS, поэтому
+/// Тот же список уходит в «Проверить сеть» (<see cref="GameRegionsViewModel.BenchmarkCandidates"/>) и в совет DNS, поэтому
 /// разойтись этим трём местам негде.
 /// </summary>
 public sealed class DnsCardViewModel
