@@ -147,18 +147,23 @@ public sealed class SessionHistoryTests
             await database.EnsureInitializedAsync();
 
             // Так выглядит база до задачи J: колонок «игра, действия, откат, исход» ещё нет.
-            // Удаляем их и инициализируем базу заново — миграция обязана вернуть их, сохранив таблицу.
+            // Пересобираем таблицу без них (DROP COLUMN нельзя: у outcome и rollback_state есть CHECK)
+            // и инициализируем базу заново — миграция обязана вернуть колонки, сохранив таблицу.
             await using (SqliteConnection connection = await database.OpenAsync())
             {
-                foreach (string column in new[]
-                {
-                    "game_title_ru", "applied_actions_json", "rollback_state", "outcome", "is_completed",
-                })
-                {
-                    await using SqliteCommand drop = connection.CreateCommand();
-                    drop.CommandText = $"ALTER TABLE route_optimization_sessions DROP COLUMN {column};";
-                    await drop.ExecuteNonQueryAsync();
-                }
+                await using SqliteCommand rebuild = connection.CreateCommand();
+                rebuild.CommandText = """
+                    ALTER TABLE route_optimization_sessions RENAME TO route_optimization_sessions_v5;
+                    CREATE TABLE route_optimization_sessions AS
+                      SELECT session_id, game_session_id, process_exe_name, remote_game_endpoint, selected_mode,
+                             relay_node_id, baseline_probe_method, optimized_probe_method, started_utc, stopped_utc,
+                             baseline_rtt_avg, baseline_rtt_p95, baseline_jitter, baseline_loss_pct, baseline_stability,
+                             optimized_rtt_avg, optimized_rtt_p95, optimized_jitter, optimized_loss_pct, optimized_stability,
+                             is_measurable, degradation_alert_triggered, verdict_comment
+                      FROM route_optimization_sessions_v5;
+                    DROP TABLE route_optimization_sessions_v5;
+                    """;
+                await rebuild.ExecuteNonQueryAsync();
             }
 
             await database.EnsureInitializedAsync();
