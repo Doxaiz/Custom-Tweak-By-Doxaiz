@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using PingForge.Analysis.Charting;
+using PingForge.Orchestration;
 using PingForge.Service.Protocol;
 
 namespace PingForge.App.ViewModels;
