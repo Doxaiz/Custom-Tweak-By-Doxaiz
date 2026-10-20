@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using PingForge.Analysis.Charting;
+using PingForge.Orchestration;
 using PingForge.Service.Protocol;
 
 namespace PingForge.App.ViewModels;
@@ -90,6 +91,10 @@ public sealed class MainViewModel : ObservableObject
     /// и сначала показывает список того, что попадёт в архив.
     /// </summary>
     public SupportPackageViewModel Support { get; } = new();
+
+    public GameSelectionViewModel GameSelection { get; } = new();
+
+    public NetworkStateMonitor? NetworkMonitor { get; private set; }
 
     /// <summary>Закрыть ответ программы, когда он прочитан.</summary>
     public RelayCommand DismissNoticeCommand { get; }

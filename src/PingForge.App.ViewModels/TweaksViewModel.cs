@@ -1,4 +1,5 @@
-﻿using PingForge.Core.Models;
+﻿using System.Text.Json;
+using PingForge.Core.Models;
 using PingForge.Service.Protocol;
 
 namespace PingForge.App.ViewModels;
@@ -65,6 +66,9 @@ public sealed class TweaksViewModel : ObservableObject
     /// Прикрепляется после построения: ей нужен переход к отфильтрованному списку этого же раздела.
     /// </summary>
     public InputLatencyViewModel? InputLatency { get; private set; }
+
+    /// <summary>Экран «Что изменилось» (задача K) — появляется после применения.</summary>
+    public AppliedChangesViewModel Changes { get; } = new();
 
     public void AttachInputLatency(InputLatencyViewModel card)
     {
@@ -282,6 +286,7 @@ public sealed class TweaksViewModel : ObservableObject
                 [("preset", preset.WireName), ("restorePoint", askRestorePoint ? "true" : "false")]).ConfigureAwait(true);
 
             StatusRu = response.MessageRu;
+            TryUpdateChangesFromResponse(response);
         }
         catch (EngineUnavailableException ex)
         {
@@ -339,6 +344,7 @@ public sealed class TweaksViewModel : ObservableObject
                 ]).ConfigureAwait(true);
 
             StatusRu = response.MessageRu;
+            TryUpdateChangesFromResponse(response);
         }
         catch (EngineUnavailableException ex)
         {
@@ -374,6 +380,55 @@ public sealed class TweaksViewModel : ObservableObject
         catch (EngineUnavailableException ex)
         {
             StatusRu = ex.Message;
+        }
+    }
+
+    private void TryUpdateChangesFromResponse(EngineResponse response)
+    {
+        if (string.IsNullOrWhiteSpace(response.DataJson))
+        {
+            return;
+        }
+
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(response.DataJson);
+            JsonElement root = doc.RootElement;
+            if (!root.TryGetProperty("snapshotId", out JsonElement sidEl) || sidEl.ValueKind != JsonValueKind.String)
+            {
+                return;
+            }
+
+            string snapshotId = sidEl.GetString() ?? string.Empty;
+            int applied = root.TryGetProperty("applied", out JsonElement aEl) && aEl.ValueKind == JsonValueKind.Number ? aEl.GetInt32() : 0;
+            int noOp = root.TryGetProperty("noOp", out JsonElement nEl) && nEl.ValueKind == JsonValueKind.Number ? nEl.GetInt32() : 0;
+            int skipped = root.TryGetProperty("skipped", out JsonElement sEl) && sEl.ValueKind == JsonValueKind.Number ? sEl.GetInt32() : 0;
+            int failed = root.TryGetProperty("failed", out JsonElement fEl) && fEl.ValueKind == JsonValueKind.Number ? fEl.GetInt32() : 0;
+
+            var rows = new List<AppliedChangeRowViewModel>();
+            if (root.TryGetProperty("rows", out JsonElement rowsEl) && rowsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement item in rowsEl.EnumerateArray())
+                {
+                    string code = item.TryGetProperty("code", out JsonElement c) && c.ValueKind == JsonValueKind.String ? c.GetString() ?? string.Empty : string.Empty;
+                    string title = item.TryGetProperty("titleRu", out JsonElement t2) && t2.ValueKind == JsonValueKind.String ? t2.GetString() ?? code : code;
+                    string before = item.TryGetProperty("previousText", out JsonElement b) && b.ValueKind == JsonValueKind.String ? b.GetString() ?? string.Empty : string.Empty;
+                    string appliedText = item.TryGetProperty("appliedText", out JsonElement at) && at.ValueKind == JsonValueKind.String ? at.GetString() ?? string.Empty : string.Empty;
+                    string verified = item.TryGetProperty("verifiedText", out JsonElement v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? string.Empty : string.Empty;
+                    string outcome = item.TryGetProperty("outcome", out JsonElement o) && o.ValueKind == JsonValueKind.String ? o.GetString() ?? string.Empty : string.Empty;
+                    string status = item.TryGetProperty("statusRu", out JsonElement st) && st.ValueKind == JsonValueKind.String ? st.GetString() ?? outcome : outcome;
+                    bool succeeded = item.TryGetProperty("succeeded", out JsonElement su) && su.ValueKind == JsonValueKind.True;
+                    bool reboot = item.TryGetProperty("rebootNeeded", out JsonElement rb) && rb.ValueKind == JsonValueKind.True;
+                    rows.Add(new AppliedChangeRowViewModel(code, title, before, appliedText, verified, outcome, status, succeeded, reboot));
+                }
+            }
+
+            Changes.UpdateFromBatch(snapshotId, applied, noOp, skipped, failed, rows);
+            Changes.BindRevertActions(_engine);
+        }
+        catch (JsonException)
+        {
+            // битый JSON — оставляем прежний статус, экран не появляется
         }
     }
 }

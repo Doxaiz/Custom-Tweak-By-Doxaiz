@@ -19,7 +19,9 @@ public sealed class GameFlowDetector
     private static readonly int[] GameLikePorts =
     {
         3074, 3075, 3478, 3479, 3480, 8766, 9339, 19132, 27015, 27016, 27017, 27018, 27019, 27020,
-        27031, 27036, 28960, 3724, 1119
+        27031, 27036, 28960, 3724, 1119,
+        // Fortnite / Unreal (творческий режим и матчи)
+        9000, 9001, 9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9010, 10000, 10001, 7777, 7778, 8000, 5222
     };
 
     private static readonly int[] WebPorts = { 80, 443 };
@@ -140,10 +142,46 @@ public sealed class GameFlowDetector
                       "если это ваша игра, добавьте её вручную — угадывать имя файла программа не станет.");
         }
 
+        // Fallback: игра запущена, но публичного потока нет (лобби/творческий, ETW ещё не догнал, UDP 0.0.0.0:0).
+        // Тогда считаем её запущенной в лобби: кнопка скажет “игра уже запущена, зайдите в матч для замера”, а не “не найдена”.
+        var lobbyGames = new List<DetectedGameFlow>();
         if (games.Count == 0)
         {
-            notes.Add("Запущенных игр из списка не найдено. Оптимизировать «сеть вообще» программа не станет: " +
-                      "у каждой игры свой сервер и свой маршрут.");
+            foreach (IGrouping<int, RawConnectionRow> group in rows.Where(r => r.ProcessId > 4).GroupBy(r => r.ProcessId))
+            {
+                if (!processNames.TryGetValue(group.Key, out string? rawName) || string.IsNullOrWhiteSpace(rawName))
+                {
+                    continue;
+                }
+
+                string exe = GameProcessCatalog.Normalize(rawName);
+                if (!_catalog.TryMatch(exe, out KnownGame lobbyGame))
+                {
+                    continue;
+                }
+
+                // Есть хоть какие-то строки этого PID (даже с RemotePort=0) — процесс живой
+                int anyRows = group.Count();
+                if (anyRows > 0)
+                {
+                    lobbyGames.Add(new DetectedGameFlow(
+                        new GameFlowInfo(group.Key, exe, lobbyGame.TitleRu, "—", 0, "ожидание", lobbyGame.AntiCheat),
+                        -1,
+                        anyRows,
+                        "игра запущена, но публичного адреса сервера пока нет — вы в лобби/творческом режиме. Зайдите в матч и нажмите снова: маршрут применится только к адресу сервера матча."));
+                }
+            }
+
+            if (lobbyGames.Count > 0)
+            {
+                notes.Add($"Игра найдена в лобби: {string.Join(", ", lobbyGames.Select(g => g.Flow.GameTitleRu))} — процесс запущен, публичного потока матча ещё нет. Это нормально для лобби/творческого режима.");
+                games.AddRange(lobbyGames);
+            }
+            else
+            {
+                notes.Add("Запущенных игр из списка не найдено. Оптимизировать «сеть вообще» программа не станет: " +
+                          "у каждой игры свой сервер и свой маршрут.");
+            }
         }
 
         return new GameFlowDetectionReport(

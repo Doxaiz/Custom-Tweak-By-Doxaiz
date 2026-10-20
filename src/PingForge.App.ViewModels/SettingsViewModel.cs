@@ -44,6 +44,16 @@ public sealed class SettingsViewModel : ObservableObject
         Check = check ?? new SettingsCheckViewModel(
             new UnavailableSettingsCheckAnalysis(),
             _ => { });
+
+        ReturnAll = new ReturnAllViewModel(engine);
+        ReturnAll.AttachDialogs(dialogs);
+        Storage = new StorageInfoViewModel(engine);
+        Storage.AttachDialogs(dialogs);
+        Export = new SettingsExportViewModel(store, dialogs);
+        UiScale = new UiScaleViewModel();
+        UiScale100Command = new RelayCommand(() => UiScale.Scale = 1.0);
+        UiScale125Command = new RelayCommand(() => UiScale.Scale = 1.25);
+        UiScale150Command = new RelayCommand(() => UiScale.Scale = 1.5);
     }
 
     /// <summary>Узлы маршрутизации: список, поиск шлюзов, замер путей. Ничего не меняет сама по себе.</summary>
@@ -51,6 +61,18 @@ public sealed class SettingsViewModel : ObservableObject
 
     /// <summary>Проверка настроек: что мешает, что стоит изменить, что не проверено. Ничего не применяет.</summary>
     public SettingsCheckViewModel Check { get; }
+
+    public ReturnAllViewModel ReturnAll { get; }
+
+    public StorageInfoViewModel Storage { get; }
+
+    public SettingsExportViewModel Export { get; }
+
+    public UiScaleViewModel UiScale { get; }
+
+    public RelayCommand UiScale100Command { get; }
+    public RelayCommand UiScale125Command { get; }
+    public RelayCommand UiScale150Command { get; }
 
     public AsyncRelayCommand SaveCommand { get; }
 
@@ -134,13 +156,14 @@ public sealed class SettingsViewModel : ObservableObject
             // Читаем файл заново: в нём могли появиться поля, которые меняет не эта страница
             // (пройденный мастер первого запуска, запомненные пути к играм). «Собрать с нуля»
             // означало бы молча стереть их при первом же сохранении настроек.
-            AppSettings settings = _store.Load() with
+            AppSettings loaded = _store.Load();
+            AppSettings settings = loaded with
             {
                 PerfProfile = EngineNames.ProfileWireName(Profile),
                 OfferRestorePoint = OfferRestorePoint,
                 StartMinimized = false,
                 CloseToTray = CloseToTray,
-                JournalRowsShown = 20,
+                JournalRowsShown = loaded.JournalRowsShown <= 0 ? 200 : Math.Clamp(loaded.JournalRowsShown, 1, 500),
             };
 
             _store.Save(settings);

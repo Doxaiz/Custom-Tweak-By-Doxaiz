@@ -66,12 +66,12 @@
           </StackPanel>
 
           <StackPanel>
-            <RadioButton x:Name="NavOptimize" Style="{StaticResource NavButton}" Content="Оптимизация" IsChecked="True" Checked="NavChanged" />
-            <RadioButton x:Name="NavGames" Style="{StaticResource NavButton}" Content="Игры" Checked="NavChanged" />
-            <RadioButton x:Name="NavTweaks" Style="{StaticResource NavButton}" Content="Твики" Checked="NavChanged" />
-            <RadioButton x:Name="NavJournal" Style="{StaticResource NavButton}" Content="Журнал" Checked="NavChanged" />
-            <RadioButton x:Name="NavSettings" Style="{StaticResource NavButton}" Content="Настройки" Checked="NavChanged" />
-            <RadioButton x:Name="NavAbout" Style="{StaticResource NavButton}" Content="О программе" Checked="NavChanged" />
+            <RadioButton x:Name="NavOptimize" Style="{StaticResource NavButton}" Content="Оптимизация" IsChecked="True" Checked="NavChanged" AutomationProperties.Name="Раздел Оптимизация" TabIndex="0" />
+            <RadioButton x:Name="NavGames" Style="{StaticResource NavButton}" Content="Игры" Checked="NavChanged" AutomationProperties.Name="Раздел Игры" TabIndex="1" />
+            <RadioButton x:Name="NavTweaks" Style="{StaticResource NavButton}" Content="Твики" Checked="NavChanged" AutomationProperties.Name="Раздел Твики" TabIndex="2" />
+            <RadioButton x:Name="NavJournal" Style="{StaticResource NavButton}" Content="Журнал" Checked="NavChanged" AutomationProperties.Name="Раздел Журнал" TabIndex="3" />
+            <RadioButton x:Name="NavSettings" Style="{StaticResource NavButton}" Content="Настройки" Checked="NavChanged" AutomationProperties.Name="Раздел Настройки" TabIndex="4" />
+            <RadioButton x:Name="NavAbout" Style="{StaticResource NavButton}" Content="О программе" Checked="NavChanged" AutomationProperties.Name="Раздел О программе" TabIndex="5" />
           </StackPanel>
         </DockPanel>
       </Border>

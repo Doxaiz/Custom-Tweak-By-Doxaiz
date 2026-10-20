@@ -170,6 +170,14 @@ public sealed class SnapshotService : ISnapshotService
         return stored.Select(s => s.Snapshot).ToList();
     }
 
+    public Task<int> DeleteSnapshotAsync(string snapshotId, CancellationToken ct = default) =>
+        _repository.DeleteAsync(snapshotId, ct);
+
+    public Task<long> GetDatabaseFileSizeAsync(CancellationToken ct = default) =>
+        _repository.GetDatabaseFileSizeAsync(ct);
+
+    public string DatabasePath => _repository.DatabasePathViaInitializer;
+
     private (RestorePointResultKind Status, string Message) ResolveRestorePoint(bool requested, string label)
     {
         if (!requested)

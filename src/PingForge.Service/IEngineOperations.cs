@@ -80,4 +80,17 @@ public interface IEngineOperations
     /// <summary>Очистить историю сессий; журнал изменений системы не трогается.</summary>
     Task<EngineOperationResult> ClearSessionsAsync(CancellationToken ct = default) =>
         Task.FromResult(EngineOperationResult.Failure("История сессий не подключена: очищать нечего."));
+
+    /// <summary>Вернуть один твик из снапшота (задача K): остальные твики не трогаются.</summary>
+    Task<EngineOperationResult> RollbackSingleTweakAsync(string tweakCode, string? snapshotId, CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Откат одного твика не подключён."));
+
+    Task<EngineOperationResult> ReturnAllAsync(CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Возврат всего не подключён."));
+
+    Task<EngineOperationResult> GetStorageInfoAsync(CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Информация о базе не подключена."));
+
+    Task<EngineOperationResult> CleanupSnapshotsAsync(int keepLast = 10, int olderThanDays = 30, CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Чистка снапшотов не подключена."));
 }

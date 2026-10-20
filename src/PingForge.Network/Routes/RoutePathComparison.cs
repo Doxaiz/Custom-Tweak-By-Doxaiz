@@ -10,7 +10,7 @@ namespace PingForge.Network.Routes;
 /// <summary>
 /// Результат замера одного пути: прямой или через узел.
 /// <paramref name="Success"/> = false — узел не измерился, <paramref name="ProblemRu"/> объясняет почему.
-/// Чисел без измерения не бывает: <paramref name="Measurement"/> null ровно тогда, когда Success false.
+/// Чисел без измерения не бывает: <paramref name="MedianRttMs"/> null ровно тогда, когда Success false.
 /// </summary>
 public sealed record RoutePathProbeResult(
     string Address,
@@ -387,7 +387,7 @@ public sealed class RoutePathComparisonService
 
 /// <summary>
 /// Проводник настроек маршрутизации до живого оптимизатора. Единственный источник
-/// <see cref="WindowsGameNetworkPlatform.RouteTarget"/> во время оптимизации — так решение
+/// WindowsGameNetworkPlatform во время оптимизации — так решение
 /// о пути принимается по замерам и ровно тогда, когда пользователь нажал «Оптимизировать».
 ///
 /// Правила:

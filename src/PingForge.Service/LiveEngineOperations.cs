@@ -307,6 +307,62 @@ public sealed class LiveEngineOperations : IEngineOperations
         return new EngineOperationResult(report.Status != SnapshotRollbackStatus.Failed, message, data);
     }
 
+    public async Task<EngineOperationResult> RollbackSingleTweakAsync(string tweakCode, string? snapshotId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(tweakCode))
+        {
+            return EngineOperationResult.Failure("Не указан код твика для отката.");
+        }
+
+        string code = tweakCode.Trim();
+        IReadOnlyList<SystemSnapshot> snapshots = await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false);
+        if (snapshots.Count == 0)
+        {
+            return EngineOperationResult.Failure("Снапшотов нет: откатывать нечего.");
+        }
+
+        SystemSnapshot? target;
+        if (string.IsNullOrWhiteSpace(snapshotId))
+        {
+            target = snapshots.OrderByDescending(s => s.CreatedUtc).First();
+        }
+        else
+        {
+            target = snapshots.FirstOrDefault(s => string.Equals(s.SnapshotId, snapshotId.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (target is null)
+            {
+                return EngineOperationResult.Failure($"Снапшот «{snapshotId}» не найден. Есть {snapshots.Count} снапшотов.");
+            }
+        }
+
+        SnapshotItemEntry? entry = target.Entries.FirstOrDefault(e => string.Equals(e.TweakCode, code, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            return EngineOperationResult.Failure($"В снапшоте «{target.SnapshotId}» нет твика «{code}»: откатывать нечего.");
+        }
+
+        ITweak? tweak = _catalog.GetByCode(entry.TweakCode);
+        if (tweak is null)
+        {
+            return EngineOperationResult.Failure($"Твик «{entry.TweakCode}» отсутствует в каталоге — откат невозможен, проверьте параметр {entry.ResourceLocator} вручную.");
+        }
+
+        TweakOperationResult result = await tweak.RollbackAsync(entry, ct).ConfigureAwait(false);
+        bool ok = result.Outcome == TweakOutcome.RolledBack || result.Outcome == TweakOutcome.SkippedNoOp;
+        string msg = ok
+            ? $"Твик «{entry.TweakCode}» возвращён: было «{result.PreviousValueText}» → стало «{result.ActualSystemValueText}»."
+            : $"Не удалось вернуть твик «{entry.TweakCode}»: {result.FailureReasonRu ?? result.Outcome.ToString()}";
+
+        // Логируем откат одного твика — журнал остаётся честным
+        if (_journal is not null)
+        {
+            await _journal.AppendModificationLogAsync("ROLLBACK_SINGLE", result, ct).ConfigureAwait(false);
+        }
+
+        string data = Encode(new SingleRollbackData(target.SnapshotId, entry.TweakCode, ok, result.Outcome.ToString(), result.FailureReasonRu ?? string.Empty));
+        return new EngineOperationResult(ok, msg, data);
+    }
+
     public async Task<EngineOperationResult> RepairNetworkAsync(CancellationToken ct = default)
     {
         if (_journal is null)
@@ -606,6 +662,17 @@ public sealed class LiveEngineOperations : IEngineOperations
             message += failures.Count > 0 ? $" Не получилось: {string.Join("; ", failures)}." : string.Empty;
         }
 
+        var rows = report.Results.Select(result => new BatchRowData(
+            result.TweakCode,
+            result.TweakTitleRu,
+            string.IsNullOrWhiteSpace(result.PreviousValueText) ? "не удалось прочитать" : result.PreviousValueText,
+            string.IsNullOrWhiteSpace(result.TargetValueText) ? "не удалось прочитать" : result.TargetValueText,
+            string.IsNullOrWhiteSpace(result.ActualSystemValueText) ? "не удалось прочитать" : result.ActualSystemValueText,
+            result.Outcome.ToString(),
+            DescribeOutcomeRu(result.Outcome, result.FailureReasonRu),
+            result.IsVerifiedInSystem || result.Outcome == TweakOutcome.SkippedNoOp,
+            result.RebootOrAdapterRestartRequired)).ToList();
+
         string data = Encode(new BatchData(
             report.Snapshot.SnapshotId,
             report.Results.Count,
@@ -615,10 +682,25 @@ public sealed class LiveEngineOperations : IEngineOperations
             report.FailedCount,
             report.RebootRequired,
             report.RestorePointStatus.ToString(),
-            failures));
+            failures,
+            rows));
 
         return new EngineOperationResult(everythingOk, message, data);
     }
+
+    private static string DescribeOutcomeRu(TweakOutcome outcome, string? reasonRu) => outcome switch
+    {
+        TweakOutcome.VerifiedEffective => "применён",
+        TweakOutcome.WrittenPendingRestart => "применён (нужна перезагрузка)",
+        TweakOutcome.Applied => "применён",
+        TweakOutcome.SkippedNoOp => "уже был таким",
+        TweakOutcome.SkippedUnsupported => $"не применён: {reasonRu ?? "не поддерживается"}",
+        TweakOutcome.SkippedUnparsable => $"не применён: {reasonRu ?? "не удалось прочитать"}",
+        TweakOutcome.SkippedUnsafeTarget => $"не применён: {reasonRu ?? "цель небезопасна"}",
+        TweakOutcome.RolledBack => "откачен",
+        TweakOutcome.Failed => $"ошибка: {reasonRu ?? "без объяснения"}",
+        _ => outcome.ToString()
+    };
 
     private static string StateWire(RealtimeOptimizationState state) => state switch
     {
@@ -736,6 +818,120 @@ public sealed class LiveEngineOperations : IEngineOperations
     /// незакрытые операции, список снапшотов, состояние живой оптимизации. Врём цифрам ровно
     /// ничего: нет журнала — в ответе нули и честная оговорка, а не выдуманное «всё чисто».
     /// </summary>
+    public async Task<EngineOperationResult> ReturnAllAsync(CancellationToken ct = default)
+    {
+        var steps = new List<string>();
+        int okSteps = 0, failSteps = 0;
+        bool needsReboot = false;
+
+        // 1. Остановить живую оптимизацию
+        if (_realtime is not null && _realtime.State is RealtimeOptimizationState.ActiveMonitoring or RealtimeOptimizationState.Degraded or RealtimeOptimizationState.MeasuringBaseline or RealtimeOptimizationState.ChoosingRoute or RealtimeOptimizationState.ApplyingActions)
+        {
+            try
+            {
+                RealtimeStopReport stopReport = await _realtime.StopAsync(ct).ConfigureAwait(false);
+                steps.Add($"живая оптимизация: {stopReport.HonestSummaryRu}");
+                if (stopReport.EverythingReverted) okSteps++; else failSteps++;
+            }
+            catch (Exception ex) { steps.Add($"живая оптимизация: не удалось остановить — {ex.Message}"); failSteps++; }
+        }
+        else
+        {
+            steps.Add("живая оптимизация: не была запущена — пропускаем");
+            okSteps++;
+        }
+
+        // 2. Откатить последний снапшот твиков
+        try
+        {
+            EngineOperationResult rollback = await RollbackAsync(null, ct).ConfigureAwait(false);
+            steps.Add($"твики: {rollback.MessageRu}");
+            if (rollback.Ok) okSteps++; else failSteps++;
+            if (rollback.MessageRu.Contains("перезагрузк", StringComparison.OrdinalIgnoreCase)) needsReboot = true;
+        }
+        catch (Exception ex) { steps.Add($"твики: ошибка отката — {ex.Message}"); failSteps++; }
+
+        // 3. Починить остатки (маршруты/QoS которые остались)
+        try
+        {
+            EngineOperationResult repair = await RepairNetworkAsync(ct).ConfigureAwait(false);
+            steps.Add($"остатки: {repair.MessageRu}");
+            if (repair.Ok) okSteps++; else failSteps++;
+        }
+        catch (Exception ex) { steps.Add($"остатки: ошибка проверки — {ex.Message}"); failSteps++; }
+
+        bool allOk = failSteps == 0;
+        string summary = steps.Count == 0 ? "Нечего возвращать: программа ещё ничего не меняла." : string.Join(" | ", steps);
+        if (!allOk) summary += " Часть изменений осталась — проверьте журнал.";
+        if (needsReboot) summary += " Нужна перезагрузка.";
+
+        var data = Encode(new ReturnAllData(okSteps, failSteps, needsReboot, steps));
+        return new EngineOperationResult(allOk, summary, data);
+    }
+
+    public async Task<EngineOperationResult> GetStorageInfoAsync(CancellationToken ct = default)
+    {
+        long dbBytes = 0;
+        string dbPath = string.Empty;
+        try
+        {
+            dbBytes = await _snapshots.GetDatabaseFileSizeAsync(ct).ConfigureAwait(false);
+            dbPath = _snapshots.DatabasePath;
+        }
+        catch { }
+
+        if (string.IsNullOrWhiteSpace(dbPath))
+        {
+            dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PingForge", "pingforge.db");
+            try { if (File.Exists(dbPath)) dbBytes = new FileInfo(dbPath).Length; } catch { }
+        }
+
+        int snapshotCount = 0;
+        int journalCount = 0;
+        try { snapshotCount = (await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false)).Count; } catch { }
+        try { if (_journal is not null) journalCount = await _journal.CountModificationLogEntriesAsync(ct).ConfigureAwait(false); } catch { }
+
+        string message = $"База: {dbPath} — {dbBytes / 1024} КБ, снапшотов: {snapshotCount}, записей журнала: {journalCount}.";
+        var data = Encode(new StorageInfoData(dbPath, dbBytes, snapshotCount, journalCount));
+        return EngineOperationResult.Success(message, data);
+    }
+
+    public async Task<EngineOperationResult> CleanupSnapshotsAsync(int keepLast = 10, int olderThanDays = 30, CancellationToken ct = default)
+    {
+        keepLast = Math.Clamp(keepLast, 1, 1000);
+        olderThanDays = Math.Clamp(olderThanDays, 1, 3650);
+
+        IReadOnlyList<SystemSnapshot> all = await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false);
+        if (all.Count <= keepLast)
+        {
+            return EngineOperationResult.Success($"Чистить нечего: снапшотов {all.Count}, лимит {keepLast}.", Encode(new CleanupData(0, all.Count)));
+        }
+
+        DateTime cutoff = DateTime.UtcNow.AddDays(-olderThanDays);
+        var ordered = all.OrderByDescending(s => s.CreatedUtc).ToList();
+        var keepIds = new HashSet<string>(ordered.Take(keepLast).Select(s => s.SnapshotId), StringComparer.OrdinalIgnoreCase);
+        // Не удалять снапшоты новее cutoff
+        foreach (var s in ordered) if (s.CreatedUtc >= cutoff) keepIds.Add(s.SnapshotId);
+        // Не удалять снапшоты с незакрытой операцией
+        HashSet<string> pendingSnapshotIds = new(StringComparer.OrdinalIgnoreCase);
+        if (_journal is not null)
+        {
+            var pending = await _journal.GetPendingOperationsAsync(ct).ConfigureAwait(false);
+            foreach (var p in pending) if (!string.IsNullOrWhiteSpace(p.SnapshotId)) pendingSnapshotIds.Add(p.SnapshotId!);
+            foreach (var s in ordered) if (pendingSnapshotIds.Contains(s.SnapshotId)) keepIds.Add(s.SnapshotId);
+        }
+
+        int deleted = 0;
+        foreach (var s in ordered)
+        {
+            if (keepIds.Contains(s.SnapshotId)) continue;
+            try { await _snapshots.DeleteSnapshotAsync(s.SnapshotId, ct).ConfigureAwait(false); deleted++; } catch { }
+        }
+
+        string msg = deleted == 0 ? $"Старых снапшотов для удаления нет (всего {all.Count}, лимит {keepLast}, новее {olderThanDays} дн. не трогаем)." : $"Удалено снапшотов: {deleted}, осталось: {all.Count - deleted}.";
+        return EngineOperationResult.Success(msg, Encode(new CleanupData(deleted, all.Count - deleted)));
+    }
+
     public async Task<EngineOperationResult> UninstallCheckAsync(CancellationToken ct = default)
     {
         int applied = 0;
@@ -836,6 +1032,17 @@ public sealed class LiveEngineOperations : IEngineOperations
         double? JitterMadMs,
         double? LossPercent);
 
+    private sealed record BatchRowData(
+        string Code,
+        string TitleRu,
+        string PreviousText,
+        string AppliedText,
+        string VerifiedText,
+        string Outcome,
+        string StatusRu,
+        bool Succeeded,
+        bool RebootNeeded);
+
     private sealed record BatchData(
         string SnapshotId,
         int Total,
@@ -845,7 +1052,8 @@ public sealed class LiveEngineOperations : IEngineOperations
         int Failed,
         bool RebootRequired,
         string RestorePointStatus,
-        IReadOnlyList<string> Failures);
+        IReadOnlyList<string> Failures,
+        IReadOnlyList<BatchRowData> Rows);
 
     private sealed record RollbackData(
         string SnapshotId,
@@ -855,11 +1063,22 @@ public sealed class LiveEngineOperations : IEngineOperations
         int Orphaned,
         DateTime CreatedUtc);
 
+    private sealed record SingleRollbackData(
+        string SnapshotId,
+        string TweakCode,
+        bool Succeeded,
+        string Outcome,
+        string ReasonRu);
+
     private sealed record RepairData(
         int PendingOperations,
         int Reverted,
         int LeftAsIs,
         IReadOnlyList<string> ByCategory);
+
+    private sealed record ReturnAllData(int OkSteps, int FailSteps, bool NeedsReboot, IReadOnlyList<string> StepsRu);
+    private sealed record StorageInfoData(string DbPath, long DbBytes, int Snapshots, int JournalRows);
+    private sealed record CleanupData(int Deleted, int Remaining);
 
     private sealed record JournalRow(
         DateTime LoggedUtc,

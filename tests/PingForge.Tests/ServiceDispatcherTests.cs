@@ -341,6 +341,9 @@ public class ServiceDispatcherTests
         { "realtime-start", """{"id":"5","command":"realtime-start"}""" },
         { "route-measure", """{"id":"6","command":"route-measure"}""" },
         { "sessions-clear", """{"id":"7","command":"sessions-clear"}""" },
+        { "rollback-tweak", """{"id":"8","command":"rollback-tweak","args":{"tweak":"TCP_NO_DELAY","snapshot":"snap-001"}}""" },
+        { "return-all", """{"id":"9","command":"return-all"}""" },
+        { "cleanup-snapshots", """{"id":"10","command":"cleanup-snapshots","args":{"keep":"10","olderThanDays":"30"}}""" },
     };
 
     [Theory]
@@ -554,6 +557,18 @@ public class ServiceDispatcherTests
         {
             RealtimeRunning = start;
             return Task.FromResult(EngineOperationResult.Success(start ? "Оптимизация запущена." : "Оптимизация остановлена."));
+        }
+
+        public List<(string TweakCode, string? SnapshotId)> SingleRollbacks { get; } = [];
+
+        public Task<EngineOperationResult> ReturnAllAsync(CancellationToken ct = default) => Task.FromResult(EngineOperationResult.Success("Всё возвращено."));
+        public Task<EngineOperationResult> GetStorageInfoAsync(CancellationToken ct = default) => Task.FromResult(EngineOperationResult.Success("База 0 КБ", """{"dbPath":"C:\\ProgramData\\PingForge\\pingforge.db","dbBytes":0,"snapshots":0,"journalRows":0}"""));
+        public Task<EngineOperationResult> CleanupSnapshotsAsync(int keepLast = 10, int olderThanDays = 30, CancellationToken ct = default) => Task.FromResult(EngineOperationResult.Success($"Удалено 0, осталось {keepLast}."));
+
+        public Task<EngineOperationResult> RollbackSingleTweakAsync(string tweakCode, string? snapshotId, CancellationToken ct = default)
+        {
+            SingleRollbacks.Add((tweakCode, snapshotId));
+            return Task.FromResult(EngineOperationResult.Success($"Твик {tweakCode} возвращён."));
         }
 
         public Task<EngineOperationResult> SetPerfProfileAsync(PerfProfile profile, CancellationToken ct = default)

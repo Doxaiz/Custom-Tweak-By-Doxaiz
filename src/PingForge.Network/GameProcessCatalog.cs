@@ -92,6 +92,21 @@ public static class CustomGameValidation
 /// разрешены для всех; фильтр пакетов (WinDivert) не поднимается для игр с ядерным анти-читом,
 /// и это подтверждено тестом каталога.
 /// </summary>
+/// <summary>Дополнительные алиасы Фортнайта: EAC/BE-обёртки и лаунчерные варианты. Проверяется префиксом fortniteclient.</summary>
+public static class FortniteAliases
+{
+    public static readonly IReadOnlyList<string> All = new[]
+    {
+        "fortniteclient-win64-shipping.exe",
+        "fortniteclient-win64-shipping_be.exe",
+        "fortniteclient-win64-shipping_eac.exe",
+        "fortniteclient-win64-shipping-eac.exe",
+        "fortnite_be.exe",
+        "fortnite_eac.exe",
+        "fortnite.exe",
+    };
+}
+
 public sealed class GameProcessCatalog
 {
     public static IReadOnlyList<KnownGame> DefaultGames { get; } = new[]
@@ -192,7 +207,27 @@ public sealed class GameProcessCatalog
     public bool TryMatch(string? processName, out KnownGame game)
     {
         game = null!;
-        return !string.IsNullOrWhiteSpace(processName) && _byExe.TryGetValue(Normalize(processName), out game!);
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            return false;
+        }
+
+        string norm = Normalize(processName);
+        if (_byExe.TryGetValue(norm, out game!))
+        {
+            return true;
+        }
+
+        // Фортнайт в творческом/лобби часто запускается обёрткой EAC/BE с суффиксом _be/_eac: ловим префиксом.
+        if (norm.StartsWith("fortniteclient", StringComparison.OrdinalIgnoreCase) ||
+            norm.StartsWith("fortnite_", StringComparison.OrdinalIgnoreCase) ||
+            norm.Equals("fortnite.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            // Всегда есть базовый Фортнайт в каталоге
+            return _byExe.TryGetValue("fortniteclient-win64-shipping.exe", out game!);
+        }
+
+        return false;
     }
 
     public static bool IsIgnored(string? processName) =>
