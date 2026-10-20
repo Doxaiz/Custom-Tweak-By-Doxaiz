@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using PingForge.Core.Abstractions;
@@ -28,6 +28,7 @@ public sealed record RoutePathComparisonReport(
     RoutePathProbeResult? Direct,
     IReadOnlyList<RoutePathProbeResult> ViaNodes,
     RoutingNodeEntry? Winner,
+    RoutingNodeEntry? RunnerUp,
     string VerdictRu,
     bool TableRestored,
     string? TableProblemRu)
@@ -80,7 +81,7 @@ public sealed class RoutePathComparisonService
         if (!RoutingNodeValidation.NormalizeIpv4(targetIp, out string target))
         {
             return new RoutePathComparisonReport(
-                targetIp, null, [], null,
+                targetIp, null, [], null, null,
                 $"Адрес сервера «{targetIp}» не IPv4: временный маршрут на имя не ставится, сравнивать пути не буду.",
                 TableRestored: true, TableProblemRu: null);
         }
@@ -97,7 +98,7 @@ public sealed class RoutePathComparisonService
                 nodes.Select(node => new RoutePathProbeResult(
                     node.Address, node.Name, node.SourceRu, false, null, null, null,
                     $"к {target} уже есть маршрут через {foreign.NextHop} (метрика {foreign.Metric}) — чужой маршрут не перезаписываю")).ToList(),
-                null,
+                null, null,
                 $"К {target} уже есть маршрут /32, созданный не программой: сравнивать пути не буду, чтобы его не трогать. " +
                 "Ничего не меняем.",
                 TableRestored: true, TableProblemRu: null);
@@ -300,7 +301,7 @@ public sealed class RoutePathComparisonService
 
         if (nodes.Count == 0)
         {
-            return new RoutePathComparisonReport(target, direct, via, null,
+            return new RoutePathComparisonReport(target, direct, via, null, null,
                 "Узлов для сравнения нет: искать не среди чего. Добавьте второй шлюз или сохраните узел вручную — " +
                 "и только потом измеряйте." + tableTail,
                 restored, tableProblem);
@@ -309,7 +310,7 @@ public sealed class RoutePathComparisonService
         if (!direct.Success)
         {
             string reason = direct.ProblemRu ?? "прямой путь не измерился";
-            return new RoutePathComparisonReport(target, direct, via, null,
+            return new RoutePathComparisonReport(target, direct, via, null, null,
                 $"Прямой путь до {target} не измерился ({reason}): сравнивать честно не с чем, узел не выбираю, " +
                 "маршруты не меняю." + tableTail,
                 restored, tableProblem);
@@ -326,46 +327,56 @@ public sealed class RoutePathComparisonService
                 .Select(result => $"«{result.Name}»: {result.ProblemRu}")
                 .Take(3));
 
-            return new RoutePathComparisonReport(target, direct, via, null,
+            return new RoutePathComparisonReport(target, direct, via, null, null,
                 $"Ни один узел не измерился до {target} ({(problems.Length > 0 ? problems : "замеры не задались")}). " +
                 $"Прямой путь: медиана {FormatMs(direct.MedianRttMs!.Value)} мс — его и оставляем, ничего не меняем." + tableTail,
                 restored, tableProblem);
         }
 
         // Победитель среди узлов: медиана → джиттер → потери.
-        RoutePathProbeResult best = measured
+        List<RoutePathProbeResult> sorted = measured
             .OrderBy(result => result.MedianRttMs!.Value)
             .ThenBy(result => result.JitterMs ?? double.MaxValue)
             .ThenBy(result => result.LossPercent ?? double.MaxValue)
-            .First();
+            .ToList();
+        RoutePathProbeResult best = sorted[0];
+        RoutingNodeEntry? winner = nodes.FirstOrDefault(node =>
+            node.Address.Equals(best.Address, StringComparison.OrdinalIgnoreCase));
+        RoutingNodeEntry? runnerUp = null;
+        if (sorted.Count > 1)
+        {
+            RoutePathProbeResult second = sorted[1];
+            runnerUp = nodes.FirstOrDefault(node =>
+                node.Address.Equals(second.Address, StringComparison.OrdinalIgnoreCase));
+        }
 
         double gain = direct.MedianRttMs!.Value - best.MedianRttMs!.Value;
 
         if (gain >= NotableImprovementMs)
         {
-            RoutingNodeEntry? winner = nodes.FirstOrDefault(node =>
-                node.Address.Equals(best.Address, StringComparison.OrdinalIgnoreCase));
-
             string tieNote = measured.Count > 1
                 ? $" Лучший из {measured.Count} измеренных (сравнение: медиана, при равенстве — джиттер, затем потери)."
                 : string.Empty;
+            string runnerNote = runnerUp is not null
+                ? $" Резерв — «{runnerUp.Name}» ({runnerUp.Address}): горячий шлюз на случай просадки основного."
+                : string.Empty;
 
-            return new RoutePathComparisonReport(target, direct, via, winner,
+            return new RoutePathComparisonReport(target, direct, via, winner, runnerUp,
                 $"Через «{best.Name}» ({best.Address}) медиана {FormatMs(best.MedianRttMs!.Value)} мс против " +
                 $"{FormatMs(direct.MedianRttMs.Value)} мс напрямую — выигрыш {FormatMs(gain)} мс. Этот путь можно применять." +
-                tieNote + tableTail,
+                tieNote + runnerNote + tableTail,
                 restored, tableProblem);
         }
 
         if (gain > -NotableImprovementMs)
         {
-            return new RoutePathComparisonReport(target, direct, via, null,
+            return new RoutePathComparisonReport(target, direct, via, null, runnerUp,
                 $"Прямой путь не хуже: медиана {FormatMs(direct.MedianRttMs.Value)} мс против " +
                 $"{FormatMs(best.MedianRttMs!.Value)} мс через «{best.Name}» — разница в пределах погрешности. Ничего не меняем." + tableTail,
                 restored, tableProblem);
         }
 
-        return new RoutePathComparisonReport(target, direct, via, null,
+        return new RoutePathComparisonReport(target, direct, via, null, runnerUp,
             $"Прямой путь короче на {FormatMs(Math.Abs(gain))} мс (медиана {FormatMs(direct.MedianRttMs.Value)} против " +
             $"{FormatMs(best.MedianRttMs!.Value)} через «{best.Name}») — ничего не меняем." + tableTail,
             restored, tableProblem);
@@ -426,6 +437,10 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
 
     /// <summary>Последний вердикт сравнения — его показывают статус оптимизации и живые проверки.</summary>
     public string? LastDecisionRu { get; private set; }
+
+    public string? LastMultipathRu { get; private set; }
+
+    public RouteOverride? LastSecondaryRoute { get; private set; }
 
     /// <summary>
     /// Сколько живёт решение автовыбора: при деградации оптимизатор спрашивает варианты снова,
@@ -511,6 +526,30 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
 
         LastDecisionRu = report.VerdictRu;
 
+        // Мультипуть на своих линиях: без своей сети дублировать нельзя, но держим горячий резерв.
+        if (report.RunnerUp is not null)
+        {
+            LastSecondaryRoute = new RouteOverride(report.RunnerUp.Address, RoutePathComparisonService.ProbeMetric, $"{report.RunnerUp.SourceRu}: {report.RunnerUp.Name}");
+            LastMultipathRu = report.Winner is not null
+                ? $"Мультипуть: основной «{report.Winner.Name}» ({report.Winner.Address}), резерв — «{report.RunnerUp.Name}» ({report.RunnerUp.Address}). Без своей сети пакеты не дублируются: второй шлюз горячий, переключение за 1–2 с при просадке."
+                : $"Резервный шлюз — «{report.RunnerUp.Name}» ({report.RunnerUp.Address}), но прямой путь сейчас не хуже — ничего не переключаем.";
+        }
+        else if (settings.MultipathEnabled && settings.IsMultipathValid)
+        {
+            LastSecondaryRoute = new RouteOverride(settings.SecondaryNode!.Address, RoutePathComparisonService.ProbeMetric, $"{settings.SecondaryNode.SourceRu}: {settings.SecondaryNode.Name}");
+            LastMultipathRu = $"Мультипуть включён: основной «{settings.DefaultNode?.Name ?? settings.DefaultNodeAddress}», резерв «{settings.SecondaryNode.Name}» ({settings.SecondaryNode.Address}) — ручной выбор.";
+        }
+        else if (report.Winner is not null)
+        {
+            LastSecondaryRoute = null;
+            LastMultipathRu = null;
+        }
+        else
+        {
+            LastSecondaryRoute = null;
+            LastMultipathRu = null;
+        }
+
         if (report.Winner is { } winner)
         {
             _applyTarget(new RouteOverride(winner.Address, RoutePathComparisonService.ProbeMetric, $"{winner.SourceRu}: {winner.Name}"));
@@ -556,6 +595,7 @@ public sealed record RoutingMeasureDto(
     [property: JsonPropertyName("directProblem")] string? DirectProblemRu,
     [property: JsonPropertyName("nodes")] IReadOnlyList<RoutingMeasureNodeDto> Nodes,
     [property: JsonPropertyName("winnerAddress")] string? WinnerAddress,
+    [property: JsonPropertyName("runnerUpAddress")] string? RunnerUpAddress,
     [property: JsonPropertyName("verdict")] string VerdictRu,
     [property: JsonPropertyName("tableRestored")] bool TableRestored,
     [property: JsonPropertyName("tableProblem")] string? TableProblemRu);
@@ -589,6 +629,7 @@ public static class RoutingWireCodec
                 result.MedianRttMs, result.JitterMs, result.LossPercent, result.ProblemRu))
             .ToList(),
         report.Winner?.Address,
+        report.RunnerUp?.Address,
         report.VerdictRu,
         report.TableRestored,
         report.TableProblemRu);
