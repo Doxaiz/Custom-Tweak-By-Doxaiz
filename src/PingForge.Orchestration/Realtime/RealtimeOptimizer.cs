@@ -134,6 +134,16 @@ public sealed class RealtimeOptimizer
 
         _flow = PickFlow(flows, preferredGame);
 
+        // Лобби/творческий: игра уже запущена, но публичного адреса матча ещё нет (RemotePort 0, endpoint "—").
+        // Раньше это считалось “игра не найдена”, хотя процесс Фортнайта уже был в памяти.
+        if (_flow.RemotePort == 0 || _flow.RemoteEndpoint == "—" || _flow.RemoteEndpoint == "-")
+        {
+            string lobbyTail = string.IsNullOrWhiteSpace(noGameReason) ? string.Empty : " " + noGameReason;
+            return Fail(
+                $"Игра уже запущена: {_flow.GameTitleRu} найден в системе (PID {_flow.ProcessId}). Вы сейчас в лобби/творческом режиме — публичного адреса сервера матча пока нет. " +
+                "Твики Windows уже можно применить в разделе «Твики» (снижают задержки ввода и очереди), а маршрут и QoS применятся как только зайдёте в матч с живым адресом сервера — нажмите кнопку снова в матче." + lobbyTail);
+        }
+
         SetState(RealtimeOptimizationState.MeasuringBaseline,
             $"Меряем исходный пинг до {_flow.RemoteEndpoint}: {_options.BaselineWindows} окна по {_options.SamplesPerWindow} проб. " +
             "Числа берутся из живого потока игры, лишние пакеты не отправляются.");
