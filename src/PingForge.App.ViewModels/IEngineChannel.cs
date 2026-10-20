@@ -74,7 +74,9 @@ public sealed record AppSettings(
     IReadOnlyList<CustomGameEntry>? CustomGames = null,
     IReadOnlyList<RoutingNodeEntry>? RoutingNodes = null,
     string? RoutingDefaultNode = null,
-    bool RoutingAutoSelect = false);
+    bool RoutingAutoSelect = false,
+    bool RoutingMultipathEnabled = false,
+    string? RoutingSecondaryNode = null);
 
 /// <summary>Память вместо файла: так проверяются «сохранилось / не сохранилось» без диска.</summary>
 public sealed class InMemorySettingsStore : IAppSettingsStore

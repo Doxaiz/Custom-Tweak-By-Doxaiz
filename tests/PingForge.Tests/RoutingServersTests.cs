@@ -1100,7 +1100,8 @@ public sealed class RoutingServersTests
             "10.8.0.1",
             "Через «WG» (10.8.0.1) медиана 30 мс против 40 мс напрямую — выигрыш 10 мс. Этот путь можно применять.",
             true,
-            null);
+            null,
+            RunnerUpAddress: null);
 
         harness.NextMeasure = (measure.VerdictRu + " Временные маршруты сняты: таблица совпадает с исходной.", RoutingWireCodec.EncodeMeasure(measure));
 

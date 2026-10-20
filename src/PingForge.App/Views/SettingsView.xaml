@@ -118,37 +118,6 @@
         <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#F2C94C"
                    Text="{Binding WarningText}" />
 
-        <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding Rows}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,7,0,7">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <StackPanel Grid.Column="0">
-                    <TextBlock FontWeight="SemiBold">
-                      <Run Text="{Binding Name, Mode=OneWay}" /><Run Text=" — " Foreground="{StaticResource Muted}" /><Run Text="{Binding Address, Mode=OneWay}" Foreground="{StaticResource Muted}" />
-                    </TextBlock>
-                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap">
-                      <Run Text="{Binding SourceRu, Mode=OneWay}" /><Run Text=" · медиана RTT через узел: " /><Run Text="{Binding MedianRu, Mode=OneWay}" />
-                    </TextBlock>
-                  </StackPanel>
-                  <TextBlock Grid.Column="1" Text="узел по умолчанию" VerticalAlignment="Center" Margin="0,0,8,0"
-                             Style="{StaticResource Caption}" Visibility="{Binding IsDefault, Converter={StaticResource BoolToVisibility}}" />
-                  <Button Grid.Column="2" Style="{StaticResource GhostButton}" Content="По умолчанию" Margin="0,0,8,0"
-                          Command="{Binding MakeDefaultCommand}" />
-                  <Button Grid.Column="3" Style="{StaticResource GhostButton}" Content="Удалить"
-                          Command="{Binding RemoveCommand}" />
-                </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
         <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
           <TextBox Width="170" Text="{Binding AddAddress, UpdateSourceTrigger=PropertyChanged}" ToolTip="IPv4-адрес узла, например 10.8.0.1" />
           <TextBox Width="190" Margin="8,0,0,0" Text="{Binding AddLabel, UpdateSourceTrigger=PropertyChanged}" ToolTip="Подпись (необязательно): второй канал, WireGuard дома…" />
@@ -160,6 +129,52 @@
           <Button Style="{StaticResource GhostButton}" Content="Измерить все пути" Command="{Binding MeasureAllCommand}" Margin="0,0,12,0" />
           <CheckBox VerticalAlignment="Center" Content="выбирать лучший автоматически" IsChecked="{Binding AutoSelectBest}" />
         </StackPanel>
+
+        <Border BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,10,0,0">
+          <StackPanel>
+            <TextBlock FontWeight="SemiBold" Text="Мультипуть на своих линиях — без чужой сети" />
+            <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" Text="{Binding MultipathNoteRu}" />
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+              <CheckBox VerticalAlignment="Center" Content="включить мультипуть (нужны 2 шлюза)" IsChecked="{Binding MultipathEnabled}" AutomationProperties.Name="Включить мультипуть" />
+              <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="12,0,0,0" Text="резерв отмечается в списке, основной остаётся /32 на сервер игры" />
+            </StackPanel>
+            <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" Text="Честно: без своей сети пакеты не дублируются по интернету. Второй шлюз — горячий резерв: при просадке основного программа переключает маршрут за 1–2 с. Это не VPN и не VPS." />
+          </StackPanel>
+        </Border>
+
+        <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding Rows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,7,0,7">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Grid.Column="0">
+                    <TextBlock FontWeight="SemiBold">
+                      <Run Text="{Binding Name, Mode=OneWay}" /><Run Text=" — " Foreground="{StaticResource Muted}" /><Run Text="{Binding Address, Mode=OneWay}" Foreground="{StaticResource Muted}" /><Run Text=" (" Foreground="{StaticResource Muted}" /><Run Text="{Binding RoleRu, Mode=OneWay}" Foreground="{StaticResource Accent2}" /><Run Text=")" Foreground="{StaticResource Muted}" />
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap">
+                      <Run Text="{Binding SourceRu, Mode=OneWay}" /><Run Text=" · медиана RTT через узел: " /><Run Text="{Binding MedianRu, Mode=OneWay}" />
+                    </TextBlock>
+                  </StackPanel>
+                  <TextBlock Grid.Column="1" Text="основной" VerticalAlignment="Center" Margin="0,0,8,0" Style="{StaticResource Caption}" Visibility="{Binding IsDefault, Converter={StaticResource BoolToVisibility}}" />
+                  <TextBlock Grid.Column="2" Text="резерв" VerticalAlignment="Center" Margin="0,0,8,0" Style="{StaticResource Caption}" Visibility="{Binding IsSecondary, Converter={StaticResource BoolToVisibility}}" />
+                  <Button Grid.Column="3" Style="{StaticResource GhostButton}" Content="Основной" Margin="0,0,8,0" Command="{Binding MakeDefaultCommand}" AutomationProperties.Name="Сделать основным" />
+                  <StackPanel Grid.Column="4" Orientation="Horizontal">
+                    <Button Style="{StaticResource GhostButton}" Content="Резерв" Margin="0,0,8,0" Command="{Binding MakeSecondaryCommand}" AutomationProperties.Name="Сделать резервом" />
+                    <Button Style="{StaticResource GhostButton}" Content="Удалить" Command="{Binding RemoveCommand}" AutomationProperties.Name="Удалить узел" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" Text="Совет: после «Измерить все пути» лучший станет основным, второй — резервом, если включён мультипуть." />
 
         <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0" TextWrapping="Wrap" Text="{Binding StatusRu}" />
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{StaticResource Muted}"
