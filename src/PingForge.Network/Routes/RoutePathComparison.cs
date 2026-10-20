@@ -595,10 +595,10 @@ public sealed record RoutingMeasureDto(
     [property: JsonPropertyName("directProblem")] string? DirectProblemRu,
     [property: JsonPropertyName("nodes")] IReadOnlyList<RoutingMeasureNodeDto> Nodes,
     [property: JsonPropertyName("winnerAddress")] string? WinnerAddress,
-    [property: JsonPropertyName("runnerUpAddress")] string? RunnerUpAddress = null,
     [property: JsonPropertyName("verdict")] string VerdictRu,
     [property: JsonPropertyName("tableRestored")] bool TableRestored,
-    [property: JsonPropertyName("tableProblem")] string? TableProblemRu);
+    [property: JsonPropertyName("tableProblem")] string? TableProblemRu,
+    [property: JsonPropertyName("runnerUpAddress")] string? RunnerUpAddress = null);
 
 public static class RoutingWireCodec
 {
@@ -629,10 +629,10 @@ public static class RoutingWireCodec
                 result.MedianRttMs, result.JitterMs, result.LossPercent, result.ProblemRu))
             .ToList(),
         report.Winner?.Address,
-        report.RunnerUp?.Address,
         report.VerdictRu,
         report.TableRestored,
-        report.TableProblemRu);
+        report.TableProblemRu,
+        RunnerUpAddress: report.RunnerUp?.Address);
 
     private static T? Deserialize<T>(string? json)
     {
