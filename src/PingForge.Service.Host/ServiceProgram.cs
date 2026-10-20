@@ -1,4 +1,5 @@
 using PingForge.Core.Abstractions;
+using PingForge.Core.Diagnostics;
 using PingForge.Core.Tweaks;
 using PingForge.Data;
 using PingForge.Data.Repositories;
@@ -38,6 +39,12 @@ public static class ServiceProgram
         "PingForge");
 
     private static string LogPath => Path.Combine(DataDirectory, "service.log");
+
+    /// <summary>
+    /// Журнал службы: 5 МБ и три файла (текущий плюс две копии). Прежний поворот держал одну копию,
+    /// то есть после второго поворота исчезала история первого — а нужна она как раз при разборе жалобы.
+    /// </summary>
+    private static readonly Lazy<RollingLogFile> LogFile = new(() => new RollingLogFile(LogPath));
 
     public static int Main(string[] args)
     {
@@ -259,8 +266,8 @@ public static class ServiceProgram
 
     /// <summary>
     /// Журнал службы. Пишем и в файл, и в консоль: файл нужен, когда служба работает без окна,
-    /// консоль — при отладочном запуске. Ротация простая: файл больше мегабайта — начинаем заново,
-    /// чтобы он не рос бесконечно на чужом диске.
+    /// консоль — при отладочном запуске. Ротация — <see cref="RollingLogFile"/>: 5 МБ, три файла,
+    /// строка никогда не обрезается, старые копии удаляются по одной.
     /// </summary>
     private static void Log(string messageRu)
     {
@@ -268,12 +275,7 @@ public static class ServiceProgram
 
         try
         {
-            if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 1024 * 1024)
-            {
-                File.Move(LogPath, LogPath + ".old", overwrite: true);
-            }
-
-            File.AppendAllText(LogPath, line + Environment.NewLine);
+            LogFile.Value.Append(line);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

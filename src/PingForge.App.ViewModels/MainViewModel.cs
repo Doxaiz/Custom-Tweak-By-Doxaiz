@@ -84,6 +84,13 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public UpdateCheckViewModel Updates { get; } = new();
 
+    /// <summary>
+    /// «Пакет для поддержки» (задача Q) для раздела «О программе». Живёт рядом с проверкой обновлений
+    /// по той же причине: страница одна. Сам по себе ничего не читает и не пишет — только по нажатию,
+    /// и сначала показывает список того, что попадёт в архив.
+    /// </summary>
+    public SupportPackageViewModel Support { get; } = new();
+
     /// <summary>Закрыть ответ программы, когда он прочитан.</summary>
     public RelayCommand DismissNoticeCommand { get; }
 

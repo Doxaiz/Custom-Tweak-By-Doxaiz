@@ -44,6 +44,50 @@
       </StackPanel>
     </Border>
 
+    <!-- Пакет для поддержки (задача Q): собирается только по кнопке, до нажатия ни один файл не читается.
+         Сначала показывает список того, что попадёт в архив, затем записывает ZIP по уже показанному плану. -->
+    <Border Style="{StaticResource Card}" x:Name="SupportBlock">
+      <StackPanel DataContext="{Binding Support}">
+        <TextBlock Text="Пакет для поддержки" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
+                   Text="Если программа упала или помощь нужна дистанционно: соберите один архив с отчётом о сессии, журналами и сведениями о системе. Сам он никуда не отправляется — отправлять вам. Внутри будут адреса игровых серверов и пути к файлам на этом компьютере." />
+
+        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+          <Button x:Name="SupportPrepareButton" Style="{StaticResource GhostButton}" Content="Показать, что попадёт в пакет"
+                  Command="{Binding PrepareCommand}" Margin="0,0,12,0" />
+          <Button x:Name="SupportBuildButton" Style="{StaticResource GhostButton}" Content="Собрать пакет"
+                  Command="{Binding BuildCommand}" />
+        </StackPanel>
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0" TextWrapping="Wrap" Text="{Binding StatusRu}" />
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding SummaryRu}"
+                   Visibility="{Binding HasPreview, Converter={StaticResource BoolToVisibility}}" />
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding WarningRu}"
+                   Visibility="{Binding HasPreview, Converter={StaticResource BoolToVisibility}}" />
+
+        <ItemsControl ItemsSource="{Binding Rows}" Margin="0,10,0,0"
+                      Visibility="{Binding HasPreview, Converter={StaticResource BoolToVisibility}}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Margin="0,6,0,0">
+                <TextBlock Text="{Binding NameRu}" FontWeight="SemiBold" />
+                <TextBlock Style="{StaticResource Caption}" Text="{Binding DescriptionRu}" TextWrapping="Wrap" />
+                <TextBlock Style="{StaticResource Caption}" Text="{Binding SizeRu}" />
+                <TextBlock Style="{StaticResource Caption}" Text="{Binding StatusRu}" />
+                <TextBlock Style="{StaticResource Caption}" Text="{Binding TruncatedNoteRu}"
+                           Visibility="{Binding TruncatedNoteRu, Converter={StaticResource StringToVisibility}}" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,10,0,0" TextWrapping="Wrap" Text="{Binding PathRu}"
+                   Visibility="{Binding HasBuiltPackage, Converter={StaticResource BoolToVisibility}}" />
+      </StackPanel>
+    </Border>
+
     <!-- Обновления (задача I): проверка только по кнопке. Программа ничего не скачивает
          и не устанавливает сама — показывает номер новой версии, открывает страницу релиза
          обычным браузером и даёт SHA-256 для ручной сверки после ручного скачивания. -->
