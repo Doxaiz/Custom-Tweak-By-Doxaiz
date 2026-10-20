@@ -14,8 +14,8 @@ public sealed class SettingsExportViewModel : ObservableObject
     {
         _store = store;
         _dialogs = dialogs;
-        ExportCommand = new AsyncRelayCommand(ExportAsync);
-        ImportCommand = new AsyncRelayCommand(ImportAsync);
+        ExportCommand = new AsyncRelayCommand(() => ExportCoreAsync(null));
+        ImportCommand = new AsyncRelayCommand(() => ImportCoreAsync(null));
         ResetCommand = new AsyncRelayCommand(ResetAsync);
     }
 
@@ -28,10 +28,10 @@ public sealed class SettingsExportViewModel : ObservableObject
 
     public sealed record ExportEnvelope(int SchemaVersion, DateTime ExportedUtc, string NoteRu, AppSettings Settings);
 
-    public Task ExportToFileAsync(string path, CancellationToken ct = default) => ExportAsync(path, ct);
-    public Task ImportFromFileAsync(string path, CancellationToken ct = default) => ImportAsync(path, ct);
+    public Task ExportToFileAsync(string path, CancellationToken ct = default) => ExportCoreAsync(path, ct);
+    public Task ImportFromFileAsync(string path, CancellationToken ct = default) => ImportCoreAsync(path, ct);
 
-    private async Task ExportAsync(string? preselectedPath = null, CancellationToken ct = default)
+    private async Task ExportCoreAsync(string? preselectedPath, CancellationToken ct = default)
     {
         string path = preselectedPath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PingForge-настройки.json");
         try
@@ -44,7 +44,7 @@ public sealed class SettingsExportViewModel : ObservableObject
         catch (Exception ex) { StatusRu = $"Не удалось сохранить: {ex.Message}"; }
     }
 
-    private async Task ImportAsync(string? preselectedPath = null, CancellationToken ct = default)
+    private async Task ImportCoreAsync(string? preselectedPath, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(preselectedPath)) { StatusRu = "Укажите путь к файлу."; return; }
         string path = preselectedPath!;
@@ -80,8 +80,9 @@ public sealed class SettingsExportViewModel : ObservableObject
 
     private static AppSettings Merge(AppSettings current, AppSettings incoming)
     {
-        // Добавить только новое: CustomGames которых нет у текущих
-        var mergedGames = current.CustomGames.Concat(incoming.CustomGames.Where(g => !current.CustomGames.Any(c => c.ExeName.Equals(g.ExeName, StringComparison.OrdinalIgnoreCase)))).ToList();
+        var cur = current.CustomGames ?? Array.Empty<CustomGameEntry>();
+        var inc = incoming.CustomGames ?? Array.Empty<CustomGameEntry>();
+        var mergedGames = cur.Concat(inc.Where(g => !cur.Any(c => c.ExeName.Equals(g.ExeName, StringComparison.OrdinalIgnoreCase)))).ToList();
         return current with { CustomGames = mergedGames };
     }
 }

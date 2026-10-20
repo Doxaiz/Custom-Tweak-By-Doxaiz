@@ -21,7 +21,7 @@ public sealed class DatabaseBackupService
         await src.OpenAsync(ct).ConfigureAwait(false);
         await using var dst = new SqliteConnection($"Data Source={bakPath}");
         await dst.OpenAsync(ct).ConfigureAwait(false);
-        src.BackupDatabase(dst);
+        try { src.BackupDatabase(dst); } catch { File.Copy(path, bakPath, overwrite: true); }
         PruneOldBackups(dir);
         return bakPath;
     }
