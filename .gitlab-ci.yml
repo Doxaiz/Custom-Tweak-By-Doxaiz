@@ -1,0 +1,44 @@
+# GitLab CI — хостинговые Windows-раннеры (Beta, tag saas-windows-medium-amd64)
+# Подходит для WPF (.NET 10). Бесплатный тариф включает Windows.
+stages: [ build, test, package ]
+
+variables:
+  PYTHONUTF8: "1"
+  DOTNET_NOLOGO: "1"
+
+build:
+  stage: build
+  tags: [ saas-windows-medium-amd64 ]
+  script:
+    - dotnet --info
+    - dotnet build PingForge.slnx -c Release --nologo
+  artifacts:
+    paths: [ "docs/catalog.json" ]
+    expire_in: 3 days
+
+test:
+  stage: test
+  tags: [ saas-windows-medium-amd64 ]
+  script:
+    - dotnet test PingForge.slnx -c Release --no-build --logger "trx;LogFileName=test-results.trx" --results-directory "test-results"
+    - dotnet run --project tools/PingForge.CatalogDump -c Release -- docs/catalog.json
+    - python tools/render_ui_preview.py docs/catalog.json docs/pingforge-ui-preview.html
+    - npm install jsdom --no-save --silent
+    - node tools/check_ui_preview.js docs/pingforge-ui-preview.html
+  artifacts:
+    reports:
+      junit: test-results/**/*.trx
+    expire_in: 3 days
+
+package:
+  stage: package
+  tags: [ saas-windows-medium-amd64 ]
+  script:
+    - dotnet publish src/PingForge.App/PingForge.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist/portable
+    - dotnet publish src/PingForge.Service.Host/PingForge.Service.Host.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist/portable
+    - powershell -Command "Compress-Archive -Path dist/portable/* -DestinationPath dist/CustomTweakByDoxaiz-portable-win-x64.zip -Force"
+    - powershell -Command "choco install nsis -y; makensis -INPUTCHARSET UTF8 '-DVERSION=0.2.0' '-DSOURCE_DIR=dist/portable' '-DOUT_DIR=dist' installer/CustomTweakByDoxaiz.nsi"
+  artifacts:
+    paths: [ dist/*.exe, dist/*.zip ]
+    expire_in: 1 week
+  only: [ tags ]
