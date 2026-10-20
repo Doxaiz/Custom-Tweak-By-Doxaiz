@@ -91,6 +91,10 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public SupportPackageViewModel Support { get; } = new();
 
+    public GameSelectionViewModel GameSelection { get; } = new();
+
+    public NetworkStateMonitor? NetworkMonitor { get; private set; }
+
     /// <summary>Закрыть ответ программы, когда он прочитан.</summary>
     public RelayCommand DismissNoticeCommand { get; }
 

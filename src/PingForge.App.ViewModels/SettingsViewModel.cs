@@ -49,6 +49,11 @@ public sealed class SettingsViewModel : ObservableObject
         ReturnAll.AttachDialogs(dialogs);
         Storage = new StorageInfoViewModel(engine);
         Storage.AttachDialogs(dialogs);
+        Export = new SettingsExportViewModel(store, dialogs);
+        UiScale = new UiScaleViewModel();
+        UiScale100Command = new RelayCommand(() => UiScale.Scale = 1.0);
+        UiScale125Command = new RelayCommand(() => UiScale.Scale = 1.25);
+        UiScale150Command = new RelayCommand(() => UiScale.Scale = 1.5);
     }
 
     /// <summary>Узлы маршрутизации: список, поиск шлюзов, замер путей. Ничего не меняет сама по себе.</summary>
@@ -60,6 +65,14 @@ public sealed class SettingsViewModel : ObservableObject
     public ReturnAllViewModel ReturnAll { get; }
 
     public StorageInfoViewModel Storage { get; }
+
+    public SettingsExportViewModel Export { get; }
+
+    public UiScaleViewModel UiScale { get; }
+
+    public RelayCommand UiScale100Command { get; }
+    public RelayCommand UiScale125Command { get; }
+    public RelayCommand UiScale150Command { get; }
 
     public AsyncRelayCommand SaveCommand { get; }
 
