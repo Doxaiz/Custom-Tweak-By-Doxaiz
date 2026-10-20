@@ -875,11 +875,8 @@ public sealed class LiveEngineOperations : IEngineOperations
         string dbPath = string.Empty;
         try
         {
-            if (_snapshots is SnapshotService svc)
-            {
-                dbBytes = await svc.GetDatabaseFileSizeAsync(ct).ConfigureAwait(false);
-                dbPath = svc.DatabasePath;
-            }
+            dbBytes = await _snapshots.GetDatabaseFileSizeAsync(ct).ConfigureAwait(false);
+            dbPath = _snapshots.DatabasePath;
         }
         catch { }
 
@@ -925,13 +922,10 @@ public sealed class LiveEngineOperations : IEngineOperations
         }
 
         int deleted = 0;
-        if (_snapshots is SnapshotService svc2)
+        foreach (var s in ordered)
         {
-            foreach (var s in ordered)
-            {
-                if (keepIds.Contains(s.SnapshotId)) continue;
-                try { await svc2.DeleteSnapshotAsync(s.SnapshotId, ct).ConfigureAwait(false); deleted++; } catch { }
-            }
+            if (keepIds.Contains(s.SnapshotId)) continue;
+            try { await _snapshots.DeleteSnapshotAsync(s.SnapshotId, ct).ConfigureAwait(false); deleted++; } catch { }
         }
 
         string msg = deleted == 0 ? $"Старых снапшотов для удаления нет (всего {all.Count}, лимит {keepLast}, новее {olderThanDays} дн. не трогаем)." : $"Удалено снапшотов: {deleted}, осталось: {all.Count - deleted}.";
