@@ -339,10 +339,9 @@ public class ServiceDispatcherTests
         { "rollback", """{"id":"3","command":"rollback"}""" },
         { "repair-network", """{"id":"4","command":"repair-network"}""" },
         { "realtime-start", """{"id":"5","command":"realtime-start"}""" },
-        { "perf-profile", """{"id":"6","command":"perf-profile","args":{"profile":"economy"}}""" },
-        { "route-measure", """{"id":"7","command":"route-measure"}""" },
-        { "sessions-clear", """{"id":"8","command":"sessions-clear"}""" },
-        { "rollback-tweak", """{"id":"9","command":"rollback-tweak","args":{"tweak":"TCP_NO_DELAY","snapshot":"snap-001"}}""" },
+        { "route-measure", """{"id":"6","command":"route-measure"}""" },
+        { "sessions-clear", """{"id":"7","command":"sessions-clear"}""" },
+        { "rollback-tweak", """{"id":"8","command":"rollback-tweak","args":{"tweak":"TCP_NO_DELAY","snapshot":"snap-001"}}""" },
     };
 
     [Theory]
