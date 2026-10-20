@@ -17,6 +17,7 @@
       <!-- Показ/скрытие карточек по булеву полю модели: без своего кода, средствами WPF. -->
       <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
       <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+      <local:StringToVisibilityConverter x:Key="StringToVisibility" />
       <local:ChartPointsConverter x:Key="ChartPoints" />
 
       <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />

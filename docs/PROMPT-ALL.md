@@ -37,7 +37,7 @@
 | Репозиторий | `https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz` (приватный) |
 | Ветка | `main` = `da27ae1`, рабочее дерево чистое |
 | Версия | **0.4.1** (`Directory.Build.props`) |
-| Тег и релиз | **`v0.4.1`** — Latest, 6 ассетов (`Setup`, `Service`, `portable`, `compact`, `.exe`, `SHA256SUMS.txt`) |
+| Тег и релиз | **`v0.5.5`** — Latest, 6 ассетов (`Setup`, `Service`, `portable`, `compact`, `.exe`, `SHA256SUMS.txt`) |
 | Тесты | **544 / 544** |
 | Готовность (честная оценка) | **83,0 %** — считает `tools/render_ui_preview.py` |
 | Каталог | 47 твиков, 0 проблем |

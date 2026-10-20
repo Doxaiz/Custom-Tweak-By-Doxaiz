@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -66,6 +66,7 @@ internal static class SelfCheck
         CheckServerPath(app, problems);
         CheckSessionHistory(app, problems);
         CheckGameRegionsAndDns(app, problems);
+        CheckSupportPackage(app, problems);
         CheckLayout(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
@@ -79,7 +80,8 @@ internal static class SelfCheck
             || problem.Contains("нет надписей", StringComparison.Ordinal)
             || problem.Contains("нет карточки ответа", StringComparison.Ordinal)
             || problem.Contains("не переносятся", StringComparison.Ordinal)
-            || problem.Contains("история сессий", StringComparison.Ordinal)))
+            || problem.Contains("история сессий", StringComparison.Ordinal)
+            || problem.Contains("пакет для поддержки", StringComparison.Ordinal)))
         {
             windowCode = WindowFailed;
         }
@@ -885,6 +887,55 @@ internal static class SelfCheck
         {
             problems.Add($"нет карточки регионов и DNS (задача D): проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"РЕГИОНЫ И DNS: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Пакет для поддержки (задача Q): блок в «О программе» есть, и до нажатия он ничего не читает
+    /// и не пишет. Сборку здесь не делаем нарочно: самопроверка не имеет права оставлять архивы
+    /// на диске сборочной машины. Проверяется главное обещание — «само собой ничего не собирается».
+    /// </summary>
+    private static void CheckSupportPackage(App app, List<string> problems)
+    {
+        try
+        {
+            SupportPackageViewModel support = app.MainScreen.Support;
+
+            bool quietOk = !support.HasPreview && !support.HasBuiltPackage && !support.CanBuild;
+
+            if (!quietOk)
+            {
+                problems.Add("пакет для поддержки собрался сам, без нажатия кнопки");
+                StartupLog.Note("ПАКЕТ ДЛЯ ПОДДЕРЖКИ: НЕ работает — список появился до нажатия");
+                return;
+            }
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "SupportBlock") is null
+                        || FindNamed<FrameworkElement>(root, "SupportPrepareButton") is null
+                        || FindNamed<FrameworkElement>(root, "SupportBuildButton") is null
+                        || !HasText(root, "Пакет для поддержки"))
+                    {
+                        problems.Add("пакет для поддержки: блока нет в разделе «О программе»");
+                        StartupLog.Note("ПАКЕТ ДЛЯ ПОДДЕРЖКИ: НЕ работает — блок не найден в разметке");
+                        return;
+                    }
+                }
+            }
+
+            StartupLog.Note("ПАКЕТ ДЛЯ ПОДДЕРЖКИ: кнопка в «О программе» на месте, до нажатия не читается " +
+                "ни один файл и не пишется ни один архив");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"пакет для поддержки (задача Q): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ПАКЕТ ДЛЯ ПОДДЕРЖКИ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 
