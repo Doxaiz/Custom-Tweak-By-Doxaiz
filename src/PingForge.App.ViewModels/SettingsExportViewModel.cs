@@ -83,7 +83,7 @@ public sealed class SettingsExportViewModel : ObservableObject
     {
         IReadOnlyList<CustomGameEntry> cur = current.CustomGames is null ? Array.Empty<CustomGameEntry>() : current.CustomGames;
         IReadOnlyList<CustomGameEntry> inc = incoming.CustomGames is null ? Array.Empty<CustomGameEntry>() : incoming.CustomGames;
-        var mergedGames = cur.Concat(inc.Where(g => !cur.Any(c => c.ExeName.Equals(g.ExeName, StringComparison.OrdinalIgnoreCase)))).ToList();
+        var mergedGames = cur.Concat(inc.Where(g => !cur.Any(c => c.ProcessName.Equals(g.ProcessName, StringComparison.OrdinalIgnoreCase)))).ToList();
         return current with { CustomGames = mergedGames };
     }
 }
