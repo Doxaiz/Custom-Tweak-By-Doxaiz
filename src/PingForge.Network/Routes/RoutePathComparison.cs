@@ -595,7 +595,7 @@ public sealed record RoutingMeasureDto(
     [property: JsonPropertyName("directProblem")] string? DirectProblemRu,
     [property: JsonPropertyName("nodes")] IReadOnlyList<RoutingMeasureNodeDto> Nodes,
     [property: JsonPropertyName("winnerAddress")] string? WinnerAddress,
-    [property: JsonPropertyName("runnerUpAddress")] string? RunnerUpAddress,
+    [property: JsonPropertyName("runnerUpAddress")] string? RunnerUpAddress = null,
     [property: JsonPropertyName("verdict")] string VerdictRu,
     [property: JsonPropertyName("tableRestored")] bool TableRestored,
     [property: JsonPropertyName("tableProblem")] string? TableProblemRu);

@@ -1098,6 +1098,7 @@ public sealed class RoutingServersTests
                 new RoutingMeasureNodeDto("10.0.0.1", "второй", RoutingNodeSourceRu.SecondGateway, false, null, null, null, "узел молчит"),
             ],
             "10.8.0.1",
+            null,
             "Через «WG» (10.8.0.1) медиана 30 мс против 40 мс напрямую — выигрыш 10 мс. Этот путь можно применять.",
             true,
             null);
