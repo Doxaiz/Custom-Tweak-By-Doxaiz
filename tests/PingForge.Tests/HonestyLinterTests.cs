@@ -18,11 +18,7 @@ public sealed class HonestyLinterTests
         string repoRoot = FindRepoRoot();
         var list = new List<string>();
         SafeEnumerate(repoRoot, list);
-        // fallback: если всё равно пусто, пропустим — лучше чем падать на System Volume Information
         if (list.Count == 0) return;
-
-        var violations = new List<string>();
-        foreach (var file in list)
 
         var violations = new List<string>();
         foreach (var file in list)
