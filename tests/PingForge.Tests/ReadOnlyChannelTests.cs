@@ -32,6 +32,8 @@ public sealed class ReadOnlyChannelTests
         { "perf-profile", """{"id":"6","command":"perf-profile","args":{"profile":"economy"}}""" },
         { "sessions-clear", """{"id":"7","command":"sessions-clear"}""" },
         { "rollback-tweak", """{"id":"8","command":"rollback-tweak","args":{"tweak":"TCP_NO_DELAY","snapshot":"snap-001"}}""" },
+        { "return-all", """{"id":"9","command":"return-all"}""" },
+        { "cleanup-snapshots", """{"id":"10","command":"cleanup-snapshots","args":{"keep":"10","olderThanDays":"30"}}""" },
     };
 
     [Theory]
@@ -232,6 +234,9 @@ public sealed class ReadOnlyChannelTests
         public Task<EngineOperationResult> ClearSessionsAsync(CancellationToken ct = default) =>
             Record("sessions-clear", EngineOperationResult.Success("история сессий очищена"));
 
+        public Task<EngineOperationResult> ReturnAllAsync(CancellationToken ct = default) => Record("return-all", EngineOperationResult.Success("всё возвращено"));
+        public Task<EngineOperationResult> GetStorageInfoAsync(CancellationToken ct = default) => Record("storage-info", EngineOperationResult.Success("база 0 КБ"));
+        public Task<EngineOperationResult> CleanupSnapshotsAsync(int keepLast = 10, int olderThanDays = 30, CancellationToken ct = default) => Record("cleanup-snapshots", EngineOperationResult.Success("почищено"));
         public Task<EngineOperationResult> RollbackSingleTweakAsync(string tweakCode, string? snapshotId, CancellationToken ct = default) =>
             Record($"rollback-tweak:{tweakCode}:{snapshotId}", EngineOperationResult.Success($"твик {tweakCode} возвращён"));
 

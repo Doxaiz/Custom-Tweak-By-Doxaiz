@@ -184,6 +184,9 @@ public sealed class EngineDispatcher
 
                 EngineCommandKind.SessionsClear => await _operations.ClearSessionsAsync(ct).ConfigureAwait(false),
                 EngineCommandKind.RollbackSingleTweak => await RollbackSingleTweakAsync(args, ct).ConfigureAwait(false),
+                EngineCommandKind.ReturnAll => await _operations.ReturnAllAsync(ct).ConfigureAwait(false),
+                EngineCommandKind.StorageInfo => await _operations.GetStorageInfoAsync(ct).ConfigureAwait(false),
+                EngineCommandKind.CleanupSnapshots => await CleanupSnapshotsAsync(args, ct).ConfigureAwait(false),
 
                 _ => EngineOperationResult.Failure($"Команда «{descriptor.WireName}» объявлена, но не подключена."),
             };
@@ -250,6 +253,14 @@ public sealed class EngineDispatcher
 
         string? snapshot = args.Get("snapshot")?.Trim();
         return await _operations.RollbackSingleTweakAsync(tweak, snapshot, ct).ConfigureAwait(false);
+    }
+
+    private async Task<EngineOperationResult> CleanupSnapshotsAsync(EngineArgs args, CancellationToken ct)
+    {
+        int keep = args.GetInt("keep", 10, 1, 1000);
+        int days = args.GetInt("olderThanDays", 30, 1, 3650);
+        // Явная передача аргументов по отсутствию — не по позиции, иначе keep уйдёт в olderThanDays
+        return await _operations.CleanupSnapshotsAsync(keepLast: keep, olderThanDays: days, ct: ct).ConfigureAwait(false);
     }
 
     private async Task<EngineOperationResult> SetPerfProfileAsync(EngineArgs args, CancellationToken ct)

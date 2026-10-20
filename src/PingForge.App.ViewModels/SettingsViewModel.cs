@@ -44,6 +44,11 @@ public sealed class SettingsViewModel : ObservableObject
         Check = check ?? new SettingsCheckViewModel(
             new UnavailableSettingsCheckAnalysis(),
             _ => { });
+
+        ReturnAll = new ReturnAllViewModel(engine);
+        ReturnAll.AttachDialogs(dialogs);
+        Storage = new StorageInfoViewModel(engine);
+        Storage.AttachDialogs(dialogs);
     }
 
     /// <summary>Узлы маршрутизации: список, поиск шлюзов, замер путей. Ничего не меняет сама по себе.</summary>
@@ -51,6 +56,10 @@ public sealed class SettingsViewModel : ObservableObject
 
     /// <summary>Проверка настроек: что мешает, что стоит изменить, что не проверено. Ничего не применяет.</summary>
     public SettingsCheckViewModel Check { get; }
+
+    public ReturnAllViewModel ReturnAll { get; }
+
+    public StorageInfoViewModel Storage { get; }
 
     public AsyncRelayCommand SaveCommand { get; }
 

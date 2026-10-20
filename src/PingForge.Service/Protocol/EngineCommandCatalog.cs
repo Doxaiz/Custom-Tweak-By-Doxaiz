@@ -223,6 +223,39 @@ public static class EngineCommandCatalog
             OptionalArgs: ["snapshot"],
             ExampleRu: """{"id":"18","command":"rollback-tweak","args":{"tweak":"TCP_NO_DELAY","snapshot":"snap-2026-10-16-001"}}""",
             TimeoutSeconds: 60),
+
+        new(
+            EngineCommandKind.ReturnAll,
+            "return-all",
+            "Вернуть всё как было",
+            "Останавливает живую оптимизацию, снимает свои QoS-политики и маршруты, откатывает твики последнего снапшота и проверяет остатки. Чужие настройки не трогает.",
+            NeedsElevation: true,
+            RequiredArgs: [],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"19","command":"return-all"}""",
+            TimeoutSeconds: 300),
+
+        new(
+            EngineCommandKind.StorageInfo,
+            "storage-info",
+            "Сколько занимает база",
+            "Показывает путь к базе, размер файла, число снапшотов и записей журнала. Только чтение.",
+            NeedsElevation: false,
+            RequiredArgs: [],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"20","command":"storage-info"}""",
+            TimeoutSeconds: 10),
+
+        new(
+            EngineCommandKind.CleanupSnapshots,
+            "cleanup-snapshots",
+            "Почистить старые снапшоты",
+            "Удаляет снапшоты старше 30 дней, оставляя последние 10. Снапшоты с незакрытыми операциями не удаляются.",
+            NeedsElevation: true,
+            RequiredArgs: [],
+            OptionalArgs: ["keep", "olderThanDays"],
+            ExampleRu: """{"id":"21","command":"cleanup-snapshots","args":{"keep":"10","olderThanDays":"30"}}""",
+            TimeoutSeconds: 30),
     ];
 
     /// <summary>Все команды в порядке объявления — он же порядок вывода в интерфейсе.</summary>
