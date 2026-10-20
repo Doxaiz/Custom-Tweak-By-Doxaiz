@@ -212,6 +212,17 @@ public static class EngineCommandCatalog
             OptionalArgs: [],
             ExampleRu: """{"id":"17","command":"sessions-clear"}""",
             TimeoutSeconds: 30),
+
+        new(
+            EngineCommandKind.RollbackSingleTweak,
+            "rollback-tweak",
+            "Вернуть один твик",
+            "Возвращает значение одного твика из снапшота: по имени снапшота и коду твика. Остальные твики из снапшота не трогает.",
+            NeedsElevation: true,
+            RequiredArgs: ["tweak"],
+            OptionalArgs: ["snapshot"],
+            ExampleRu: """{"id":"18","command":"rollback-tweak","args":{"tweak":"TCP_NO_DELAY","snapshot":"snap-2026-10-16-001"}}""",
+            TimeoutSeconds: 60),
     ];
 
     /// <summary>Все команды в порядке объявления — он же порядок вывода в интерфейсе.</summary>

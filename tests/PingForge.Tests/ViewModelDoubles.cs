@@ -86,11 +86,18 @@ public sealed class FakeEngineChannel : IEngineChannel
 
         EngineCommandKind.ApplyPreset => EngineResponse.Success(
             request.Id,
-            "Низкий пинг: применено 19 из 19, без изменений 0, пропущено 0, ошибок 0."),
+            "Низкий пинг: применено 19 из 19, без изменений 0, пропущено 0, ошибок 0.",
+            """{"snapshotId":"snap-apply-preset-001","total":19,"applied":19,"noOp":0,"skipped":0,"failed":0,"rebootRequired":false,"restorePointStatus":"NotNeeded","failures":[],"rows":[{"code":"TCP_NO_DELAY","titleRu":"Отключение алгоритма Нейгла","previousText":"0","appliedText":"1","verifiedText":"1","outcome":"VerifiedEffective","statusRu":"применён","succeeded":true,"rebootNeeded":false}]}"""),
 
         EngineCommandKind.ApplyTweaks => EngineResponse.Success(
             request.Id,
-            "свой набор: применено 3 из 3, без изменений 0, пропущено 0, ошибок 0."),
+            "свой набор: применено 3 из 3, без изменений 0, пропущено 0, ошибок 0.",
+            """{"snapshotId":"snap-apply-tweaks-001","total":3,"applied":3,"noOp":0,"skipped":0,"failed":0,"rebootRequired":false,"restorePointStatus":"NotNeeded","failures":[],"rows":[{"code":"TCP_NO_DELAY","titleRu":"Отключение алгоритма Нейгла","previousText":"0","appliedText":"1","verifiedText":"1","outcome":"VerifiedEffective","statusRu":"применён","succeeded":true,"rebootNeeded":false}]}"""),
+
+        EngineCommandKind.RollbackSingleTweak => EngineResponse.Success(
+            request.Id,
+            "Твик «TCP_NO_DELAY» возвращён: было «1» → стало «0».",
+            """{"snapshotId":"snap-apply-preset-001","tweakCode":"TCP_NO_DELAY","succeeded":true,"outcome":"RolledBack","reasonRu":""}"""),
 
         EngineCommandKind.RollbackSnapshot => EngineResponse.Success(request.Id, "Прежние настройки возвращены."),
 

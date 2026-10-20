@@ -556,6 +556,14 @@ public class ServiceDispatcherTests
             return Task.FromResult(EngineOperationResult.Success(start ? "Оптимизация запущена." : "Оптимизация остановлена."));
         }
 
+        public List<(string TweakCode, string? SnapshotId)> SingleRollbacks { get; } = [];
+
+        public Task<EngineOperationResult> RollbackSingleTweakAsync(string tweakCode, string? snapshotId, CancellationToken ct = default)
+        {
+            SingleRollbacks.Add((tweakCode, snapshotId));
+            return Task.FromResult(EngineOperationResult.Success($"Твик {tweakCode} возвращён."));
+        }
+
         public Task<EngineOperationResult> SetPerfProfileAsync(PerfProfile profile, CancellationToken ct = default)
         {
             LastProfile = profile;

@@ -134,13 +134,14 @@ public sealed class SettingsViewModel : ObservableObject
             // Читаем файл заново: в нём могли появиться поля, которые меняет не эта страница
             // (пройденный мастер первого запуска, запомненные пути к играм). «Собрать с нуля»
             // означало бы молча стереть их при первом же сохранении настроек.
-            AppSettings settings = _store.Load() with
+            AppSettings loaded = _store.Load();
+            AppSettings settings = loaded with
             {
                 PerfProfile = EngineNames.ProfileWireName(Profile),
                 OfferRestorePoint = OfferRestorePoint,
                 StartMinimized = false,
                 CloseToTray = CloseToTray,
-                JournalRowsShown = 20,
+                JournalRowsShown = loaded.JournalRowsShown <= 0 ? 200 : Math.Clamp(loaded.JournalRowsShown, 1, 500),
             };
 
             _store.Save(settings);

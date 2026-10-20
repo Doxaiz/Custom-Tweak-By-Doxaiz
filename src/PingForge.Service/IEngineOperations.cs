@@ -80,4 +80,8 @@ public interface IEngineOperations
     /// <summary>Очистить историю сессий; журнал изменений системы не трогается.</summary>
     Task<EngineOperationResult> ClearSessionsAsync(CancellationToken ct = default) =>
         Task.FromResult(EngineOperationResult.Failure("История сессий не подключена: очищать нечего."));
+
+    /// <summary>Вернуть один твик из снапшота (задача K): остальные твики не трогаются.</summary>
+    Task<EngineOperationResult> RollbackSingleTweakAsync(string tweakCode, string? snapshotId, CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Откат одного твика не подключён."));
 }

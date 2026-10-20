@@ -133,6 +133,45 @@
       </StackPanel>
     </Border>
 
+    <!-- Что изменилось (задача K): было→стало по каждому твику с кнопкой «Вернуть только это». -->
+    <Border Style="{StaticResource Card}" Margin="0,0,0,10"
+            Visibility="{Binding Changes.IsVisible, Converter={StaticResource BoolToVisibility}}">
+      <StackPanel>
+        <TextBlock Text="Что изменилось" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"
+                   Text="{Binding Changes.SummaryRu}" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,0" Foreground="{StaticResource Muted}"
+                   Text="{Binding Changes.SnapshotId, StringFormat=Снапшот: {0}}" />
+        <ItemsControl ItemsSource="{Binding Changes.Rows}" Margin="0,8,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,8,0,8">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Grid.Column="0">
+                    <TextBlock FontWeight="SemiBold" Text="{Binding TitleRu}" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,0" Foreground="{StaticResource Muted}"
+                               Text="{Binding Code}" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap">
+                      <Run Text="Было → стало: " Foreground="{StaticResource Muted}" />
+                      <Run Text="{Binding ChangeLineRu}" />
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,0" Foreground="{StaticResource Muted}"
+                               Text="{Binding StatusRu}" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Style="{StaticResource GhostButton}" VerticalAlignment="Center" Margin="12,0,0,0"
+                          Content="Вернуть только это" Command="{Binding RevertCommand}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+
     <!-- Фильтр по кодам (задача F): включается кнопками «Показать связанные твики» из проверок. -->
     <Border Style="{StaticResource Card}" Margin="0,0,0,10"
             Visibility="{Binding IsFiltered, Converter={StaticResource BoolToVisibility}}">

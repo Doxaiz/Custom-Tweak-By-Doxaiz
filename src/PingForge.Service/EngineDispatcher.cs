@@ -183,6 +183,7 @@ public sealed class EngineDispatcher
                     args.GetInt("limit", DefaultSessionsLimit, 1, MaxJournalLimit), ct).ConfigureAwait(false),
 
                 EngineCommandKind.SessionsClear => await _operations.ClearSessionsAsync(ct).ConfigureAwait(false),
+                EngineCommandKind.RollbackSingleTweak => await RollbackSingleTweakAsync(args, ct).ConfigureAwait(false),
 
                 _ => EngineOperationResult.Failure($"Команда «{descriptor.WireName}» объявлена, но не подключена."),
             };
@@ -236,6 +237,19 @@ public sealed class EngineDispatcher
 
         bool restorePoint = args.GetBool("restorePoint", fallback: true);
         return await _operations.ApplyTweaksAsync(codes, restorePoint, ct).ConfigureAwait(false);
+    }
+
+
+    private async Task<EngineOperationResult> RollbackSingleTweakAsync(EngineArgs args, CancellationToken ct)
+    {
+        string? tweak = args.Get("tweak")?.Trim();
+        if (string.IsNullOrWhiteSpace(tweak))
+        {
+            return EngineOperationResult.Failure("Не указан код твика: укажите tweak — код из списка твиков, например TCP_NO_DELAY.");
+        }
+
+        string? snapshot = args.Get("snapshot")?.Trim();
+        return await _operations.RollbackSingleTweakAsync(tweak, snapshot, ct).ConfigureAwait(false);
     }
 
     private async Task<EngineOperationResult> SetPerfProfileAsync(EngineArgs args, CancellationToken ct)
