@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using PingForge.Core.Models;
 
 namespace PingForge.App.ViewModels;
 
@@ -80,8 +81,8 @@ public sealed class SettingsExportViewModel : ObservableObject
 
     private static AppSettings Merge(AppSettings current, AppSettings incoming)
     {
-        var cur = current.CustomGames ?? Array.Empty<CustomGameEntry>();
-        var inc = incoming.CustomGames ?? Array.Empty<CustomGameEntry>();
+        IReadOnlyList<CustomGameEntry> cur = current.CustomGames ?? (IReadOnlyList<CustomGameEntry>)Array.Empty<CustomGameEntry>();
+        IReadOnlyList<CustomGameEntry> inc = incoming.CustomGames ?? (IReadOnlyList<CustomGameEntry>)Array.Empty<CustomGameEntry>();
         var mergedGames = cur.Concat(inc.Where(g => !cur.Any(c => c.ExeName.Equals(g.ExeName, StringComparison.OrdinalIgnoreCase)))).ToList();
         return current with { CustomGames = mergedGames };
     }
