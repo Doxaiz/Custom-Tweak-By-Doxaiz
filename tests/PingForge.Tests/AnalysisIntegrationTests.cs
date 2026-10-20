@@ -340,7 +340,7 @@ public sealed class AnalysisIntegrationTests
         tweaks.ShowOnlyCodes(["НЕТ_ТАКОГО_КОДА"]);
 
         // Ноль строк по чужим кодам — фильтр не включается молча: список остаётся, статус объясняет.
-        Assert.Equal(1, tweaks.VisibleRows.Count);
+        Assert.Single(tweaks.VisibleRows);
         Assert.Contains("нет ни одного из перечисленных кодов", tweaks.StatusRu, StringComparison.Ordinal);
     }
 
