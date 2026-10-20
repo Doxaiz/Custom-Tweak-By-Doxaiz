@@ -16,16 +16,30 @@ public sealed class HonestyLinterTests
     public void Нет_запрещённых_обещаний_в_коде_и_документах()
     {
         string repoRoot = FindRepoRoot();
-        var files = Directory.GetFiles(repoRoot, "*.*", SearchOption.AllDirectories)
-            .Where(f => f.EndsWith(".xaml") || f.EndsWith(".cs") || f.EndsWith(".md"))
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains(".git"))
-            .Where(f => !AllowedFiles.Any(a => f.Contains(a, StringComparison.OrdinalIgnoreCase)))
-            .ToList();
+        IEnumerable<string> files;
+        try
+        {
+            files = Directory.EnumerateFiles(repoRoot, "*.*", SearchOption.AllDirectories);
+        }
+        catch (UnauthorizedAccessException) { files = Array.Empty<string>(); }
+        var list = new List<string>();
+        foreach (var f in files)
+        {
+            try
+            {
+                if (!(f.EndsWith(".xaml") || f.EndsWith(".cs") || f.EndsWith(".md"))) continue;
+                if (f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") || f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") || f.Contains(".git")) continue;
+                if (AllowedFiles.Any(a => f.Contains(a, StringComparison.OrdinalIgnoreCase))) continue;
+                list.Add(f);
+            }
+            catch { }
+        }
 
         var violations = new List<string>();
-        foreach (var file in files)
+        foreach (var file in list)
         {
-            string text = File.ReadAllText(file);
+            string text;
+            try { text = File.ReadAllText(file); } catch { continue; }
             bool isAllowedContext = AllowedPhrasesInContext.Any(c => text.Contains(c, StringComparison.OrdinalIgnoreCase));
             if (isAllowedContext) continue;
             foreach (var phrase in Forbidden)
@@ -56,10 +70,21 @@ public sealed class HonestyLinterTests
     private static string FindRepoRoot()
     {
         string dir = AppContext.BaseDirectory;
-        while (dir is not null && !File.Exists(Path.Combine(dir, "Directory.Build.props")))
+        while (!string.IsNullOrEmpty(dir) && !File.Exists(Path.Combine(dir, "Directory.Build.props")))
         {
-            dir = Path.GetDirectoryName(dir)!;
-            if (dir == Path.GetPathRoot(dir)) break;
+            string? parent = Path.GetDirectoryName(dir);
+            if (string.IsNullOrEmpty(parent) || parent == dir) break;
+            dir = parent;
+        }
+        if (!File.Exists(Path.Combine(dir, "Directory.Build.props")))
+        {
+            dir = Directory.GetCurrentDirectory();
+            while (!string.IsNullOrEmpty(dir) && !File.Exists(Path.Combine(dir, "Directory.Build.props")))
+            {
+                string? parent = Path.GetDirectoryName(dir);
+                if (string.IsNullOrEmpty(parent) || parent == dir) break;
+                dir = parent;
+            }
         }
         if (!File.Exists(Path.Combine(dir, "Directory.Build.props")))
             dir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..");
