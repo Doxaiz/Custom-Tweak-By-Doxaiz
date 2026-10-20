@@ -38,7 +38,24 @@ package:
     - dotnet publish src/PingForge.Service.Host/PingForge.Service.Host.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist/portable
     - powershell -Command "Compress-Archive -Path dist/portable/* -DestinationPath dist/CustomTweakByDoxaiz-portable-win-x64.zip -Force"
     - powershell -Command "choco install nsis -y; makensis -INPUTCHARSET UTF8 '-DVERSION=0.2.0' '-DSOURCE_DIR=dist/portable' '-DOUT_DIR=dist' installer/CustomTweakByDoxaiz.nsi"
+    - powershell -Command "Get-ChildItem dist -File | Where-Object {$_.Extension -in '.exe','.zip'} | Get-FileHash -Algorithm SHA256 | ForEach-Object { \"$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)\" } | Set-Content dist/SHA256SUMS.txt -Encoding utf8; Get-Content dist/SHA256SUMS.txt"
   artifacts:
-    paths: [ dist/*.exe, dist/*.zip ]
+    paths: [ dist/*.exe, dist/*.zip, dist/SHA256SUMS.txt ]
     expire_in: 1 week
+  only: [ tags ]
+
+release:
+  stage: package
+  tags: [ saas-windows-medium-amd64 ]
+  dependencies: [ package ]
+  script:
+    - powershell -Command "
+        if(-not $env:GH_PAT){ Write-Host 'GH_PAT не задан — пропускаю релиз'; exit 0 };
+        $tag=$env:CI_COMMIT_TAG; if(-not $tag){ Write-Host 'Не тег'; exit 0 };
+        $v=$tag -replace '^v','';
+        $headers=@{ Authorization=\"Bearer $env:GH_PAT\"; Accept=\"application/vnd.github+json\" };
+        $body=@{ tag_name=$tag; name=\"Custom Tweak By Doxaiz $tag\"; body=\"См. CHANGELOG.md $tag\"; draft=$false; prerelease=$false } | ConvertTo-Json;
+        $rel=Invoke-RestMethod -Method Post -Uri \"https://api.github.com/repos/Doxaiz/Custom-Tweak-By-Doxaiz/releases\" -Headers $headers -Body $body;
+        $url=$rel.upload_url -replace '\\{\\?name,label\\}','';
+        foreach($f in Get-ChildItem dist -File -Include *.exe,*.zip,SHA256SUMS.txt){ Invoke-RestMethod -Method Post -Uri \"$url?name=$($f.Name)\" -Headers @{ Authorization=\"Bearer $env:GH_PAT\"; \"Content-Type\"=\"application/octet-stream\" } -InFile $f.FullName | Out-Null; Write-Host \"Uploaded $($f.Name)\" }"
   only: [ tags ]

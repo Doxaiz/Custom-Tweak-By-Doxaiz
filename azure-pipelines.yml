@@ -144,3 +144,54 @@ steps:
     testResultsFormat: 'VSTest'
     testResultsFiles: 'test-results/**/*.trx'
   condition: always()
+
+# === Авто-публикация в GitHub Releases (только на тегах v*) ===
+# Требует 1 раз создать Service Connection в Azure:
+# Project Settings → Service connections → New → GitHub → PAT (classic, scopes: repo) → имя: github.com Doxaiz
+# И PAT добавить в Library → Variable Group (для CircleCI-аналога), либо прямо в GH_PAT как secret.
+- pwsh: |
+    $ErrorActionPreference='Stop'
+    if(-not $env:GH_PAT){ Write-Host "GH_PAT не задан — пропускаю публикацию релиза"; exit 0 }
+    $v="$(APP_VERSION)"
+    $branch="$(Build.SourceBranch)"
+    Write-Host "Branch: $branch version: $v"
+    if($branch -notlike 'refs/tags/v*'){ Write-Host "Не тег v* — релиз не создаю"; exit 0 }
+    $tag=$branch -replace 'refs/tags/',''
+    Write-Host "Создаю релиз $tag"
+    # Генерируем notes из CHANGELOG.md (шапка версии) + стандартный блок
+    $notesPath="dist/RELEASE_NOTES.md"
+    $changelog=Get-Content CHANGELOG.md -Raw -ErrorAction SilentlyContinue
+    $header="# Custom Tweak By Doxaiz $tag`n`n"
+    $body=@"
+    ## Что скачивать
+    **``CustomTweakByDoxaiz-Setup-$v.exe`` — установщик.** ``/S`` для тихой установки.
+    **``CustomTweakByDoxaiz-$v.exe`` / ``.Service-$v.exe`` — portable .exe.**
+    **``*-portable-win-x64.zip``** — без .NET, **``*-compact-win-x64.zip``** — с .NET 10.
+    **``SHA256SUMS.txt``** — контрольные суммы.
+    См. ``CHANGELOG.md`` для деталей $tag.
+    "@
+    Set-Content $notesPath ($header + $body) -Encoding utf8
+    # Используем gh CLI если доступен, иначе REST API
+    $ghCmd=Get-Command gh -ErrorAction SilentlyContinue
+    if($ghCmd){
+      $env:GH_TOKEN=$env:GH_PAT
+      $files=(Get-ChildItem dist -File -Include *.exe,*.zip,SHA256SUMS.txt | ForEach-Object { $_.FullName }) -join " "
+      Write-Host "gh release create $tag $files --notes-file $notesPath --title `"Custom Tweak By Doxaiz $tag`""
+      Invoke-Expression "gh release create $tag $files --notes-file `"$notesPath`" --title `"Custom Tweak By Doxaiz $tag`" 2>&1" | Write-Host
+      if($LASTEXITCODE -ne 0){ throw "gh release create failed $LASTEXITCODE" }
+    } else {
+      $headers=@{ Authorization="Bearer $env:GH_PAT"; Accept="application/vnd.github+json" }
+      $relBody=@{ tag_name=$tag; name="Custom Tweak By Doxaiz $tag"; body=(Get-Content $notesPath -Raw); draft=$false; prerelease=$false } | ConvertTo-Json -Depth 3
+      $rel=Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/Doxaiz/Custom-Tweak-By-Doxaiz/releases" -Headers $headers -Body $relBody
+      $uploadUrl=$rel.upload_url -replace '\{\?name,label\}', ''
+      foreach($f in Get-ChildItem dist -File -Include *.exe,*.zip,SHA256SUMS.txt){
+        $h=@{ Authorization="Bearer $env:GH_PAT"; "Content-Type"="application/octet-stream" }
+        Invoke-RestMethod -Method Post -Uri "$uploadUrl?name=$($f.Name)" -Headers $h -InFile $f.FullName | Out-Null
+        Write-Host "Uploaded $($f.Name)"
+      }
+    }
+    Write-Host "Релиз $tag опубликован"
+  displayName: Публикация релиза GitHub (auto)
+  condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
+  env:
+    GH_PAT: $(GH_PAT)

@@ -1,16 +1,22 @@
 # Свободная сборка без GitHub Billing
 
-GitHub Actions сейчас падает: `payments have failed / spending limit`. Ниже — бесплатные обходы для WPF.
+GitHub Actions сейчас падает: `payments have failed / spending limit`. Ниже — автоматические обходы для WPF.
+
+## 0. Что уже сделано — полная автоматика
+После настройки **ничего вручную делать не нужно**: `git tag v0.2.1 && git push origin v0.2.1` → Azure/GitLab соберёт `Setup-0.2.1.exe`, `portable/compact.zip`, `SHA256SUMS.txt` и сам создаст релиз https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases (без участия GitHub Actions).
 
 ## 1. Azure Pipelines (рекомендуется, бесплатно для Public)
 *Public-проект = **неограниченные минуты** на `windows-latest` + 10 параллельных агентов. Приватный = 1800 мин/мес.*
 
 1. Зайди в https://dev.azure.com → `New Project` → подключи GitHub репо `Doxaiz/Custom-Tweak-By-Doxaiz` (OAuth).
 2. `Pipelines → Create Pipeline → Azure Repos Git → Existing Azure Pipelines YAML file` → выбери `azure-pipelines.yml` из корня.
-3. Запусти: на каждый `push main/tags v*` и PR соберётся как в GitHub: `build → tests (874) → compact/portable → NSIS → SHA256`.
-4. Артефакты: `CustomTweakByDoxaiz-win-x64` (exe/zip/png/log). При желании добавь публикацию в GitHub Releases через `GitHubRelease@1` таск с `PAT`.
+3. **Один раз** заведи PAT для автопубликации:
+   - GitHub: https://github.com/settings/tokens → `Generate new token (classic)` → scopes `repo`, `workflow` → скопируй `ghp_...`.
+   - Azure: `Pipelines → Library → Variable Group` → `GH_PAT = ghp_...` (🔒 Secret) → привяжи к pipeline, **или** `Project Settings → Service connections → New → GitHub → PAT` + `Pipelines → Edit → Variables → GH_PAT`.
+4. Запусти: на каждый `push main/tags v*` и PR соберётся как в GitHub: `build → tests (874) → compact/portable → NSIS → SHA256`.
+5. **Авторелиз**: шаг `Публикация релиза GitHub (auto)` срабатывает **только на тегах `v*`**. Берёт `v` из `Directory.Build.props`, создаёт `RELEASE_NOTES.md` и заливает в релиз все `*.exe/*.zip/SHA256SUMS.txt` через `gh CLI` или REST API — тот же вид, что в `build.yml`.
 
-> Файл уже в репе: [`azure-pipelines.yml`](../azure-pipelines.yml) — полный аналог `.github/workflows/build.yml`.
+> Файл уже в репе: [`azure-pipelines.yml`](../azure-pipelines.yml) — теперь с финальным шагом `GitHubRelease` + REST-фоллбэком. Логика идентична `softprops/action-gh-release@v3`.
 
 ## 2. GitLab CI
 *Хостинговые `saas-windows-medium-amd64` (Beta) доступны на Free-тарифе.*
