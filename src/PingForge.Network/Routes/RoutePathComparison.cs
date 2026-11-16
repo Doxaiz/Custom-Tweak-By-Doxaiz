@@ -756,7 +756,9 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
             }
         }
 
-        RoutingNodeEntry? backup = alternatives.FirstOrDefault();
+        // Резерв для сообщения: сначала годный для переключения, иначе второй по замерам (о нём
+        // честно скажем «не выигрывает у прямого пути»), иначе ручной резерв из настроек.
+        RoutingNodeEntry? backup = alternatives.FirstOrDefault() ?? report.RunnerUp;
         if (backup is null && settings.MultipathEnabled && settings.IsMultipathValid)
         {
             backup = settings.SecondaryNode;
