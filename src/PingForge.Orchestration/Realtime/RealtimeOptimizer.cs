@@ -47,6 +47,15 @@ public sealed class RealtimeOptimizer
     private double? _lastLossPercent;
     private string? _activePathId;
     private bool _appliedRouteAction;
+
+    /// <summary>
+    /// Пути, на которых уже пробовали и качество не улучшилось. Второй раз туда не идём:
+    /// переключение между двумя плохими путями — это флаппинг, а не оптимизация.
+    /// </summary>
+    private readonly HashSet<string> _failedPathIds = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Почему последнее переключение не состоялось: это уходит в честный статус при деградации.</summary>
+    private string? _switchProblemRu;
     private int _consecutiveBadWindows;
     private int _consecutiveGoodWindows;
     private DateTime _startedUtc;
@@ -302,9 +311,10 @@ public sealed class RealtimeOptimizer
                 bool switched = await TrySwitchPathAsync(window, ct).ConfigureAwait(false);
                 if (!switched)
                 {
+                    string why = _switchProblemRu ?? "альтернативного пути у этого сервера нет";
                     await DegradeAsync(
                         $"Качество просело: {window.RttMedianMs:F0} мс, джиттер {window.JitterMs:F1} мс, потери {window.LossPercent:F1}%. " +
-                        "Альтернативного пути у этого сервера нет — твиками такое не лечится.", ct).ConfigureAwait(false);
+                        $"Переключиться не вышло: {why} — твиками такое не лечится.", ct).ConfigureAwait(false);
                 }
             }
             else
@@ -409,6 +419,8 @@ public sealed class RealtimeOptimizer
         _applied.Clear();
         _appliedRouteAction = false;
         _activePathId = null;
+        _failedPathIds.Clear();
+        _switchProblemRu = null;
         SetState(RealtimeOptimizationState.Stopped, summary);
         return report;
     }
@@ -453,37 +465,87 @@ public sealed class RealtimeOptimizer
 
     private async Task<bool> TrySwitchPathAsync(PathMeasurement current, CancellationToken ct)
     {
+        _switchProblemRu = null;
+
         if (_pathOptions is null || _flow is null || !_options.AllowRoutingChanges)
         {
+            _switchProblemRu = "маршруты менять нельзя: смена пути выключена в настройках";
             return false;
         }
 
         IReadOnlyList<RealtimePathOption> options = await _pathOptions.GetOptionsAsync(_flow, ct).ConfigureAwait(false);
-        RealtimePathOption? next = options.FirstOrDefault(o => !string.Equals(o.PathId, _activePathId, StringComparison.OrdinalIgnoreCase));
+
+        // Путь, на котором уже пробовали и стало хуже, второй раз не выбираем: иначе контроль
+        // будет прыгать между двумя плохими путями и рвать соединение чаще, чем чинить его.
+        RealtimePathOption? next = options.FirstOrDefault(option =>
+            !string.Equals(option.PathId, _activePathId, StringComparison.OrdinalIgnoreCase)
+            && !_failedPathIds.Contains(option.PathId));
 
         if (next is null)
         {
+            _switchProblemRu = options.Count == 0
+                ? "альтернативного пути у этого сервера нет"
+                : "других путей не осталось: на всех проверенных уже было хуже";
             return false;
         }
 
         _warnings.Add($"Переключение пути: {current.RttMedianMs:F0} мс на текущем, пробуем «{next.DisplayName}».");
 
-        bool routeWasApplied = _appliedRouteAction;
+        OptimizationActionDescriptor? previous = _appliedRouteAction
+            ? _applied.FirstOrDefault(action => action.Kind == OptimizationActionKind.RouteForGame)
+            : null;
+
+        if (previous is not null)
+        {
+            // Прежний маршрут снимаем ДО добавления нового: исполнитель не перезаписывает /32,
+            // который уже стоит в таблице (это защита от чужих маршрутов) — свой прежний он тоже
+            // не перезапишет, и «переключение» молча осталось бы на старом узле.
+            OptimizationActionOutcome revert = await RevertAsync(previous, ct).ConfigureAwait(false);
+            _applied.Remove(previous);
+            _appliedRouteAction = false;
+
+            if (!revert.Succeeded)
+            {
+                // Маршрут не снялся: добавлять второй /32 на тот же адрес нельзя — в таблице
+                // окажется два пути, и какой победит, решит метрика, а не наши замеры.
+                _applied.Add(previous);
+                _appliedRouteAction = true;
+                _switchProblemRu = $"прежний маршрут не снялся ({revert.MessageRu})";
+                _warnings.Add($"Переключение отменено: {_switchProblemRu}.");
+                return false;
+            }
+        }
+
         OptimizationActionOutcome outcome = await _actions.ApplyAsync(next.Action, ct).ConfigureAwait(false);
+
         if (!outcome.Succeeded)
         {
             _warnings.Add($"Переключиться не удалось: {outcome.MessageRu}");
+            _switchProblemRu = $"новый маршрут не применился ({outcome.MessageRu})";
+
+            if (previous is not null)
+            {
+                OptimizationActionOutcome back = await _actions.ApplyAsync(previous, ct).ConfigureAwait(false);
+                if (back.Succeeded)
+                {
+                    _applied.Add(previous);
+                    _appliedRouteAction = true;
+                    _warnings.Add("Прежний маршрут возвращён: трафик идёт как до попытки переключения.");
+                }
+                else
+                {
+                    _warnings.Add(
+                        $"Прежний маршрут вернуть не удалось ({back.MessageRu}): трафик идёт по маршруту по умолчанию, " +
+                        "сеть надо проверить вручную — «Починить сеть».");
+                }
+            }
+
             return false;
         }
 
-        if (routeWasApplied)
+        if (_activePathId is not null)
         {
-            OptimizationActionDescriptor? previous = _applied.FirstOrDefault(a => a.Kind == OptimizationActionKind.RouteForGame);
-            if (previous is not null)
-            {
-                await RevertAsync(previous, ct).ConfigureAwait(false);
-                _applied.Remove(previous);
-            }
+            _failedPathIds.Add(_activePathId);
         }
 
         _applied.Add(next.Action);
@@ -725,6 +787,8 @@ public sealed class RealtimeOptimizer
         _lastLossPercent = null;
         _activePathId = null;
         _appliedRouteAction = false;
+        _failedPathIds.Clear();
+        _switchProblemRu = null;
         _consecutiveBadWindows = 0;
         _consecutiveGoodWindows = 0;
     }

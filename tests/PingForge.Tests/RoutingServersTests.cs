@@ -702,8 +702,14 @@ public sealed class RoutingServersTests
             applyFlow: applied => flow = applied);
 
         IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
-        Assert.Empty(options);
         Assert.Equal("10.8.0.1", target!.NextHop);
+
+        // Выбранный узел — это и есть путь оптимизации: оптимизатор должен получить его вариантом,
+        // иначе живой контроль при просадке не сможет переключиться ни на что.
+        RealtimePathOption option = Assert.Single(options);
+        Assert.Equal("node:10.8.0.1", option.PathId);
+        Assert.Equal("10.8.0.1", option.NextHop);
+        Assert.Equal("10.8.0.1", option.Action.RouteNextHop);
         Assert.Equal(GameServer, flow!.RemoteEndpoint);
 
         // То же самое состояние наживую проходит исполнителя: /32 ровно на адрес сервера игры.
@@ -786,14 +792,18 @@ public sealed class RoutingServersTests
             note => { },
             comparison);
 
-        await provider.GetOptionsAsync(Flow());
+        IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
         Assert.Equal("10.8.0.1", target!.NextHop);
+        RealtimePathOption winner = Assert.Single(options);
+        Assert.Equal("node:10.8.0.1", winner.PathId);
         int probesAfterStart = probe.Count;
 
         // Контроль качества при деградации спрашивает варианты снова — решение переиспользуется,
-        // сеть не должна получать полное сравнение на каждый тик.
-        await provider.GetOptionsAsync(Flow());
+        // сеть не должна получать полное сравнение на каждый тик. Но варианты обязаны вернуться:
+        // пустой ответ кэша означал бы «переключаться некуда» на каждом плохом окне.
+        IReadOnlyList<RealtimePathOption> again = await provider.GetOptionsAsync(Flow());
         Assert.Equal(probesAfterStart, probe.Count);
+        Assert.Equal(winner.PathId, Assert.Single(again).PathId);
 
         // Новая сессия обязана мерить заново: вчерашняя победа — не сегодняшняя.
         provider.Invalidate();
@@ -837,6 +847,86 @@ public sealed class RoutingServersTests
             RoutingPathOptionsProvider.DecisionKey(secondMatch));
 
         Assert.Empty(system.Table);
+    }
+
+    [Fact]
+    public async Task Автовыбор_отдаёт_резерв_только_если_он_сам_выигрывает_у_прямого_пути()
+    {
+        // Прямой путь 40 мс. Первый узел 30, второй 34: оба быстрее направления по умолчанию,
+        // значит второй — честный горячий резерв, а не «на всякий случай».
+        FakeRouteSystem system = new();
+        ScriptedMeasurement probe = new(system, hop => hop switch
+        {
+            null => Window(40),
+            "10.8.0.1" => Window(30),
+            _ => Window(34)
+        });
+        var comparison = new RoutePathComparisonService(system.Command, system.Reader, probe);
+
+        var provider = new RoutingPathOptionsProvider(
+            () => new RoutingSettings([Node("10.8.0.1", "WG"), Node("10.0.0.5", "LTE")], null, AutoSelectBest: true),
+            _ => { },
+            _ => { },
+            comparison);
+
+        IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
+
+        Assert.Equal(2, options.Count);
+        Assert.Equal("node:10.8.0.1", options[0].PathId);
+        Assert.Equal("node:10.0.0.5", options[1].PathId);
+        Assert.All(options, option => Assert.Equal(option.NextHop, option.Action.RouteNextHop));
+        Assert.Contains("резерв", options[1].DisplayName, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("второй шлюз горячий", provider.LastMultipathRu ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Узел_хуже_прямого_пути_резервом_не_считается()
+    {
+        // Победитель 30 мс, «второй» 45 мс при прямом пути 40: переключаться на него при просадке
+        // основного — значит уводить трафик в заведомо худший путь под видом оптимизации.
+        FakeRouteSystem system = new();
+        ScriptedMeasurement probe = new(system, hop => hop switch
+        {
+            null => Window(40),
+            "10.8.0.1" => Window(30),
+            _ => Window(45)
+        });
+        var comparison = new RoutePathComparisonService(system.Command, system.Reader, probe);
+
+        var provider = new RoutingPathOptionsProvider(
+            () => new RoutingSettings([Node("10.8.0.1", "WG"), Node("10.0.0.5", "LTE")], null, AutoSelectBest: true),
+            _ => { },
+            _ => { },
+            comparison);
+
+        IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
+
+        Assert.Equal("node:10.8.0.1", Assert.Single(options).PathId);
+        Assert.Contains("не выигрывает у прямого пути", provider.LastMultipathRu ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Узел_из_действия_перебивает_устаревшую_цель_платформы()
+    {
+        // Так выглядит фейловер: цель платформы всё ещё указывает на прежний узел, а действие
+        // уже назвало новый. Маршрут обязан идти туда, куда решили замеры.
+        FakeRouteSystem system = new();
+        GameFlowInfo flow = Flow();
+        RouteOverride? staleTarget = new("10.8.0.1");
+
+        var runner = new RouteForGameActionRunner(system.Command, system.Reader, () => flow, () => staleTarget);
+        var action = new OptimizationActionDescriptor(
+            "route:game-server:runner-up",
+            OptimizationActionKind.RouteForGame,
+            "Маршрут через «LTE»",
+            "резерв",
+            RouteNextHop: "10.0.0.5");
+
+        OptimizationActionOutcome outcome = await runner.ApplyAsync(action);
+
+        Assert.True(outcome.Succeeded, outcome.MessageRu);
+        Assert.Contains($"route add {GameServer} mask 255.255.255.255 10.0.0.5 metric 1", system.Command.Invocations);
+        Assert.Equal("10.0.0.5", RouteTableParser.FindExactHostRoute(system.Table, GameServer)!.NextHop);
     }
 
     [Fact]
