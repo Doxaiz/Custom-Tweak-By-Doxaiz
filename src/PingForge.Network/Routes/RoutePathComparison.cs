@@ -730,7 +730,7 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
         {
             _applyTarget(new RouteOverride(primary.Address, RoutePathComparisonService.ProbeMetric, $"{primary.SourceRu}: {primary.Name}"));
             _applyRefusalNote(null);
-            options.Add(OptionFor(primary, isPrimary: true));
+            options.Add(OptionFor(primary, isPrimary: true, ProbeFor(report, primary)));
         }
         else
         {
@@ -739,20 +739,27 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
             _applyRefusalNote(report.VerdictRu);
         }
 
-        // Резерв — только измеренный и только тот, что сам выигрывает у прямого пути.
-        // Узел, который хуже направления по умолчанию, — не резерв: переключение на него
+        // Остальные узлы, которые сами выигрывают у прямого пути, — тоже варианты, по порядку медианы:
+        // именно из них контроль выбирает путь при просадке и «путь быстрее» в штатном режиме.
+        // Узел, который хуже направления по умолчанию, вариантом не становится: переключение на него
         // было бы ухудшением под видом оптимизации.
-        RoutingNodeEntry? backup = report.RunnerUp;
+        var alternatives = new List<RoutingNodeEntry>();
+        if (primary is not null)
+        {
+            foreach (RoutingNodeEntry node in nodes
+                         .Where(node => !node.Address.Equals(primary.Address, StringComparison.OrdinalIgnoreCase))
+                         .Where(node => IsWorthSwitchingTo(report, node))
+                         .OrderBy(node => ProbeFor(report, node)?.MedianRttMs ?? double.MaxValue))
+            {
+                alternatives.Add(node);
+                options.Add(OptionFor(node, isPrimary: false, ProbeFor(report, node)));
+            }
+        }
+
+        RoutingNodeEntry? backup = alternatives.FirstOrDefault();
         if (backup is null && settings.MultipathEnabled && settings.IsMultipathValid)
         {
             backup = settings.SecondaryNode;
-        }
-
-        if (primary is not null && backup is not null
-            && !backup.Address.Equals(primary.Address, StringComparison.OrdinalIgnoreCase)
-            && IsWorthSwitchingTo(report, backup))
-        {
-            options.Add(OptionFor(backup, isPrimary: false));
         }
 
         // Мультипуть на своих линиях: без своей сети дублировать нельзя, но держим горячий резерв.
@@ -762,9 +769,13 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
 
             if (primary is { } main && options.Count > 1)
             {
+                string extra = options.Count > 1
+                    ? $" Вариантов для переключения всего {options.Count}: контроль может уйти на другой узел, если этот тоже просядет."
+                    : string.Empty;
+
                 LastMultipathRu = $"Мультипуть: основной «{main.Name}» ({main.Address}), резерв — «{backup.Name}» ({backup.Address}). " +
                     "Без своей сети пакеты не дублируются: второй шлюз горячий, и при подтверждённой просадке основного " +
-                    "трафик переключается на него — после нескольких подряд плохих окон контроля, а не в тот же миг.";
+                    "трафик переключается на него — после нескольких подряд плохих окон контроля, а не в тот же миг." + extra;
             }
             else
             {
@@ -796,7 +807,7 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
         return $"node:{node.Address}";
     }
 
-    private static RealtimePathOption OptionFor(RoutingNodeEntry node, bool isPrimary) => new(
+    private static RealtimePathOption OptionFor(RoutingNodeEntry node, bool isPrimary, RoutePathProbeResult? probe = null) => new(
         PathIdFor(node),
         isPrimary ? $"«{node.Name}» ({node.Address})" : $"«{node.Name}» ({node.Address}) — резерв",
         IsRelay: true,
@@ -807,7 +818,15 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
             $"Маршрут через «{node.Name}»",
             $"Маршрут /32 только на адрес игрового сервера через «{node.Name}» ({node.Address}, {node.SourceRu}); " +
             "снимается при остановке оптимизации.",
-            RouteNextHop: node.Address));
+            RouteNextHop: node.Address),
+        MedianRttMs: probe?.MedianRttMs,
+        SpreadMs: probe?.SpreadMs);
+
+    /// <summary>Замер этого узла из отчёта сравнения: null — узел не измерился, чисел нет.</summary>
+    private static RoutePathProbeResult? ProbeFor(RoutePathComparisonReport report, RoutingNodeEntry node) =>
+        report.ViaNodes.FirstOrDefault(result =>
+            result.Success && result.MedianRttMs.HasValue
+            && result.Address.Equals(node.Address, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Годится ли узел в резерв: он должен быть измерен и сам выигрывать у прямого пути
@@ -822,10 +841,7 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
         }
 
         RoutePathProbeResult direct = report.Direct;
-
-        RoutePathProbeResult? probe = report.ViaNodes.FirstOrDefault(result =>
-            result.Success && result.MedianRttMs.HasValue
-            && result.Address.Equals(node.Address, StringComparison.OrdinalIgnoreCase));
+        RoutePathProbeResult? probe = ProbeFor(report, node);
 
         return probe is not null
             && directMs - probe.MedianRttMs!.Value >= RoutePathComparisonService.RequiredGainMs(direct, probe);

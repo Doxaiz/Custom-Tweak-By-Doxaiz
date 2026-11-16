@@ -152,8 +152,21 @@ public interface IOptimizationActionRunner
     Task<OptimizationActionOutcome> RevertAsync(OptimizationActionDescriptor action, CancellationToken ct = default);
 }
 
-/// <summary>Альтернативный путь до того же адреса сервера (релей или другой шлюз). Нужен для переключений на ходу.</summary>
-public sealed record RealtimePathOption(string PathId, string DisplayName, bool IsRelay, string? NextHop, OptimizationActionDescriptor Action);
+/// <summary>
+/// Альтернативный путь до того же адреса сервера (релей или другой шлюз). Нужен для переключений
+/// на ходу. <paramref name="MedianRttMs"/> и <paramref name="SpreadMs"/> — измеренные числа этого пути
+/// в той же сессии замеров: по ним решается, стоит ли уходить с текущего пути, когда тот в норме
+/// (как «постоянно проверяем альтернативы» у игровых ускорителей). Нет чисел — нет и решения:
+/// путь без замера не выбирается.
+/// </summary>
+public sealed record RealtimePathOption(
+    string PathId,
+    string DisplayName,
+    bool IsRelay,
+    string? NextHop,
+    OptimizationActionDescriptor Action,
+    double? MedianRttMs = null,
+    double? SpreadMs = null);
 
 public interface IRealtimePathOptionsProvider
 {
@@ -173,7 +186,10 @@ public sealed record RealtimeOptions(
     bool AllowRoutingChanges = true,
     bool AllowDscpMarking = true,
     TimeSpan MaxSessionDuration = default,
-    ResourceBudgetOptions? Budget = null)
+    ResourceBudgetOptions? Budget = null,
+    int HealthyWindowsBetweenRouteReviews = 90,
+    double RouteUpgradeMarginMs = 3.0,
+    TimeSpan RouteUpgradeCooldown = default)
 {
     /// <summary>Бюджет ресурсов: профиль нагрузки, паузы, обновление значка в трее.</summary>
     public ResourceBudgetOptions EffectiveBudget => Budget ?? new ResourceBudgetOptions();
@@ -190,6 +206,13 @@ public sealed record RealtimeOptions(
         MonitorInterval == default ? TimeSpan.FromSeconds(2) : MonitorInterval;
 
     public TimeSpan EffectiveMaxSessionDuration => MaxSessionDuration == default ? TimeSpan.FromHours(6) : MaxSessionDuration;
+
+    /// <summary>
+    /// Не чаще одного «поиска пути получше» за это время. Иначе контроль начнёт дёргать маршрут
+    /// ради каждого случайного выигрыша в 3 мс: переключение — это разрыв соединения на игре.
+    /// </summary>
+    public TimeSpan EffectiveRouteUpgradeCooldown =>
+        RouteUpgradeCooldown == default ? TimeSpan.FromMinutes(5) : RouteUpgradeCooldown;
 }
 
 /// <summary>Снимок состояния для интерфейса: то, что видит пользователь на кнопке и в панели.</summary>

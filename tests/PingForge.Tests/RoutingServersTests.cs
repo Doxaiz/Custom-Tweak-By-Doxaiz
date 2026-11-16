@@ -955,7 +955,70 @@ public sealed class RoutingServersTests
         Assert.Equal("node:10.0.0.5", options[1].PathId);
         Assert.All(options, option => Assert.Equal(option.NextHop, option.Action.RouteNextHop));
         Assert.Contains("резерв", options[1].DisplayName, StringComparison.OrdinalIgnoreCase);
+
+        // Варианты несут измеренные числа: по ним контроль решает, уходить ли на другой путь.
+        Assert.Equal(30, options[0].MedianRttMs!.Value, 0.01);
+        Assert.Equal(34, options[1].MedianRttMs!.Value, 0.01);
+        Assert.Equal(0, options[1].SpreadMs!.Value, 0.01);
         Assert.Contains("второй шлюз горячий", provider.LastMultipathRu ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Все_узлы_что_выигрывают_у_прямого_пути_становятся_вариантами_по_порядку_медианы()
+    {
+        // Как у игровых ускорителей: держим не «один резерв», а все измеренные пути, которые реально
+        // быстрее направления по умолчанию. Узел хуже прямого пути вариантом не становится.
+        FakeRouteSystem system = new();
+        ScriptedMeasurement probe = new(system, hop => hop switch
+        {
+            null => Window(40),
+            "10.8.0.1" => Window(30),
+            "10.0.0.5" => Window(34),
+            _ => Window(45)
+        });
+        var comparison = new RoutePathComparisonService(system.Command, system.Reader, probe);
+
+        var provider = new RoutingPathOptionsProvider(
+            () => new RoutingSettings(
+                [Node("10.8.0.1", "WG"), Node("10.0.0.5", "LTE"), Node("10.0.0.6", "медленный")],
+                null,
+                AutoSelectBest: true),
+            _ => { },
+            _ => { },
+            comparison);
+
+        IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
+
+        Assert.Equal(2, options.Count);
+        Assert.Equal("node:10.8.0.1", options[0].PathId);
+        Assert.Equal("node:10.0.0.5", options[1].PathId);
+        Assert.Equal(30, options[0].MedianRttMs!.Value, 0.01);
+        Assert.Equal(34, options[1].MedianRttMs!.Value, 0.01);
+        Assert.DoesNotContain(options, option => option.PathId == "node:10.0.0.6");
+        Assert.Contains("Вариантов для переключения всего 2", provider.LastMultipathRu ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Ручной_выбор_узла_не_выдаёт_себя_за_измеренный_путь()
+    {
+        // Ручной режим ничего не мерил: числа отсутствуют, и контроль не имеет права
+        // «находить путь быстрее» по выдуманным числам.
+        FakeRouteSystem system = new();
+
+        var provider = new RoutingPathOptionsProvider(
+            () => new RoutingSettings([Node("10.8.0.1", "WG")], "10.8.0.1", AutoSelectBest: false),
+            _ => { },
+            _ => { },
+            comparison: null);
+
+        IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
+
+        Assert.All(options, option =>
+        {
+            Assert.Null(option.MedianRttMs);
+            Assert.Null(option.SpreadMs);
+        });
+        Assert.Empty(system.Command.Invocations);
     }
 
     [Fact]
