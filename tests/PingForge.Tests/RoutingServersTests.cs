@@ -491,8 +491,9 @@ public sealed class RoutingServersTests
         Assert.Contains($"route delete {GameServer} mask 255.255.255.255", system.Command.Invocations);
         Assert.Empty(system.Table);
 
-        // Замеров было ровно три: прямой путь и два узла.
-        Assert.Equal(3, probe.Count);
+        // Замеров шесть: две серии вперемешку — прямой, узел А, узел Б, и снова по кругу.
+        Assert.Equal(6, probe.Count);
+        Assert.Equal(new string?[] { null, "10.8.0.1", "10.0.0.1", null, "10.8.0.1", "10.0.0.1" }, probe.Hops);
     }
 
     [Fact]
@@ -551,8 +552,86 @@ public sealed class RoutingServersTests
         // Временные маршруты ставились и снялись: ни одного add без пары delete.
         int adds = system.Command.Invocations.Count(line => line.StartsWith("route add", StringComparison.Ordinal));
         int deletes = system.Command.Invocations.Count(line => line.StartsWith("route delete", StringComparison.Ordinal));
-        Assert.Equal(1, adds);
+        Assert.Equal(2, adds); // по одному временному /32 на каждую серию
         Assert.Equal(adds, deletes);
+        Assert.Empty(system.Table);
+    }
+
+    [Fact]
+    public async Task Замеры_идут_сериями_вперемешку_чтобы_дрейф_сети_не_давал_фору_узлу()
+    {
+        // Сеть «уплывает»: прямой путь в первой серии 40, во второй 52. Узел ровно 44.
+        // Один замер в начале дал бы «узел хуже на 4 мс» — это была бы не победа сети,
+        // а дрейф между замерами. Чередование и медиана показывают правду: разница в шуме.
+        FakeRouteSystem system = new();
+        int calls = 0;
+        ScriptedMeasurement probe = new(system, hop =>
+        {
+            calls++;
+            return hop is null ? (calls <= 2 ? Window(40) : Window(52)) : Window(44);
+        });
+
+        var service = new RoutePathComparisonService(system.Command, system.Reader, probe);
+        RoutePathComparisonReport report = await service.CompareAsync(GameServer, 0, [Node("10.0.0.1")]);
+
+        Assert.Equal(46, report.Direct!.MedianRttMs!.Value, 0.01);
+        Assert.Equal(12, report.Direct.SpreadMs!.Value, 0.01);
+        Assert.False(report.HasWinner);
+        Assert.Contains("разница в пределах погрешности", report.VerdictRu, StringComparison.Ordinal);
+        Assert.Contains("Разброс серий замера ±12 мс", report.VerdictRu, StringComparison.Ordinal);
+        Assert.Empty(system.Table);
+    }
+
+    [Fact]
+    public async Task Выигрыш_больше_разброса_засчитывается_даже_при_дрейфе()
+    {
+        // Прямой дрейфует 40 → 60 (медиана 50, разброс 20), узел стабильно 28.
+        // Выигрыш 22 мс больше разброса 20 — это уже маршрут, а не шум.
+        FakeRouteSystem system = new();
+        int calls = 0;
+        ScriptedMeasurement probe = new(system, hop =>
+        {
+            calls++;
+            return hop is null ? (calls <= 2 ? Window(40) : Window(60)) : Window(28);
+        });
+
+        var service = new RoutePathComparisonService(system.Command, system.Reader, probe);
+        RoutePathComparisonReport report = await service.CompareAsync(GameServer, 0, [Node("10.0.0.1")]);
+
+        Assert.True(report.HasWinner);
+        Assert.Equal("10.0.0.1", report.Winner!.Address);
+        Assert.Contains("выигрыш 22 мс", report.VerdictRu, StringComparison.Ordinal);
+        Assert.Contains("Разброс серий замера ±20 мс", report.VerdictRu, StringComparison.Ordinal);
+        Assert.True(report.TableRestored);
+        Assert.Empty(system.Table);
+    }
+
+    [Fact]
+    public async Task Одна_неудавшаяся_серия_отменяет_путь_а_не_выдаётся_за_медиану()
+    {
+        // Вторая серия через узел не измерилась: одна серия — это не медиана, путь не подтверждён.
+        FakeRouteSystem system = new();
+        int calls = 0;
+        ScriptedMeasurement probe = new(system, hop =>
+        {
+            calls++;
+            if (hop is not null && calls > 3)
+            {
+                return PathMeasurement.Unmeasurable("живой поток не ответил во второй серии");
+            }
+
+            return hop is null ? Window(40) : Window(30);
+        });
+
+        var service = new RoutePathComparisonService(system.Command, system.Reader, probe);
+        RoutePathComparisonReport report = await service.CompareAsync(GameServer, 0, [Node("10.0.0.1")]);
+
+        Assert.False(report.HasWinner);
+        RoutePathProbeResult node = Assert.Single(report.ViaNodes);
+        Assert.False(node.Success);
+        Assert.Contains("серия 2 из 2", node.ProblemRu!, StringComparison.Ordinal);
+        Assert.Contains("не подтверждён", node.ProblemRu!, StringComparison.Ordinal);
+        Assert.Contains("Ни один узел не измерился", report.VerdictRu, StringComparison.Ordinal);
         Assert.Empty(system.Table);
     }
 
@@ -1491,6 +1570,9 @@ public sealed class RoutingServersTests
 
         public int Count { get; private set; }
 
+        /// <summary>Порядок замеров: null — прямой путь, адрес — замер через этот узел.</summary>
+        public List<string?> Hops { get; } = new();
+
         public string? ThrowOnHop { get; init; }
 
         public Task<PathMeasurement> MeasurePathAsync(string endpoint, int port, CancellationToken ct = default)
@@ -1498,6 +1580,7 @@ public sealed class RoutingServersTests
             Count++;
 
             string? viaHop = RouteTableParser.FindExactHostRoute(_system.Table, endpoint)?.NextHop;
+            Hops.Add(viaHop);
             if (viaHop is not null && viaHop == ThrowOnHop)
             {
                 throw new InvalidOperationException("оборвался замер");
