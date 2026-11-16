@@ -1,8 +1,10 @@
 using System.Text;
+using PingForge.App.ViewModels;
 using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
 using PingForge.Data;
 using PingForge.Orchestration;
+using PingForge.Service.Protocol;
 using Xunit;
 
 namespace PingForge.Tests;
@@ -235,6 +237,58 @@ public sealed class DatabaseMaintenanceTests
 
         Assert.True(inner.Called);
         Assert.Contains(notes, note => note.Contains("не из чего", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Окно_предлагает_восстановить_базу_из_копии()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "checked-SettingsView.xaml");
+        Assert.True(File.Exists(path), $"нет копии SettingsView.xaml для проверки: {path}");
+
+        string text = File.ReadAllText(path);
+
+        // Требование задачи U: человек видит состояние базы и может вернуть её из копии сам,
+        // а не узнаёт о потере снапшотов при попытке отката.
+        Assert.Contains("Восстановить базу из копии", text, StringComparison.Ordinal);
+        Assert.Contains("Storage.HealthRu", text, StringComparison.Ordinal);
+        Assert.Contains("Storage.RestoreCommand", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Окно_показывает_состояние_базы_и_восстанавливает_её_по_кнопке()
+    {
+        var fallback = new FakeEngineChannel();
+        var channel = new FakeEngineChannel(request => request.Command switch
+        {
+            EngineCommandKind.StorageInfo => EngineResponse.Success(
+                request.Id,
+                "База прочитана.",
+                """{"dbPath":"C:\\ProgramData\\PingForge\\pingforge.db","dbBytes":2048,"snapshots":2,"journalRows":7,"healthy":false,"integrityProblemRu":"database disk image is malformed","backups":1,"latestBackupName":"pingforge.db.bak-20261116-140516-172","corruptFiles":1}"""),
+            EngineCommandKind.DbRestore => EngineResponse.Success(
+                request.Id,
+                "База восстановлена из копии «pingforge.db.bak-20261116-140516-172». Записи журнала и снапшоты, сделанные после этой копии, пропали — вернуть их нечем.",
+                "{}"),
+            _ => fallback.DefaultAnswer(request),
+        });
+
+        var dialogs = new FakeDialogs();
+        var storage = new StorageInfoViewModel(new EngineClient(channel));
+        storage.AttachDialogs(dialogs);
+
+        await storage.RefreshCommand.ExecuteAsync();
+
+        Assert.True(storage.CanRestore);
+        Assert.Contains("не пройдена", storage.HealthRu, StringComparison.Ordinal);
+        Assert.Contains("Резервных копий: 1", storage.BackupsRu, StringComparison.Ordinal);
+        Assert.Contains("Отложенных испорченных файлов: 1", storage.CorruptRu, StringComparison.Ordinal);
+
+        await storage.RestoreCommand.ExecuteAsync();
+
+        EngineRequest restore = Assert.Single(channel.Requests, request => request.Command == EngineCommandKind.DbRestore);
+        Assert.Equal("yes", restore.Argument("confirm"));
+        Assert.Single(dialogs.Confirmations);
+        Assert.Contains("пропадут", dialogs.Confirmations[0].Message, StringComparison.Ordinal);
+        Assert.Contains("восстановлена из копии", storage.StatusRu, StringComparison.Ordinal);
     }
 
     [Fact]

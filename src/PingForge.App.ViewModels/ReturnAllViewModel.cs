@@ -66,6 +66,11 @@ public sealed class StorageInfoViewModel : ObservableObject
     private int _journalRows;
     private string _statusRu = "Нажмите «Обновить», чтобы увидеть размер базы.";
     private bool _isLoading;
+    private bool _healthy = true;
+    private string? _integrityProblemRu;
+    private int _backupsCount;
+    private string? _latestBackupName;
+    private int _corruptFiles;
 
     public StorageInfoViewModel(EngineClient engine) => _engine = engine ?? throw new ArgumentNullException(nameof(engine));
 
@@ -79,8 +84,26 @@ public sealed class StorageInfoViewModel : ObservableObject
     public string SizeRu => $"{_dbBytes / 1024} КБ";
     public string SummaryRu => $"Путь: {DbPath} — {SizeRu}, снапшотов: {Snapshots}, записей: {JournalRows}.";
 
+    /// <summary>Проходит ли база проверку целостности: то, что раньше выяснялось только при откате.</summary>
+    public string HealthRu => _healthy
+        ? "Состояние базы: проверка целостности пройдена."
+        : $"Состояние базы: проверка целостности не пройдена — {_integrityProblemRu ?? "причина не прочитана"}.";
+
+    /// <summary>Сколько резервных копий рядом и какая свежая: из неё и восстанавливаем.</summary>
+    public string BackupsRu => _backupsCount == 0
+        ? "Резервных копий нет: восстанавливать не из чего."
+        : $"Резервных копий: {_backupsCount}, свежая — «{_latestBackupName}».";
+
+    /// <summary>Отложенные испорченные файлы не удаляются — о них надо сказать прямо.</summary>
+    public string CorruptRu => _corruptFiles == 0
+        ? string.Empty
+        : $"Отложенных испорченных файлов: {_corruptFiles} — они сохранены рядом для разбора.";
+
+    public bool CanRestore => _backupsCount > 0;
+
     public AsyncRelayCommand RefreshCommand { get; private set; } = null!;
     public AsyncRelayCommand CleanupCommand { get; private set; } = null!;
+    public AsyncRelayCommand RestoreCommand { get; private set; } = null!;
 
     public void AttachDialogs(IUserDialogs dialogs)
     {
@@ -90,6 +113,18 @@ public sealed class StorageInfoViewModel : ObservableObject
             bool ok = await dialogs.ConfirmAsync("Почистить старые снапшоты?", "Будут удалены снапшоты старше 30 дней, останется последние 10. Снапшоты с незакрытыми операциями не удаляются никогда.", "Почистить", "Отмена").ConfigureAwait(true);
             if (!ok) return;
             await CleanupAsync().ConfigureAwait(true);
+        });
+
+        RestoreCommand = new AsyncRelayCommand(async () =>
+        {
+            bool ok = await dialogs.ConfirmAsync(
+                "Восстановить базу из последней копии?",
+                "Файл базы будет заменён резервной копией. Журнал и снапшоты, сделанные после этой копии, " +
+                "пропадут — откатить изменения по ним будет нечем. Если база в порядке, это не нужно.",
+                "Восстановить",
+                "Отмена").ConfigureAwait(true);
+            if (!ok) return;
+            await RestoreAsync().ConfigureAwait(true);
         });
     }
 
@@ -110,9 +145,31 @@ public sealed class StorageInfoViewModel : ObservableObject
                     if (root.TryGetProperty("dbBytes", out var b) && b.ValueKind == System.Text.Json.JsonValueKind.Number) DbBytes = b.GetInt64();
                     if (root.TryGetProperty("snapshots", out var s) && s.ValueKind == System.Text.Json.JsonValueKind.Number) Snapshots = s.GetInt32();
                     if (root.TryGetProperty("journalRows", out var j) && j.ValueKind == System.Text.Json.JsonValueKind.Number) JournalRows = j.GetInt32();
-                    OnPropertyChanged(nameof(SizeRu), nameof(SummaryRu));
+                    if (root.TryGetProperty("healthy", out var h) && (h.ValueKind == System.Text.Json.JsonValueKind.True || h.ValueKind == System.Text.Json.JsonValueKind.False)) _healthy = h.GetBoolean();
+                    if (root.TryGetProperty("integrityProblemRu", out var ip)) _integrityProblemRu = ip.ValueKind == System.Text.Json.JsonValueKind.String ? ip.GetString() : null;
+                    if (root.TryGetProperty("backups", out var bc) && bc.ValueKind == System.Text.Json.JsonValueKind.Number) _backupsCount = bc.GetInt32();
+                    if (root.TryGetProperty("latestBackupName", out var lb)) _latestBackupName = lb.ValueKind == System.Text.Json.JsonValueKind.String ? lb.GetString() : null;
+                    if (root.TryGetProperty("corruptFiles", out var cf) && cf.ValueKind == System.Text.Json.JsonValueKind.Number) _corruptFiles = cf.GetInt32();
+                    OnPropertyChanged(nameof(SizeRu), nameof(SummaryRu), nameof(HealthRu), nameof(BackupsRu), nameof(CorruptRu), nameof(CanRestore));
                 } catch { }
             }
+        }
+        catch (EngineUnavailableException ex) { StatusRu = ex.Message; }
+        finally { IsLoading = false; }
+    }
+
+    private async Task RestoreAsync()
+    {
+        IsLoading = true;
+        try
+        {
+            EngineResponse resp = await _engine.SendAsync(EngineCommandKind.DbRestore, [("confirm", "yes")]).ConfigureAwait(true);
+            string answer = resp.MessageRu;
+
+            // Обновление перезапишет StatusRu своим «база прочитана», поэтому итог восстановления
+            // ставим после него: человек должен увидеть, что именно произошло.
+            await RefreshAsync().ConfigureAwait(true);
+            StatusRu = answer;
         }
         catch (EngineUnavailableException ex) { StatusRu = ex.Message; }
         finally { IsLoading = false; }

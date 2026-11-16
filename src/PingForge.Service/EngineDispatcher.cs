@@ -187,6 +187,7 @@ public sealed class EngineDispatcher
                 EngineCommandKind.ReturnAll => await _operations.ReturnAllAsync(ct).ConfigureAwait(false),
                 EngineCommandKind.StorageInfo => await _operations.GetStorageInfoAsync(ct).ConfigureAwait(false),
                 EngineCommandKind.CleanupSnapshots => await CleanupSnapshotsAsync(args, ct).ConfigureAwait(false),
+                EngineCommandKind.DbRestore => await RestoreDatabaseAsync(args, ct).ConfigureAwait(false),
 
                 _ => EngineOperationResult.Failure($"Команда «{descriptor.WireName}» объявлена, но не подключена."),
             };
@@ -261,6 +262,21 @@ public sealed class EngineDispatcher
         int days = args.GetInt("olderThanDays", 30, 1, 3650);
         // Явная передача аргументов по отсутствию — не по позиции, иначе keep уйдёт в olderThanDays
         return await _operations.CleanupSnapshotsAsync(keepLast: keep, olderThanDays: days, ct: ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Восстановление базы из копии (задача U). Подтверждение читается буквально: «yes», «true» или
+    /// «1». Любое другое значение — отказ, а не «ладно, раз просили».
+    /// </summary>
+    private async Task<EngineOperationResult> RestoreDatabaseAsync(EngineArgs args, CancellationToken ct)
+    {
+        string? raw = args.Get("confirm")?.Trim();
+        bool confirmed = raw is not null
+            && (raw.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                || raw.Equals("true", StringComparison.OrdinalIgnoreCase)
+                || raw == "1");
+
+        return await _operations.RestoreDatabaseAsync(confirmed, ct).ConfigureAwait(false);
     }
 
     private async Task<EngineOperationResult> SetPerfProfileAsync(EngineArgs args, CancellationToken ct)

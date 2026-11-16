@@ -256,6 +256,18 @@ public static class EngineCommandCatalog
             OptionalArgs: ["keep", "olderThanDays"],
             ExampleRu: """{"id":"21","command":"cleanup-snapshots","args":{"keep":"10","olderThanDays":"30"}}""",
             TimeoutSeconds: 30),
+
+        new(
+            EngineCommandKind.DbRestore,
+            "db-restore",
+            "Восстановить базу из копии",
+            "Ставит на место последнюю резервную копию базы (pingforge.db.bak-…). Журнал и снапшоты, " +
+            "сделанные после этой копии, пропадут — поэтому команда требует явного confirm=yes.",
+            NeedsElevation: true,
+            RequiredArgs: ["confirm"],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"22","command":"db-restore","args":{"confirm":"yes"}}""",
+            TimeoutSeconds: 60),
     ];
 
     /// <summary>Все команды в порядке объявления — он же порядок вывода в интерфейсе.</summary>

@@ -112,6 +112,10 @@ public sealed class DatabaseBackupService
 
     private const string BackupSuffix = ".bak-";
     private const string CorruptSuffix = ".corrupt-";
+    private const string BeforeRestoreSuffix = ".before-restore-";
+
+    /// <summary>Сколько копий «как было» хранится рядом: их делает только восстановление по команде.</summary>
+    public const int KeepPreviousCopies = 2;
 
     /// <summary>Раскладка «.db + сайдкары»: рядом с базой SQLite держит хвосты журналов.</summary>
     private static readonly string[] SidecarSuffixes = ["-wal", "-shm", "-journal"];
@@ -307,10 +311,16 @@ public sealed class DatabaseBackupService
     /// Положить на место самую свежую копию и проверить её. Возвращает <c>false</c> с причиной, если
     /// копий нет, копия не легла или сама не читается.
     /// </summary>
-    public bool TryRestoreLatest(out string? restoredFrom, out string? problemRu)
+    /// <remarks>
+    /// Если текущая база читается, её файл перед заменой сохраняется рядом как
+    /// <c>pingforge.db.before-restore-…</c>: восстановление — это изменение данных программы, и у
+    /// человека должен остаться путь назад. Сама служба этот файл обратно не подставляет.
+    /// </remarks>
+    public bool TryRestoreLatest(out string? restoredFrom, out string? problemRu, out string? previousCopyPath)
     {
         restoredFrom = null;
         problemRu = null;
+        previousCopyPath = null;
 
         IReadOnlyList<string> backups = ListBackups();
         if (backups.Count == 0)
@@ -324,6 +334,25 @@ public sealed class DatabaseBackupService
         try
         {
             SqliteDatabaseInitializer.ClearFileHandles();
+
+            // Читаемую базу не выбрасываем: копия «как было» остаётся рядом для ручного возврата.
+            if (CheckIntegrity().IsHealthy && File.Exists(DatabasePath))
+            {
+                string aside = Path.Combine(
+                    BackupDirectory,
+                    Path.GetFileName(DatabasePath) + BeforeRestoreSuffix + Stamp(DateTime.UtcNow));
+
+                try
+                {
+                    File.Copy(DatabasePath, aside, overwrite: true);
+                    previousCopyPath = aside;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Не удалось сохранить — восстановление всё равно идёт, но об этом скажет текст.
+                    previousCopyPath = null;
+                }
+            }
 
             // Хвосты журнала от испорченной базы нельзя оставлять: SQLite применил бы их к копии.
             foreach (string suffix in SidecarSuffixes)
@@ -375,7 +404,7 @@ public sealed class DatabaseBackupService
 
         string? quarantined = QuarantineCorruptFile(utcNow);
 
-        if (TryRestoreLatest(out string? restored, out string? restoreProblem))
+        if (TryRestoreLatest(out string? restored, out string? restoreProblem, out _))
         {
             return new DatabaseStartupReport(
                 DatabaseStartupOutcome.RestoredFromBackup,
@@ -409,6 +438,24 @@ public sealed class DatabaseBackupService
 
     private void PruneOldBackups()
     {
+        string prefix = Path.GetFileName(DatabasePath) + BeforeRestoreSuffix;
+        if (Directory.Exists(BackupDirectory))
+        {
+            foreach (string old in Directory.GetFiles(BackupDirectory, prefix + "*")
+                .OrderByDescending(path => Path.GetFileName(path) ?? string.Empty, StringComparer.Ordinal)
+                .Skip(KeepPreviousCopies))
+            {
+                try
+                {
+                    File.Delete(old);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Старая копия «как было» останется ещё на один запуск.
+                }
+            }
+        }
+
         foreach (string old in ListBackups().Skip(KeepBackups))
         {
             try
