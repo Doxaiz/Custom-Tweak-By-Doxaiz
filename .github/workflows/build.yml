@@ -545,6 +545,20 @@ jobs:
             exit 1
           }
 
+      # Задача U: повреждённый файл базы не должен ронять службу в цикле рестартов.
+      # Шаг сам ставит установщик, портит заголовок базы, проверяет запуск и убирает за собой.
+      - name: "U - corrupted database: service starts (live)"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+          $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
+          $smoke = "${{ runner.temp }}/art/bin/PingForge.EngineSmoke/release/PingForge.EngineSmoke.exe"
+          if (-not (Test-Path $setup)) { throw "no setup file: $setup" }
+          if (-not (Test-Path $smoke)) { throw "no smoke file: $smoke" }
+          & tools\u-live-checks.ps1 -SetupPath $setup -SmokePath $smoke
+          if ($LASTEXITCODE -ne 0) { throw "U live checks exit $LASTEXITCODE" }
+
       - name: T - uninstall leaves nothing and update keeps state (live)
         shell: pwsh
         env:
@@ -806,4 +820,5 @@ jobs:
             test-results/routing-live.log
             test-results/c7-live-checks.log
             test-results/t-uninstall.log
+            test-results/u-live.log
           if-no-files-found: warn
