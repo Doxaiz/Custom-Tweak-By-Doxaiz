@@ -17,7 +17,7 @@ The job was not started because recent account payments have failed or your spen
 
 | Что | Результат |
 |---|---|
-| Прогон | `43874343076`, PR №16, ветка `arena/d1b4a48a-custom-tweak-by-doxaiz`, коммит `5a64bb5` |
+| Прогон | `43874343076` (коммит кода `5a64bb5`) и повторный `43876429677` (только документы), PR №16, ветка `arena/d1b4a48a-custom-tweak-by-doxaiz` |
 | Сборка | зелёная (шаг «Сборка») |
 | Тесты | зелёные (шаг «Тесты»), включая 9 новых `DatabaseMaintenanceTests` задачи U |
 | Витрины, компактные/автономные сборки | ✓ |
