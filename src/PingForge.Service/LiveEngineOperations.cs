@@ -1,6 +1,7 @@
 using System.Text.Json;
 using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
+using PingForge.Data;
 using PingForge.Data.Repositories;
 using PingForge.Orchestration.Realtime;
 using PingForge.Service.Protocol;
@@ -41,6 +42,12 @@ public sealed class LiveEngineOperations : IEngineOperations
     private readonly string? _databaseNote;
 
     /// <summary>
+    /// Резервные копии базы (задача U). <c>null</c> — в этой сборке копии не подключены; тогда
+    /// честный отказ, а не «восстановлено».
+    /// </summary>
+    private readonly DatabaseBackupService? _backups;
+
+    /// <summary>
     /// Сессия, начатая этой службой и ещё не закрытая. Именно она дописывается «после» при остановке;
     /// после перезапуска службы незакрытая запись остаётся в базе и честно показывается незавершённой.
     /// </summary>
@@ -60,7 +67,8 @@ public sealed class LiveEngineOperations : IEngineOperations
         ISystemStateReader? stateReader = null,
         IRoutingService? routing = null,
         OptimizationSessionRepository? sessions = null,
-        string? databaseNote = null)
+        string? databaseNote = null,
+        DatabaseBackupService? backups = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
@@ -75,6 +83,7 @@ public sealed class LiveEngineOperations : IEngineOperations
         _routing = routing;
         _sessions = sessions;
         _databaseNote = string.IsNullOrWhiteSpace(databaseNote) ? null : databaseNote;
+        _backups = backups;
         IsElevationAvailable = isElevationAvailable;
     }
 
@@ -902,9 +911,111 @@ public sealed class LiveEngineOperations : IEngineOperations
         try { snapshotCount = (await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false)).Count; } catch { }
         try { if (_journal is not null) journalCount = await _journal.CountModificationLogEntriesAsync(ct).ConfigureAwait(false); } catch { }
 
-        string message = $"База: {dbPath} — {dbBytes / 1024} КБ, снапшотов: {snapshotCount}, записей журнала: {journalCount}.";
-        var data = Encode(new StorageInfoData(dbPath, dbBytes, snapshotCount, journalCount));
+        // Задача U: рядом с размером — честное состояние базы: проходит ли quick_check, сколько
+        // резервных копий и не осталось ли отложенных испорченных файлов.
+        bool healthy = true;
+        string? integrityProblem = null;
+        int backupCount = 0;
+        string? latestBackupName = null;
+        int corruptFiles = 0;
+
+        if (_backups is not null)
+        {
+            var check = _backups.CheckIntegrity();
+            healthy = check.IsHealthy;
+            integrityProblem = check.ProblemRu;
+
+            IReadOnlyList<string> copies = _backups.ListBackups();
+            backupCount = copies.Count;
+            latestBackupName = backupCount == 0 ? null : Path.GetFileName(copies[0]);
+
+            try
+            {
+                corruptFiles = Directory.Exists(_backups.BackupDirectory)
+                    ? Directory.GetFiles(_backups.BackupDirectory, Path.GetFileName(dbPath) + ".corrupt-*").Length
+                    : 0;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                corruptFiles = 0;
+            }
+        }
+
+        string healthNote = healthy
+            ? "проверка целостности пройдена"
+            : $"проверка целостности не пройдена: {integrityProblem}";
+        string backupNote = _backups is null
+            ? "резервные копии в этой сборке не подключены"
+            : backupCount == 0
+                ? "резервных копий нет"
+                : $"резервных копий: {backupCount}, свежая — «{latestBackupName}»";
+        string corruptNote = corruptFiles == 0
+            ? string.Empty
+            : $" Отложенных испорченных файлов: {corruptFiles} — они лежат рядом и не удаляются.";
+
+        string message = $"База: {dbPath} — {dbBytes / 1024} КБ, снапшотов: {snapshotCount}, " +
+            $"записей журнала: {journalCount}. {healthNote}; {backupNote}.{corruptNote}" +
+            (_databaseNote is null ? string.Empty : $" ВНИМАНИЕ: {_databaseNote}");
+
+        var data = Encode(new StorageInfoData(
+            dbPath,
+            dbBytes,
+            snapshotCount,
+            journalCount,
+            healthy,
+            integrityProblem,
+            backupCount,
+            latestBackupName,
+            corruptFiles));
+
         return EngineOperationResult.Success(message, data);
+    }
+
+    /// <summary>
+    /// Восстановление базы из последней резервной копии (задача U). Единственная команда, которая
+    /// заменяет файл базы: поэтому без явного подтверждения отказ, и только когда оптимизация не идёт
+    /// (иначе восстановление вырвало бы из-под неё журнал текущей сессии).
+    /// </summary>
+    public Task<EngineOperationResult> RestoreDatabaseAsync(bool confirm, CancellationToken ct = default)
+    {
+        if (!confirm)
+        {
+            return Task.FromResult(EngineOperationResult.Failure(
+                "Восстановление базы из копии не подтверждено. Команда заменяет файл базы: журнал и " +
+                "снапшоты, сделанные после копии, пропадут. Повторите с confirm=yes, если это то, что нужно."));
+        }
+
+        if (_backups is null)
+        {
+            return Task.FromResult(EngineOperationResult.Failure(
+                "Резервные копии базы в этой сборке не подключены: восстанавливать не из чего."));
+        }
+
+        RealtimeOptimizationState state = _realtime?.State ?? RealtimeOptimizationState.Idle;
+        if (state is not (RealtimeOptimizationState.Idle or RealtimeOptimizationState.Stopped or RealtimeOptimizationState.Failed))
+        {
+            return Task.FromResult(EngineOperationResult.Failure(
+                $"Оптимизация идёт ({StateRu(state)}): база занята журналом текущей сессии. " +
+                "Остановите оптимизацию и повторите — иначе восстановление потеряет её записи."));
+        }
+
+        if (!_backups.TryRestoreLatest(out string? restored, out string? problem, out string? previous))
+        {
+            return Task.FromResult(EngineOperationResult.Failure(
+                $"Восстановить базу не удалось: {problem}. Копии лежат в {_backups.BackupDirectory}."));
+        }
+
+        // Сессия живёт в прежнем файле базы: после замены файла её больше нет.
+        _currentSession = null;
+
+        string name = Path.GetFileName(restored ?? string.Empty);
+        string message = $"База восстановлена из копии «{name}». Записи журнала и снапшоты, сделанные " +
+            "после этой копии, пропали — вернуть их нечем. Проверьте «Журнал», прежде чем откатывать изменения." +
+            (previous is null
+                ? string.Empty
+                : $" Прежний файл базы сохранён рядом как «{Path.GetFileName(previous)}» — служба сама его обратно не подставляет.");
+        var data = Encode(new DbRestoreData(restored ?? string.Empty, _backups.ListBackups().Count, previous));
+        return Task.FromResult(EngineOperationResult.Success(message, data));
     }
 
     public async Task<EngineOperationResult> CleanupSnapshotsAsync(int keepLast = 10, int olderThanDays = 30, CancellationToken ct = default)
@@ -1088,7 +1199,18 @@ public sealed class LiveEngineOperations : IEngineOperations
         IReadOnlyList<string> ByCategory);
 
     private sealed record ReturnAllData(int OkSteps, int FailSteps, bool NeedsReboot, IReadOnlyList<string> StepsRu);
-    private sealed record StorageInfoData(string DbPath, long DbBytes, int Snapshots, int JournalRows);
+    private sealed record StorageInfoData(
+        string DbPath,
+        long DbBytes,
+        int Snapshots,
+        int JournalRows,
+        bool Healthy,
+        string? IntegrityProblemRu,
+        int Backups,
+        string? LatestBackupName,
+        int CorruptFiles);
+
+    private sealed record DbRestoreData(string RestoredFrom, int RemainingBackups, string? PreviousCopyPath);
     private sealed record CleanupData(int Deleted, int Remaining);
 
     private sealed record JournalRow(

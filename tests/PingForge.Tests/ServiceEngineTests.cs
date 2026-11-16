@@ -25,7 +25,29 @@ public sealed class ServiceEngineTests : IDisposable
         _database.EnsureInitializedAsync().GetAwaiter().GetResult();
     }
 
-    public void Dispose() => TempDatabaseFile.Delete(_databasePath);
+    public void Dispose()
+    {
+        TempDatabaseFile.Delete(_databasePath);
+
+        // Копии и отложенные файлы базы (задача U) лежат рядом с файлом базы — убираем и их,
+        // иначе временный каталог копится копиями от каждого теста.
+        string directory = Path.GetDirectoryName(_databasePath) ?? ".";
+        string stem = Path.GetFileName(_databasePath) ?? "pf_service";
+        foreach (string pattern in new[] { stem + ".bak-*", stem + ".corrupt-*" })
+        {
+            foreach (string file in Directory.GetFiles(directory, pattern))
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (IOException)
+                {
+                    // Не удалось убрать временный файл — это не повод валить тест.
+                }
+            }
+        }
+    }
 
     private static FakeTweak Tweak(string code) => new(code);
 
@@ -548,6 +570,84 @@ public sealed class ServiceEngineTests : IDisposable
         Assert.Null(result.DataJson);
     }
 
+    // ── задача U: целостность и копии базы видны и восстанавливаются ───────────────────────────
+
+    [Fact]
+    public async Task StorageInfo_называет_состояние_базы_и_число_копий()
+    {
+        var backups = new DatabaseBackupService(_database);
+        Assert.NotNull(await backups.CreateBackupAsync());
+
+        EngineOperationResult result = await Build(backups: backups).GetStorageInfoAsync();
+
+        Assert.True(result.Ok);
+        Assert.Contains("\"healthy\":true", result.DataJson);
+        Assert.Contains("\"backups\":1", result.DataJson);
+        Assert.Contains("проверка целостности пройдена", result.MessageRu);
+        Assert.Contains("резервных копий: 1", result.MessageRu);
+    }
+
+    [Fact]
+    public async Task StorageInfo_без_подключённых_копий_говорит_об_этом_прямо()
+    {
+        EngineOperationResult result = await Build().GetStorageInfoAsync();
+
+        Assert.True(result.Ok);
+        Assert.Contains("резервные копии в этой сборке не подключены", result.MessageRu);
+        Assert.Contains("\"backups\":0", result.DataJson);
+    }
+
+    [Fact]
+    public async Task RestoreDatabase_без_подтверждения_отказывает_а_не_восстанавливает()
+    {
+        var backups = new DatabaseBackupService(_database);
+        Assert.NotNull(await backups.CreateBackupAsync());
+
+        EngineOperationResult result = await Build(backups: backups).RestoreDatabaseAsync(confirm: false);
+
+        Assert.False(result.Ok);
+        Assert.Contains("confirm=yes", result.MessageRu);
+        Assert.Contains("пропадут", result.MessageRu);
+    }
+
+    [Fact]
+    public async Task RestoreDatabase_ставит_копию_на_место_и_говорит_о_потере_записей()
+    {
+        var backups = new DatabaseBackupService(_database);
+        Assert.NotNull(await backups.CreateBackupAsync());
+
+        // После копии появилась запись — именно её восстановление обязано потерять (и сказать об этом).
+        var journal = new AuditJournalRepository(_database);
+        await journal.BeginPendingOperationAsync("op-restore", null, "ROUTE_ADD", "203.0.113.7", "{}");
+        Assert.Single(await journal.GetPendingOperationsAsync());
+
+        EngineOperationResult result = await Build(backups: backups).RestoreDatabaseAsync(confirm: true);
+
+        Assert.True(result.Ok);
+        Assert.Contains("восстановлена из копии", result.MessageRu);
+        Assert.Contains("пропали", result.MessageRu);
+        Assert.Empty(await journal.GetPendingOperationsAsync());
+        Assert.Contains("\"remainingBackups\":", result.DataJson);
+
+        // Читаемая база перед заменой сохранена рядом: у человека остаётся путь назад.
+        string? previous = Directory
+            .GetFiles(Path.GetDirectoryName(_databasePath)!, Path.GetFileName(_databasePath) + ".before-restore-*")
+            .FirstOrDefault();
+        Assert.NotNull(previous);
+        Assert.Contains("прежний файл базы сохранён", result.MessageRu, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RestoreDatabase_без_копий_честно_отказывает()
+    {
+        var backups = new DatabaseBackupService(_database);
+
+        EngineOperationResult result = await Build(backups: backups).RestoreDatabaseAsync(confirm: true);
+
+        Assert.False(result.Ok);
+        Assert.Contains("резервных копий базы нет", result.MessageRu);
+    }
+
     private LiveEngineOperations Build(
         ITweakCatalog? catalog = null,
         ISnapshotService? snapshots = null,
@@ -557,7 +657,8 @@ public sealed class ServiceEngineTests : IDisposable
         Func<PerfProfile>? readProfile = null,
         Action<PerfProfile>? applyProfile = null,
         bool isElevationAvailable = true,
-        ISystemStateReader? stateReader = null) =>
+        ISystemStateReader? stateReader = null,
+        DatabaseBackupService? backups = null) =>
         new(
             catalog ?? new CatalogDouble(Tweak("A"), Tweak("B")),
             snapshots ?? new SnapshotDouble(),
@@ -567,7 +668,8 @@ public sealed class ServiceEngineTests : IDisposable
             realtime,
             readProfile,
             applyProfile,
-            stateReader: stateReader);
+            stateReader: stateReader,
+            backups: backups);
 
     private static SystemSnapshot Snapshot(string id, DateTime createdUtc) =>
         new(id, createdUtc, "тестовый снапшот", TweakProfilePreset.LowLatencyGaming, false, "hash", false, null, []);

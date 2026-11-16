@@ -93,4 +93,8 @@ public interface IEngineOperations
 
     Task<EngineOperationResult> CleanupSnapshotsAsync(int keepLast = 10, int olderThanDays = 30, CancellationToken ct = default) =>
         Task.FromResult(EngineOperationResult.Failure("Чистка снапшотов не подключена."));
+
+    /// <summary>Восстановление базы из последней копии (задача U). Без подтверждения — отказ.</summary>
+    Task<EngineOperationResult> RestoreDatabaseAsync(bool confirm, CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Восстановление базы из копии не подключено."));
 }

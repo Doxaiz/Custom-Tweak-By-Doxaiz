@@ -271,7 +271,8 @@ public static class ServiceProgram
             stateReader: systemState,
             routing: routingService,
             sessions: sessions,
-            databaseNote: databaseReport.NeedsAttention ? databaseReport.DescribeRu() : null);
+            databaseNote: databaseReport.NeedsAttention ? databaseReport.DescribeRu() : null,
+            backups: backups);
 
         var dispatcher = new EngineDispatcher(operations);
         var server = new EnginePipeServer(dispatcher, Log);
