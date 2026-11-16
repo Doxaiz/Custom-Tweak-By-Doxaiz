@@ -56,6 +56,16 @@ public sealed class RealtimeOptimizer
 
     /// <summary>Почему последнее переключение не состоялось: это уходит в честный статус при деградации.</summary>
     private string? _switchProblemRu;
+
+    /// <summary>
+    /// Хороших окон подряд с момента последней проверки «нет ли пути быстрее». Игровые ускорители
+    /// постоянно перепроверяют альтернативы; мы делаем это редко и по расписанию, потому что каждый
+    /// замер всех путей — это временные /32 в таблице маршрутов, а не бесплатная операция.
+    /// </summary>
+    private int _healthyWindowsSinceReview;
+
+    /// <summary>Когда реально переключили маршрут: чаще, чем раз в cooldown, не переключаемся.</summary>
+    private DateTime? _lastSwitchUtc;
     private int _consecutiveBadWindows;
     private int _consecutiveGoodWindows;
     private DateTime _startedUtc;
@@ -304,6 +314,7 @@ public sealed class RealtimeOptimizer
         if (degraded)
         {
             _consecutiveGoodWindows = 0;
+            _healthyWindowsSinceReview = 0;
             _consecutiveBadWindows++;
 
             if (_consecutiveBadWindows >= _options.DegradedWindowsBeforeSwitch)
@@ -342,7 +353,15 @@ public sealed class RealtimeOptimizer
             return Current;
         }
 
-        SetState(RealtimeOptimizationState.ActiveMonitoring, BuildRunningStatus(window));
+        // Штатное окно: раз в N хороших окон проверяем, не нашлось ли пути ощутимо быстрее того,
+        // на котором сидим. Решение — только по измеренным числам этой же сессии.
+        (bool upgraded, string? reviewNoteRu) = await TryUpgradePathAsync(window, ct).ConfigureAwait(false);
+        if (upgraded)
+        {
+            return Current;
+        }
+
+        SetState(RealtimeOptimizationState.ActiveMonitoring, reviewNoteRu ?? BuildRunningStatus(window));
         return Current;
     }
 
@@ -421,6 +440,8 @@ public sealed class RealtimeOptimizer
         _activePathId = null;
         _failedPathIds.Clear();
         _switchProblemRu = null;
+        _healthyWindowsSinceReview = 0;
+        _lastSwitchUtc = null;
         SetState(RealtimeOptimizationState.Stopped, summary);
         return report;
     }
@@ -489,7 +510,135 @@ public sealed class RealtimeOptimizer
             return false;
         }
 
-        _warnings.Add($"Переключение пути: {current.RttMedianMs:F0} мс на текущем, пробуем «{next.DisplayName}».");
+        return await ApplyPathSwitchAsync(
+            next,
+            $"Переключение пути: {current.RttMedianMs:F0} мс на текущем, пробуем «{next.DisplayName}».",
+            $"Переключились на путь «{next.DisplayName}». Смотрим, стало ли лучше: решение принимается по замерам, а не по ожиданиям.",
+            markCurrentPathFailed: true,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// «Нет ли пути быстрее?» — то, чем игровые ускорители занимаются постоянно. У нас это делается
+    /// редко и честно: раз в <see cref="RealtimeOptions.HealthyWindowsBetweenRouteReviews"/> хороших
+    /// окон, не чаще <see cref="RealtimeOptions.EffectiveRouteUpgradeCooldown"/>, и только по числам,
+    /// измеренным в той же сессии. Текущий путь в норме — значит, его никто не «спасает»: уходим
+    /// только если альтернатива быстрее ощутимо, а не на величину шума.
+    /// </summary>
+    private async Task<(bool Upgraded, string? NoteRu)> TryUpgradePathAsync(PathMeasurement window, CancellationToken ct)
+    {
+        if (_pathOptions is null || _flow is null || !_options.AllowRoutingChanges || !_appliedRouteAction)
+        {
+            return (false, null);
+        }
+
+        if (_options.HealthyWindowsBetweenRouteReviews <= 0)
+        {
+            return (false, null);
+        }
+
+        _healthyWindowsSinceReview++;
+        if (_healthyWindowsSinceReview < _options.HealthyWindowsBetweenRouteReviews)
+        {
+            return (false, null);
+        }
+
+        _healthyWindowsSinceReview = 0;
+
+        if (_lastSwitchUtc is { } lastSwitch
+            && _clock() - lastSwitch < _options.EffectiveRouteUpgradeCooldown)
+        {
+            // Только что переключились (например, после просадки): даём маршруту пожить,
+            // иначе контроль будет дёргать игру переключениями туда-обратно.
+            return (false, null);
+        }
+
+        IReadOnlyList<RealtimePathOption> options = await _pathOptions.GetOptionsAsync(_flow, ct).ConfigureAwait(false);
+        if (options.Count == 0)
+        {
+            // Свежие замеры не нашли узла, который быстрее прямого пути. Держать маршрут через узел
+            // «потому что раньше было лучше» — самообман, но и снять его на ходу нельзя: маршрут
+            // снимается остановкой оптимизации. Говорим об этом прямо, а не молчим.
+            return (false,
+                $"{BuildRunningStatus(window)} Свежие замеры не нашли узла быстрее прямого пути. " +
+                "Возможно, маршрут через узел уже не нужен: снять его можно остановкой оптимизации — трафик пойдёт как обычно.");
+        }
+
+        RealtimePathOption? active = options.FirstOrDefault(option =>
+            string.Equals(option.PathId, _activePathId, StringComparison.OrdinalIgnoreCase));
+
+        if (active is null)
+        {
+            // Текущий узел выпал из вариантов: в свежих замерах он хуже прямого пути.
+            return (false,
+                $"{BuildRunningStatus(window)} Текущий маршрут в свежих замерах оказался хуже прямого и выпал из вариантов. " +
+                "Снять его и вернуться на прямой можно остановкой оптимизации — сама она маршрут не снимает.");
+        }
+
+        // Без измеренных чисел активного пути сравнивать не с чем — молча остаёмся.
+        if (active.MedianRttMs is not { } activeMs)
+        {
+            return (false, null);
+        }
+
+        RealtimePathOption? better = options
+            .Where(option => !string.Equals(option.PathId, _activePathId, StringComparison.OrdinalIgnoreCase)
+                             && !_failedPathIds.Contains(option.PathId)
+                             && option.MedianRttMs.HasValue)
+            .OrderBy(option => option.MedianRttMs!.Value)
+            .FirstOrDefault();
+
+        if (better?.MedianRttMs is not { } betterMs)
+        {
+            return (false, $"{BuildRunningStatus(window)} Других измеренных путей нет — остаёмся на текущем.");
+        }
+
+        // Порог — «не меньше 3 мс» и не меньше разброса серий обоих путей: шум не победа.
+        double required = Math.Max(
+            _options.RouteUpgradeMarginMs,
+            Math.Max(active.SpreadMs ?? 0, better.SpreadMs ?? 0));
+
+        double gain = activeMs - betterMs;
+
+        if (gain < required)
+        {
+            return (false,
+                $"{BuildRunningStatus(window)} Проверили альтернативы: «{better.DisplayName}» не быстрее текущего " +
+                $"на ощутимую величину (разница {gain:F1} мс при пороге {required:F1} мс). Остаёмся на текущем пути.");
+        }
+
+        bool switched = await ApplyPathSwitchAsync(
+            better,
+            $"Поиск пути быстрее: «{better.DisplayName}» измерен на {gain:F1} мс лучше текущего (порог {required:F1} мс), пробуем.",
+            $"Переключились на путь «{better.DisplayName}»: в этой сессии замеров он на {gain:F1} мс быстрее прежнего. " +
+            "Решение по числам, а не по ожиданиям; если станет хуже — вернёмся: прежний путь остаётся рабочим кандидатом.",
+            markCurrentPathFailed: false,
+            ct).ConfigureAwait(false);
+
+        if (!switched)
+        {
+            return (false,
+                $"{BuildRunningStatus(window)} Путь «{better.DisplayName}» выглядел быстрее ({gain:F1} мс), " +
+                $"но переключиться не удалось: {_switchProblemRu ?? "причина неизвестна"}. Остаёмся на текущем.");
+        }
+
+        return (true, null);
+    }
+
+    /// <summary>
+    /// Общее ядро переключения: снять прежний маршрут, поставить новый, при отказе вернуть прежний.
+    /// <paramref name="markCurrentPathFailed"/> — путь, с которого уходим, был плохим (тогда в него
+    /// больше не возвращаемся) или просто медленнее (тогда он остаётся рабочим кандидатом).
+    /// </summary>
+    private async Task<bool> ApplyPathSwitchAsync(
+        RealtimePathOption next,
+        string startMessageRu,
+        string successMessageRu,
+        bool markCurrentPathFailed,
+        CancellationToken ct)
+    {
+        _switchProblemRu = null;
+        _warnings.Add(startMessageRu);
 
         OptimizationActionDescriptor? previous = _appliedRouteAction
             ? _applied.FirstOrDefault(action => action.Kind == OptimizationActionKind.RouteForGame)
@@ -543,7 +692,7 @@ public sealed class RealtimeOptimizer
             return false;
         }
 
-        if (_activePathId is not null)
+        if (markCurrentPathFailed && _activePathId is not null)
         {
             _failedPathIds.Add(_activePathId);
         }
@@ -551,10 +700,11 @@ public sealed class RealtimeOptimizer
         _applied.Add(next.Action);
         _appliedRouteAction = true;
         _activePathId = next.PathId;
+        _lastSwitchUtc = _clock();
+        _healthyWindowsSinceReview = 0;
         _consecutiveBadWindows = 0;
         _consecutiveGoodWindows = 0;
-        SetState(RealtimeOptimizationState.ActiveMonitoring,
-            $"Переключились на путь «{next.DisplayName}». Смотрим, стало ли лучше: решение принимается по замерам, а не по ожиданиям.");
+        SetState(RealtimeOptimizationState.ActiveMonitoring, successMessageRu);
         return true;
     }
 
@@ -789,6 +939,8 @@ public sealed class RealtimeOptimizer
         _appliedRouteAction = false;
         _failedPathIds.Clear();
         _switchProblemRu = null;
+        _healthyWindowsSinceReview = 0;
+        _lastSwitchUtc = null;
         _consecutiveBadWindows = 0;
         _consecutiveGoodWindows = 0;
     }
