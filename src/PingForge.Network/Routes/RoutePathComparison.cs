@@ -260,8 +260,9 @@ public sealed class RoutePathComparisonService
             if (gatewayIndexes.Contains(i))
             {
                 via.Add(new RoutePathProbeResult(node.Address, node.Name, node.SourceRu, direct.Success,
-                    direct.MedianRttMs, direct.JitterMs, direct.LossPercent, direct.SpreadMs,
-                    direct.Success ? "совпадает с текущим шлюзом — это тот же прямой путь" : direct.ProblemRu));
+                    direct.MedianRttMs, direct.JitterMs, direct.LossPercent,
+                    direct.Success ? "совпадает с текущим шлюзом — это тот же прямой путь" : direct.ProblemRu,
+                    direct.SpreadMs));
                 continue;
             }
 
