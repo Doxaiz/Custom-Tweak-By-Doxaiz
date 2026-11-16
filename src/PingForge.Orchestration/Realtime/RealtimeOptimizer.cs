@@ -314,7 +314,7 @@ public sealed class RealtimeOptimizer
                     string why = _switchProblemRu ?? "альтернативного пути у этого сервера нет";
                     await DegradeAsync(
                         $"Качество просело: {window.RttMedianMs:F0} мс, джиттер {window.JitterMs:F1} мс, потери {window.LossPercent:F1}%. " +
-                        $"Переключиться не вышло: {why}. Твиками такое не лечится.", ct).ConfigureAwait(false);
+                        $"Переключиться не вышло: {why} — твиками такое не лечится.", ct).ConfigureAwait(false);
                 }
             }
             else
