@@ -34,6 +34,13 @@ public sealed class LiveEngineOperations : IEngineOperations
     private readonly OptimizationSessionRepository? _sessions;
 
     /// <summary>
+    /// Что случилось с базой при запуске (задача U): например, файл был повреждён и служба начала с
+    /// чистой базы. Такое нельзя прятать в журнале службы — про пропавшие снапшоты человек узнает
+    /// из ответа «служба жива» и из состояния.
+    /// </summary>
+    private readonly string? _databaseNote;
+
+    /// <summary>
     /// Сессия, начатая этой службой и ещё не закрытая. Именно она дописывается «после» при остановке;
     /// после перезапуска службы незакрытая запись остаётся в базе и честно показывается незавершённой.
     /// </summary>
@@ -52,7 +59,8 @@ public sealed class LiveEngineOperations : IEngineOperations
         string? appVersion = null,
         ISystemStateReader? stateReader = null,
         IRoutingService? routing = null,
-        OptimizationSessionRepository? sessions = null)
+        OptimizationSessionRepository? sessions = null,
+        string? databaseNote = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
@@ -66,6 +74,7 @@ public sealed class LiveEngineOperations : IEngineOperations
         _stateReader = stateReader;
         _routing = routing;
         _sessions = sessions;
+        _databaseNote = string.IsNullOrWhiteSpace(databaseNote) ? null : databaseNote;
         IsElevationAvailable = isElevationAvailable;
     }
 
@@ -87,7 +96,8 @@ public sealed class LiveEngineOperations : IEngineOperations
             : $"Клиент не определён ({client.ProblemRu}) — считаю, что прав администратора у него нет.";
 
         string message = $"Служба жива: {_productName} {_appVersion}, протокол {EngineProtocol.Version}, " +
-            $"твиков в каталоге: {tweakCount}. {rights}. {clientNote}";
+            $"твиков в каталоге: {tweakCount}. {rights}. {clientNote}" +
+            (_databaseNote is null ? string.Empty : $" ВНИМАНИЕ: {_databaseNote}");
 
         string data = Encode(new PingData(
             _productName,
@@ -140,7 +150,8 @@ public sealed class LiveEngineOperations : IEngineOperations
             : $"Движок живой оптимизации подключён. Состояние: {StateRu(state)}.";
 
         string message = $"{realtimeNote} {gameNote} {pendingNote} " +
-            $"Профиль потребления: {ResourceBudgetOptions.DescribeProfile(profile)}.";
+            $"Профиль потребления: {ResourceBudgetOptions.DescribeProfile(profile)}." +
+            (_databaseNote is null ? string.Empty : $" ВНИМАНИЕ: {_databaseNote}");
 
         string data = Encode(new StatusData(
             _productName,
