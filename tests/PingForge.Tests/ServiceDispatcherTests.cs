@@ -344,6 +344,7 @@ public class ServiceDispatcherTests
         { "rollback-tweak", """{"id":"8","command":"rollback-tweak","args":{"tweak":"TCP_NO_DELAY","snapshot":"snap-001"}}""" },
         { "return-all", """{"id":"9","command":"return-all"}""" },
         { "cleanup-snapshots", """{"id":"10","command":"cleanup-snapshots","args":{"keep":"10","olderThanDays":"30"}}""" },
+        { "db-restore", """{"id":"11","command":"db-restore","args":{"confirm":"yes"}}""" },
     };
 
     [Theory]
