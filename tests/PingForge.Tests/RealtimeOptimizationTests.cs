@@ -87,8 +87,17 @@ public sealed class RealtimeOptimizationTests
         public List<string> Reverted { get; } = new();
         public HashSet<string> FailToApply { get; } = new();
 
+        /// <summary>Общий журнал в порядке вызовов: по нему видно, что снятие было РАНЬШЕ добавления.</summary>
+        public List<string> Events { get; } = new();
+
+        /// <summary>Действия, которые реально дошли до исполнителя: узел маршрута виден только здесь.</summary>
+        public List<OptimizationActionDescriptor> Seen { get; } = new();
+
         public Task<OptimizationActionOutcome> ApplyAsync(OptimizationActionDescriptor action, CancellationToken ct = default)
         {
+            Seen.Add(action);
+            Events.Add("apply:" + action.ActionId);
+
             if (FailToApply.Contains(action.ActionId))
             {
                 return Task.FromResult(OptimizationActionOutcome.Fail("тестовый отказ применения"));
@@ -100,6 +109,7 @@ public sealed class RealtimeOptimizationTests
 
         public Task<OptimizationActionOutcome> RevertAsync(OptimizationActionDescriptor action, CancellationToken ct = default)
         {
+            Events.Add("revert:" + action.ActionId);
             Reverted.Add(action.ActionId);
             return Task.FromResult(OptimizationActionOutcome.Ok("снято"));
         }
@@ -230,6 +240,108 @@ public sealed class RealtimeOptimizationTests
         Assert.Contains(optimizer.Current.Warnings, w => w.Contains("Переключение пути", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(optimizer.Current.Warnings, w => w.Contains("Релей Франкфурт", StringComparison.Ordinal));
         Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, optimizer.Current.State);
+
+        // Прежний маршрут снимается ДО добавления нового: иначе исполнитель упрётся в свой же /32
+        // и «переключение» осталось бы на старом узле.
+        int revertedAt = runner.Events.IndexOf("revert:route:direct");
+        int appliedAt = runner.Events.IndexOf("apply:route:relay:fra");
+        Assert.True(revertedAt >= 0 && appliedAt >= 0, string.Join(", ", runner.Events));
+        Assert.True(revertedAt < appliedAt, string.Join(", ", runner.Events));
+    }
+
+    [Fact]
+    public async Task Переключение_на_резерв_идёт_в_его_узел_а_не_в_узел_прежнего_пути()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        var paths = new StubPathOptions(
+            new RealtimePathOption("node:10.8.0.1", "«WG» — основной", true, "10.8.0.1",
+                new OptimizationActionDescriptor("route:game-server", OptimizationActionKind.RouteForGame, "Маршрут через «WG»", "тест", RouteNextHop: "10.8.0.1")),
+            new RealtimePathOption("node:10.0.0.5", "«LTE» — резерв", true, "10.0.0.5",
+                new OptimizationActionDescriptor("route:game-server:runner-up", OptimizationActionKind.RouteForGame, "Маршрут через «LTE»", "тест", RouteNextHop: "10.0.0.5")));
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(130, jitter: 30, loss: 5),
+            Measurable(132, jitter: 31, loss: 6));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(DegradedWindowsBeforeSwitch: 2));
+
+        // Основной путь замеров назвал провайдер: активен именно он, а не «первый попавшийся».
+        Assert.Contains(runner.Applied, a => a == "route:game-server");
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        OptimizationActionDescriptor switched = Assert.Single(runner.Seen, a => a.ActionId == "route:game-server:runner-up");
+        Assert.Equal("10.0.0.5", switched.RouteNextHop);
+        Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, optimizer.Current.State);
+    }
+
+    [Fact]
+    public async Task Отказ_нового_маршрута_возвращает_прежний_и_говорит_правду()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        runner.FailToApply.Add("route:game-server:runner-up");
+
+        var paths = new StubPathOptions(
+            new RealtimePathOption("node:10.8.0.1", "«WG» — основной", true, "10.8.0.1",
+                new OptimizationActionDescriptor("route:game-server", OptimizationActionKind.RouteForGame, "Маршрут через «WG»", "тест", RouteNextHop: "10.8.0.1")),
+            new RealtimePathOption("node:10.0.0.5", "«LTE» — резерв", true, "10.0.0.5",
+                new OptimizationActionDescriptor("route:game-server:runner-up", OptimizationActionKind.RouteForGame, "Маршрут через «LTE»", "тест", RouteNextHop: "10.0.0.5")));
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(140, jitter: 40, loss: 8),
+            Measurable(141, jitter: 41, loss: 9));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(DegradedWindowsBeforeSwitch: 2));
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        // Прежний маршрут вернули: без этого человек остался бы вообще без маршрута к серверу игры.
+        Assert.Equal(2, runner.Applied.Count(a => a == "route:game-server"));
+        Assert.Contains(optimizer.Current.Warnings, w => w.Contains("Прежний маршрут возвращён", StringComparison.Ordinal));
+        Assert.Contains("не применился", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Equal(RealtimeOptimizationState.Degraded, optimizer.Current.State);
+    }
+
+    [Fact]
+    public async Task На_путь_где_уже_было_хуже_второй_раз_не_переключаемся()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        var paths = new StubPathOptions(
+            new RealtimePathOption("node:10.8.0.1", "«WG» — основной", true, "10.8.0.1",
+                new OptimizationActionDescriptor("route:game-server", OptimizationActionKind.RouteForGame, "Маршрут через «WG»", "тест", RouteNextHop: "10.8.0.1")),
+            new RealtimePathOption("node:10.0.0.5", "«LTE» — резерв", true, "10.0.0.5",
+                new OptimizationActionDescriptor("route:game-server:runner-up", OptimizationActionKind.RouteForGame, "Маршрут через «LTE»", "тест", RouteNextHop: "10.0.0.5")));
+
+        // Сначала просадка основного (переход на резерв), затем просадка резерва: обратно на
+        // «плохой» основной не идём — это был бы флаппинг на ровном месте.
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(130, jitter: 30, loss: 5),
+            Measurable(132, jitter: 31, loss: 6),
+            Measurable(160, jitter: 50, loss: 10),
+            Measurable(161, jitter: 51, loss: 11));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(DegradedWindowsBeforeSwitch: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+        Assert.Single(runner.Seen, a => a.ActionId == "route:game-server:runner-up");
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.Single(runner.Seen, a => a.ActionId == "route:game-server"); // применений основного ровно одно — в начале
+        Assert.Contains("других путей не осталось", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Equal(RealtimeOptimizationState.Degraded, optimizer.Current.State);
     }
 
     [Fact]

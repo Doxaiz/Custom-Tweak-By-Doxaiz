@@ -124,12 +124,19 @@ public enum OptimizationActionKind
     TweakRefresh
 }
 
+/// <summary>
+/// Действие оптимизации. <paramref name="RouteNextHop"/> — конкретный следующий узел для маршрута:
+/// без него исполнитель берёт «текущую цель» из платформы, а при переключении на резервный путь
+/// цель в платформе ещё указывает на прежний узел. Явный узел в самом действии убирает эту
+/// зависимость от порядка вызовов: маршрут ведёт ровно туда, куда решили замеры.
+/// </summary>
 public sealed record OptimizationActionDescriptor(
     string ActionId,
     OptimizationActionKind Kind,
     string TitleRu,
     string DetailRu,
-    bool IsReversible = true);
+    bool IsReversible = true,
+    string? RouteNextHop = null);
 
 public sealed record OptimizationActionOutcome(bool Succeeded, string MessageRu)
 {

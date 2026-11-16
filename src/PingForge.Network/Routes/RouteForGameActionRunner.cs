@@ -67,7 +67,10 @@ public sealed class RouteForGameActionRunner : IOptimizationActionRunner
                 $"Адрес игрового сервера «{flow.RemoteEndpoint}» не подходит для маршрута: поддерживаются только IPv4-адреса.");
         }
 
-        RouteOverride? target = _routeOverride();
+        // Узел берём из самого действия, если он там назван (переключение на резервный путь),
+        // и только потом — из «текущей цели» платформы. Иначе при фейловере действие уводило бы
+        // трафик на прежний узел: цель в платформе обновляется решением автовыбора, а не переходом.
+        RouteOverride? target = ResolveTarget(action);
         if (target is null)
         {
             // Причина отказа бывает разная: узла нет вовсе, узлы есть, но не выбраны, или автовыбор
@@ -187,6 +190,17 @@ public sealed class RouteForGameActionRunner : IOptimizationActionRunner
             ? OptimizationActionOutcome.Ok($"Маршрут к {flow.RemoteEndpoint} снят, трафик снова идёт через шлюз по умолчанию.")
             : OptimizationActionOutcome.Fail("Маршрут всё ещё в таблице: снимать пришлось бы вручную.");
     }
+
+    /// <summary>
+    /// Куда вести трафик: узел из самого действия, если он там назван, иначе — текущая цель
+    /// платформы. Метрика для явного узла — та же, что у временного маршрута замера
+    /// (<see cref="RoutePathComparisonService.ProbeMetric"/>): /32 обязан выигрывать у маршрута
+    /// по умолчанию, иначе переключение ничего не изменит.
+    /// </summary>
+    private RouteOverride? ResolveTarget(OptimizationActionDescriptor action) =>
+        action.RouteNextHop is { Length: > 0 } hop
+            ? new RouteOverride(hop, RoutePathComparisonService.ProbeMetric, action.TitleRu)
+            : _routeOverride();
 
     private static string? FirstLine(string text)
     {
