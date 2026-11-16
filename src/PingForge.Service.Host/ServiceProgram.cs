@@ -101,8 +101,33 @@ public static class ServiceProgram
         var systemState = new SystemStateReader(
             catalog, platform.Registry, platform.Command, platform.NicProperties, platform.ActiveAdapter);
 
+        // ── Целостность базы (задача U) ─────────────────────────────────────────────────────────
+        // Проверка идёт ДО DDL: испорченный файл не должен ронять службу в цикле рестартов. Если
+        // база повреждена, файл не удаляется, а откладывается рядом; читаемая копия ставится на
+        // место. Копия снимается средствами SQLite, а не копированием файла.
         var database = new SqliteDatabaseInitializer(Path.Combine(DataDirectory, "pingforge.db"));
-        await database.EnsureInitializedAsync(ct).ConfigureAwait(false);
+        var backups = new DatabaseBackupService(database);
+        DatabaseStartupReport databaseReport = await backups.PrepareForStartAsync(ct: ct).ConfigureAwait(false);
+        Log(databaseReport.DescribeRu());
+
+        try
+        {
+            await database.EnsureInitializedAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // quick_check прошёл, а схема не применилась — файл всё равно непригоден. Один повтор
+            // с чистой базой; старый файл сохраняется для разбора, а не затирается.
+            Log($"База не инициализировалась: {ex.Message}. Начинаю с чистой базы, прежний файл сохраняю.");
+            string? quarantined = backups.QuarantineCorruptFile();
+            databaseReport = new DatabaseStartupReport(
+                DatabaseStartupOutcome.StartedCleanAfterCorruption,
+                null,
+                quarantined,
+                ex.Message);
+            Log(databaseReport.DescribeRu());
+            await database.EnsureInitializedAsync(ct).ConfigureAwait(false);
+        }
 
         var snapshotRepository = new SnapshotRepository(database);
         var journal = new AuditJournalRepository(database);
@@ -115,6 +140,9 @@ public static class ServiceProgram
             new TargetValueResolver(),
             restorePoints);
         var coordinator = new TweakCoordinator(snapshotService, journal, catalog);
+
+        // Задача U: копия базы — до снапшота и до первого изменения системы.
+        ITweakCoordinator guardedCoordinator = new BackupBeforeApplyCoordinator(coordinator, backups, Log);
 
         // ── Сетевой слой: живая оптимизация уже запущенной игры ────────────────────────────────
         // Раньше здесь был null, и кнопка честно отвечала «движок не подключён». Теперь собраны
@@ -234,7 +262,7 @@ public static class ServiceProgram
         var operations = new LiveEngineOperations(
             catalog,
             snapshotService,
-            coordinator,
+            guardedCoordinator,
             isElevationAvailable: true,
             journal: journal,
             realtime: realtime,
@@ -242,7 +270,8 @@ public static class ServiceProgram
             applyProfile: writeProfile,
             stateReader: systemState,
             routing: routingService,
-            sessions: sessions);
+            sessions: sessions,
+            databaseNote: databaseReport.NeedsAttention ? databaseReport.DescribeRu() : null);
 
         var dispatcher = new EngineDispatcher(operations);
         var server = new EnginePipeServer(dispatcher, Log);
