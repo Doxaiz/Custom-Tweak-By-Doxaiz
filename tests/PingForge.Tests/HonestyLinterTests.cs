@@ -7,7 +7,7 @@ namespace PingForge.Tests;
 /// <summary>Глобальный линтер честности (задача V): запрещённые обещания в .xaml/.cs/.md.</summary>
 public sealed class HonestyLinterTests
 {
-    private static readonly string[] Forbidden = new[] { "гарантированно снизит", "снизит пинг на", "ускорит в ", "пинг ноль", "мгновенн" };
+    private static readonly string[] Forbidden = new[] { "гарантированно снизит", "снизит пинг на", "ускорит в ", "пинг ноль", "мгновенн", "лишние пакеты не отправляются" };
     // Специальные точные фразы, которые проверяем отдельно, чтобы не ловить масштаб 100%
     private static readonly string[] ExactForbidden = new[] { "пинг 0", "100 %" };
     // Исключения — где слово стоит в объяснении «почему так не пишем»

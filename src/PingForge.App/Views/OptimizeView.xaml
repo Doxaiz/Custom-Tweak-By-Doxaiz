@@ -9,15 +9,17 @@
         <TextBlock Text="{Binding TitleRu}" FontWeight="SemiBold" FontSize="12.5" />
 
         <!-- Пустая панель — тоже контент: честная причина, а не «просто ничего». -->
-        <Border Background="#0C1420" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
-                Padding="10" Margin="0,4,0,0"
+        <Border Style="{StaticResource SunkenPanel}" Margin="0,4,0,0"
                 Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}">
           <TextBlock Style="{StaticResource Caption}" Text="{Binding EmptyRu}" />
         </Border>
 
-        <Viewbox Stretch="Uniform" Margin="0,4,0,0"
-                 Visibility="{Binding IsEmpty, Converter={StaticResource InverseBoolToVisibility}}">
-          <Canvas Width="560" Height="132" Background="#0C1420">
+        <!-- График живёт на «утопленной» панели — так же, как пустое состояние: без данных
+             панель одна и та же, меняется только содержимое. -->
+        <Border Style="{StaticResource SunkenPanel}" Padding="8,6" Margin="0,4,0,0"
+                Visibility="{Binding IsEmpty, Converter={StaticResource InverseBoolToVisibility}}">
+          <Viewbox Stretch="Uniform">
+            <Canvas Width="560" Height="132" Background="Transparent">
             <!-- Линии: отрезки без разрывов, разрыв измерения — новый отрезок, а не ноль. -->
             <ItemsControl ItemsSource="{Binding Segments}">
               <ItemsControl.ItemTemplate>
@@ -77,8 +79,9 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-          </Canvas>
-        </Viewbox>
+            </Canvas>
+          </Viewbox>
+        </Border>
 
         <!-- Легенда: строка на линию, из DescribeRu ряда — со значением и числом измеренных точек. -->
         <ItemsControl ItemsSource="{Binding LegendLines}" Margin="0,4,0,0">
@@ -96,7 +99,7 @@
 
     <Border Style="{StaticResource Card}">
       <StackPanel DataContext="{Binding GameSelection}">
-        <TextBlock Text="Найденные игры" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource H2}" Text="Найденные игры" />
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" Text="{Binding StatusRu}" />
         <ItemsControl ItemsSource="{Binding Found}" Margin="0,8,0,0">
           <ItemsControl.ItemTemplate>
@@ -122,16 +125,17 @@
       <StackPanel>
         <TextBlock Text="{Binding NoticeTitleRu}" FontWeight="SemiBold"
                    Foreground="{StaticResource Accent2}" TextWrapping="Wrap" />
-        <TextBlock x:Name="NoticeText" Text="{Binding NoticeRu}" TextWrapping="Wrap" Margin="0,6,0,0" />
-        <Button Style="{StaticResource GhostButton}" Content="Понятно" Margin="0,12,0,0"
+        <TextBlock x:Name="NoticeText" Text="{Binding NoticeRu}" TextWrapping="Wrap" Margin="0,7,0,0" />
+        <Button Style="{StaticResource GhostButton}" Content="Понятно" Margin="0,13,0,0"
                 HorizontalAlignment="Left" Command="{Binding DismissNoticeCommand}" />
       </StackPanel>
     </Border>
 
     <!-- Кнопка и состояние — в одной карточке; показатели — отдельной строкой ниже.
          Раньше показатели делили строку с кнопкой, и на четыре карточки оставалось по сто точек:
-         подписи резались. Это видел снимок окна со сборочной Windows. -->
-    <Border Style="{StaticResource Card}">
+         подписи резались. Это видел снимок окна со сборочной Windows.
+         В оформлении это главная карточка экрана: акцентная кромка и больше воздуха. -->
+    <Border Style="{StaticResource HeroCard}">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="300" />
@@ -166,7 +170,7 @@
          Bufferbloat в списке ждёт согласия кнопкой «Понятно»: канал нагружается только после неё. -->
     <Border Style="{StaticResource Card}" x:Name="NetworkCheckCard">
       <StackPanel DataContext="{Binding NetworkCheck}">
-        <TextBlock Text="Проверка сети" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource H2}" Text="Проверка сети" />
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
                    Text="MTU, DNS, двойной NAT, bufferbloat, шум Wi-Fi, фоновые загрузки, права и служба. Проверка только читает и измеряет: что нашлось, насколько важно и что делать — ниже." />
         <TextBlock x:Name="NetworkCheckStatusText" Style="{StaticResource Caption}" Margin="0,8,0,0" Text="{Binding StatusRu}" />
@@ -214,7 +218,7 @@
          Результат раскрывается под кнопкой: таблица хопов, итог и подсказка «где растёт задержка». -->
     <Border Style="{StaticResource Card}" x:Name="ServerPathCard">
       <StackPanel DataContext="{Binding ServerPath}">
-        <TextBlock Text="Путь до сервера" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource H2}" Text="Путь до сервера" />
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding ExplanationRu}" />
 
         <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
@@ -229,8 +233,7 @@
 
         <!-- Таблица: адрес, средний и 95-й RTT, потери. Анонимный хоп — строка «не отвечает»,
              неизмеренное — прочерк. Подсветка — хоп с наибольшим приростом, а не «виновник». -->
-        <Border Background="#0C1420" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
-                Padding="10" Margin="0,10,0,0"
+        <Border Style="{StaticResource SunkenPanel}" Margin="0,10,0,0"
                 Visibility="{Binding HasHops, Converter={StaticResource BoolToVisibility}}">
           <StackPanel>
             <Grid>
@@ -309,7 +312,7 @@
          живой оптимизации: график не запускает собственных зондов и не отправляет пакетов. -->
     <Border Style="{StaticResource Card}" x:Name="ChartCard">
       <StackPanel DataContext="{Binding Chart}">
-        <TextBlock Text="График сети" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource H2}" Text="График сети" />
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding HonestCaptionRu}" />
 
         <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
@@ -324,8 +327,7 @@
         </StackPanel>
 
         <!-- Пустое состояние — честная надпись, а не пустая коробка без объяснения. -->
-        <Border Background="#0C1420" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
-                Padding="12" Margin="0,10,0,0"
+        <Border Style="{StaticResource SunkenPanel}" Padding="12" Margin="0,10,0,0"
                 Visibility="{Binding HasData, Converter={StaticResource InverseBoolToVisibility}}">
           <TextBlock Text="{Binding EmptyStateRu}" TextWrapping="Wrap" />
         </Border>
@@ -350,7 +352,7 @@
     <TextBlock Style="{StaticResource Title}" Text="Что сделала программа" FontSize="16" Margin="0,6,0,8" />
     <Border Style="{StaticResource Card}">
       <StackPanel>
-        <TextBlock Text="Маршрут для игрового сервера" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource H2}" Text="Маршрут для игрового сервера" />
         <TextBlock Style="{StaticResource Caption}"
                    Text="Маршрут добавляется только для адреса игрового сервера и снимается сразу после остановки. Это не глобальный VPN: остальной трафик идёт как обычно." />
 
