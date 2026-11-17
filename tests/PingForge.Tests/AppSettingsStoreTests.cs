@@ -167,6 +167,21 @@ public sealed class AppSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void Смена_масштаба_сразу_запоминается_в_настройках()
+    {
+        // Пилюли 100/125/150 % пишут прямо в UiScale.Scale (двусторонняя привязка), поэтому
+        // запоминание живёт в модели представления: раньше масштаб оставался на экране до
+        // перезапуска, и кнопки обещали не то, что делали.
+        var store = new InMemorySettingsStore();
+        var settings = new SettingsViewModel(new EngineClient(new FakeEngineChannel()), store, new FakeDialogs());
+
+        settings.UiScale.Scale = 1.25;
+
+        Assert.Equal(1.25, store.Load().UiScale);
+        Assert.Equal(1, store.SaveCount);
+    }
+
+    [Fact]
     public void Масштаб_интерфейса_сохраняется_и_читается_обратно()
     {
         // Кнопки 100/125/150 % обещают, что выбор останется. Раньше масштаб жил только в памяти

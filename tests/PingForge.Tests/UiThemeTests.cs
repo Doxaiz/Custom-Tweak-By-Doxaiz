@@ -81,12 +81,78 @@ public sealed class UiThemeTests
         // Системные светлые полосы прокрутки, выпадающие списки и вкладки на тёмной панели
         // читаются как чужие обломки. Эти контролы обязаны иметь свой шаблон.
         string app = ReadChecked("checked-App.xaml");
-        foreach (string target in new[] { "ScrollBar", "ComboBox", "ComboBoxItem", "TabItem", "TextBox", "ToolTip" })
+        foreach (string target in new[] { "ScrollBar", "ComboBox", "ComboBoxItem", "TabItem", "TextBox", "ToolTip", "Expander" })
             Assert.Contains($"TargetType=\"{target}\"", app, StringComparison.Ordinal);
 
         // И готовые кирпичи оформления, которыми пользуются разделы.
         foreach (string key in new[] { "HeroCard", "StatTile", "StatValue", "StatLabel", "Chip", "ListRow", "SunkenPanel", "Pill", "Divider" })
             Assert.Contains($"x:Key=\"{key}\"", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Пилюли_масштаба_показывают_выбранную_ступень()
+    {
+        // Три одинаковые кнопки не говорили, какой масштаб включён: человек искал ответ в подписи.
+        // Теперь это переключатели-пилюли, отметка которых привязана к самому числу масштаба.
+        string settings = ReadChecked("checked-SettingsView.xaml");
+        Assert.Contains("GroupName=\"UiScale\"", settings, StringComparison.Ordinal);
+        Assert.Contains("Style=\"{StaticResource Chip}\"", settings, StringComparison.Ordinal);
+
+        int bound = Regex.Matches(settings, Regex.Escape("Converter={StaticResource ScaleOption}")).Count;
+        Assert.Equal(3, bound);
+
+        // И сам конвертер объявлен в теме: иначе окно упало бы при загрузке «Настроек».
+        Assert.Contains("x:Key=\"ScaleOption\"", ReadChecked("checked-App.xaml"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ни_одного_системного_контрола_без_темы()
+    {
+        // Так нашлась раскрывашка «Подробнее» в «Твиках»: у Expander не было своего шаблона, и его
+        // заголовок рисовала Windows — светлый кружок с серой стрелкой на тёмной панели. Сторож
+        // перебирает разметку окон и требует, чтобы у каждого элемента, оформление которого задаёт
+        // система, был свой стиль в App.xaml — без ключа, то есть применяемый сам по себе.
+        string app = ReadChecked("checked-App.xaml");
+        var implicitStyles = Regex.Matches(app, "<Style TargetType=\"([^\"]+)\"")
+            .Select(match => match.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Типы, у которых Windows рисует светлую рамку, кружок, стрелку или фон.
+        var chrome = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Button", "CheckBox", "ComboBox", "ComboBoxItem", "Expander", "RadioButton",
+            "TabControl", "TabItem", "TextBox", "ToolTip", "Slider", "ProgressBar",
+            "ListBox", "DataGrid", "TreeView", "PasswordBox", "GroupBox", "Label",
+            "StatusBar", "Menu", "ContextMenu", "RichTextBox"
+        };
+
+        var missing = new List<string>();
+        foreach (string file in XamlFiles.Where(name => name != "checked-App.xaml"))
+        {
+            // Комментарии не разметка: в них встречаются те же имена.
+            string xaml = Regex.Replace(ReadChecked(file), "<!--.*?-->", string.Empty, RegexOptions.Singleline);
+
+            foreach (Match tag in Regex.Matches(xaml, "<([A-Z][A-Za-z0-9]*)\\s([^>]*)>", RegexOptions.Singleline))
+            {
+                string type = tag.Groups[1].Value;
+                string attributes = tag.Groups[2].Value;
+
+                // Свой стиль на месте (Style="…") — тоже тема, а не система.
+                if (!chrome.Contains(type) || attributes.Contains("Style=", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!implicitStyles.Contains(type))
+                {
+                    missing.Add($"{file}: <{type}>");
+                }
+            }
+        }
+
+        Assert.True(
+            missing.Count == 0,
+            "элементы, которые рисует Windows (добавьте им стиль в App.xaml): " + string.Join(", ", missing.Distinct()));
     }
 
     [Fact]

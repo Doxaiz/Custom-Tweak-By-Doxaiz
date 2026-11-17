@@ -28,6 +28,7 @@
       <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
       <local:StringToVisibilityConverter x:Key="StringToVisibility" />
       <local:ChartPointsConverter x:Key="ChartPoints" />
+      <local:ScaleOptionConverter x:Key="ScaleOption" />
 
       <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />
       <SolidColorBrush x:Key="Panel" Color="{StaticResource PanelColor}" />
@@ -777,6 +778,61 @@
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
                   <Setter Property="Opacity" Value="0.45" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+      <!-- Раскрывашка «Подробнее»: у системного Expander заголовок — светлый кружок с серой
+           стрелкой, и на тёмной панели он выглядит чужим обломком. Здесь заголовок — строка
+           с шевроном, который поворачивается при раскрытии, и видимым кольцом фокуса. -->
+      <Style TargetType="Expander">
+        <Setter Property="Foreground" Value="{StaticResource Muted}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="Expander">
+              <StackPanel Background="Transparent">
+                <ToggleButton x:Name="Head" Focusable="True" Cursor="Hand"
+                              Content="{TemplateBinding Header}"
+                              ContentTemplate="{TemplateBinding HeaderTemplate}"
+                              IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                  <ToggleButton.Template>
+                    <ControlTemplate TargetType="ToggleButton">
+                      <Border x:Name="HeadBox" Background="Transparent" BorderBrush="Transparent"
+                              BorderThickness="1" CornerRadius="6" Padding="6,3">
+                        <StackPanel Orientation="Horizontal">
+                          <Path x:Name="Chevron" Data="M0,0 L4,4 L0,8" Stroke="{StaticResource Muted}"
+                                StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                StrokeLineJoin="Round" VerticalAlignment="Center" />
+                          <ContentPresenter Margin="7,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                        </StackPanel>
+                      </Border>
+                      <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                          <Setter TargetName="Chevron" Property="Data" Value="M0,0 L4,4 L8,0" />
+                          <Setter TargetName="Chevron" Property="Stroke" Value="{StaticResource Accent2}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                          <Setter TargetName="HeadBox" Property="Background" Value="#141E33" />
+                          <Setter TargetName="Chevron" Property="Stroke" Value="{StaticResource Text}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                          <Setter TargetName="HeadBox" Property="BorderBrush" Value="{StaticResource Accent2}" />
+                        </Trigger>
+                      </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                  </ToggleButton.Template>
+                </ToggleButton>
+                <ContentPresenter x:Name="Body" Visibility="Collapsed" Margin="2,2,0,0"
+                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+              </StackPanel>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsExpanded" Value="True">
+                  <Setter TargetName="Body" Property="Visibility" Value="Visible" />
                 </Trigger>
               </ControlTemplate.Triggers>
             </ControlTemplate>
