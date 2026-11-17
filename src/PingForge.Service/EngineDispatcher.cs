@@ -50,8 +50,10 @@ public sealed class EngineDispatcher
     /// <param name="requestJson">Кадр запроса, пришедший по каналу.</param>
     /// <param name="clientIsAdministrator">
     /// Есть ли права администратора у того, кто подключился к каналу, — в его собственном процессе.
-    /// По умолчанию «да» только ради существующих проверок разбора запросов; настоящий канал обязан
-    /// передавать сюда прочитанные права клиента (см. <c>PipeClientInspector</c>).
+    /// По умолчанию «нет»: забыть передать права можно только в сторону отказа, а не в сторону выдачи.
+    /// Раньше умолчанием было «да» ради удобства проверок разбора запросов — то есть любой новый
+    /// вызов без личности клиента молча получал права администратора на изменение Windows.
+    /// Настоящий канал передаёт и флаг, и личность (см. <c>PipeClientInspector</c>).
     /// </param>
     /// <param name="onDenialRu">Куда сообщить об отказе по правам: служба пишет это в журнал вместе с именем клиента.</param>
     /// <param name="ct">Отмена: закрылось окно или останавливается служба.</param>
@@ -61,7 +63,7 @@ public sealed class EngineDispatcher
     /// </param>
     public async Task<EngineResponse> HandleJsonAsync(
         string requestJson,
-        bool clientIsAdministrator = true,
+        bool clientIsAdministrator = false,
         Action<string>? onDenialRu = null,
         CancellationToken ct = default,
         EnginePeerIdentity? peer = null)
@@ -77,7 +79,7 @@ public sealed class EngineDispatcher
 
     public async Task<EngineResponse> HandleAsync(
         EngineRequest request,
-        bool clientIsAdministrator = true,
+        bool clientIsAdministrator = false,
         Action<string>? onDenialRu = null,
         CancellationToken ct = default,
         EnginePeerIdentity? peer = null)

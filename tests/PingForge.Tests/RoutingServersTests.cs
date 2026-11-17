@@ -1134,11 +1134,11 @@ public sealed class RoutingServersTests
         // Диспетчер с двойником, который новых методов не реализует, — как сборка службы без сетевого слоя.
         var dispatcher = new EngineDispatcher(new DimOnlyOps(), EngineChannelKind.Main);
 
-        EngineResponse discover = await dispatcher.HandleJsonAsync("""{"id":"1","command":"route-discover"}""");
+        EngineResponse discover = await dispatcher.HandleJsonAsync("""{"id":"1","command":"route-discover"}""", clientIsAdministrator: true);
         Assert.False(discover.Ok);
         Assert.Contains("не подключён", discover.MessageRu, StringComparison.Ordinal);
 
-        EngineResponse measure = await dispatcher.HandleJsonAsync("""{"id":"2","command":"route-measure"}""");
+        EngineResponse measure = await dispatcher.HandleJsonAsync("""{"id":"2","command":"route-measure"}""", clientIsAdministrator: true);
         Assert.False(measure.Ok);
         Assert.Contains("не подключён", measure.MessageRu, StringComparison.Ordinal);
     }
