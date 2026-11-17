@@ -115,7 +115,7 @@
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
                    Text="«Узел» — это шлюз, который у вас уже есть: второй канал, второй провайдер или настроенный VPN-адаптер. Своей сети узлов у программы нет и не будет." />
 
-        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#F2C94C"
+        <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource Warn}"
                    Text="{Binding WarningText}" />
 
         <StackPanel Orientation="Horizontal" Margin="0,10,0,0">

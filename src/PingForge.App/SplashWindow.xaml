@@ -14,7 +14,7 @@
     <Border.Background>
       <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
         <GradientStop Color="#2A5A63" Offset="0" />
-        <GradientStop Color="#1E2A42" Offset="0.5" />
+        <GradientStop Color="{StaticResource LineColor}" Offset="0.5" />
         <GradientStop Color="#2C3A66" Offset="1" />
       </LinearGradientBrush>
     </Border.Background>
@@ -35,12 +35,12 @@
                    VerticalAlignment="Center" HorizontalAlignment="Center" />
           </Border>
           <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="Custom Tweak By Doxaiz" Foreground="#E9EFFB" FontWeight="Bold" FontSize="17" />
-            <TextBlock Text="оптимизация соединения для игр" Foreground="#8FA1BD" FontSize="11.5" Margin="0,2,0,0" />
+            <TextBlock Text="Custom Tweak By Doxaiz" Foreground="{StaticResource Text}" FontWeight="Bold" FontSize="17" />
+            <TextBlock Text="оптимизация соединения для игр" Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,2,0,0" />
           </StackPanel>
         </StackPanel>
 
-        <TextBlock x:Name="StageText" Text="Загружаюсь…" Foreground="#8FA1BD" FontSize="12" Margin="0,22,0,0" />
+        <TextBlock x:Name="StageText" Text="Загружаюсь…" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,22,0,0" />
 
         <Border Height="5" CornerRadius="3" Background="#14203A" Margin="0,10,0,0">
           <Border x:Name="Bar" CornerRadius="3" Background="{StaticResource AccentGradient}" HorizontalAlignment="Stretch" />

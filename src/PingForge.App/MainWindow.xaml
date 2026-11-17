@@ -43,8 +43,8 @@
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Width="38" Height="38" CornerRadius="12" Background="#0B1526"
-                    BorderBrush="#24405C" BorderThickness="1" Margin="0,0,13,0">
+            <Border Grid.Column="0" Width="38" Height="38" CornerRadius="12" Background="{StaticResource Badge}"
+                    BorderBrush="{StaticResource LineStrong}" BorderThickness="1" Margin="0,0,13,0">
               <Image Source="{StaticResource LogoImage}" Width="27" Height="27" Stretch="Uniform"
                      VerticalAlignment="Center" HorizontalAlignment="Center" />
             </Border>
@@ -78,7 +78,7 @@
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
 
-          <Border Grid.Column="0" Background="#08101C" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="14,18">
+          <Border Grid.Column="0" Background="{StaticResource Deep}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="14,18">
             <DockPanel>
               <StackPanel DockPanel.Dock="Bottom">
                 <!-- Только путь к файлу настроек. Фраза «программа запускается молча» стояла здесь
@@ -86,7 +86,7 @@
                      в подвале. -->
                 <Border Style="{StaticResource SunkenPanel}" Padding="11,9" Margin="0,0,0,6">
                   <TextBlock Style="{StaticResource Caption}" FontSize="10.5" TextWrapping="Wrap"
-                             Foreground="#6C7E9B" Text="{Binding Settings.SettingsFilePath, StringFormat=Настройки: {0}}" />
+                             Foreground="{StaticResource Dim}" Text="{Binding Settings.SettingsFilePath, StringFormat=Настройки: {0}}" />
                 </Border>
               </StackPanel>
 
@@ -115,7 +115,7 @@
         </Grid>
 
         <!-- Подвал: честная плашка про макет интерфейса. -->
-        <Border Grid.Row="2" Background="#080F1B" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="18,9">
+        <Border Grid.Row="2" Background="{StaticResource Deep}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="18,9">
           <TextBlock Style="{StaticResource Caption}" FontSize="11.5"
                      Text="Программа запускается молча: ничего не меняется, пока вы не нажмёте кнопку. Окно, разделы, трей и связь со службой проверяются на живой Windows при каждой сборке." />
         </Border>

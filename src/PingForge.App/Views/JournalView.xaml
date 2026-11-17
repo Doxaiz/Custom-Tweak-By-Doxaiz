@@ -103,7 +103,7 @@
             </StackPanel>
           </Border>
 
-          <Border Background="#0C1420" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
+          <Border Background="{StaticResource Row}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
                   Padding="12" Margin="0,0,0,10"
                   Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}">
             <TextBlock Text="{Binding EmptyRuText}" />
