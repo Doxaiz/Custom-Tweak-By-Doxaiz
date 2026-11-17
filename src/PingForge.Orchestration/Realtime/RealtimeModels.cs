@@ -189,7 +189,8 @@ public sealed record RealtimeOptions(
     ResourceBudgetOptions? Budget = null,
     int HealthyWindowsBetweenRouteReviews = 90,
     double RouteUpgradeMarginMs = 3.0,
-    TimeSpan RouteUpgradeCooldown = default)
+    TimeSpan RouteUpgradeCooldown = default,
+    int WindowsBetweenServerChecks = 15)
 {
     /// <summary>Бюджет ресурсов: профиль нагрузки, паузы, обновление значка в трее.</summary>
     public ResourceBudgetOptions EffectiveBudget => Budget ?? new ResourceBudgetOptions();

@@ -66,6 +66,15 @@ public sealed class RealtimeOptimizer
 
     /// <summary>Когда реально переключили маршрут: чаще, чем раз в cooldown, не переключаемся.</summary>
     private DateTime? _lastSwitchUtc;
+
+    /// <summary>Сколько окон прошло с последней проверки «не сменился ли сервер игры».</summary>
+    private int _windowsSinceServerCheck;
+
+    /// <summary>
+    /// Базовая линия относится к прежнему серверу (он сменился посреди сессии). Такие числа нужны
+    /// только для контроля деградации; в отчёте «до/после» их показывать нельзя — это разные серверы.
+    /// </summary>
+    private bool _baselineIsForAnotherServer;
     private int _consecutiveBadWindows;
     private int _consecutiveGoodWindows;
     private DateTime _startedUtc;
@@ -280,6 +289,14 @@ public sealed class RealtimeOptimizer
             return Current;
         }
 
+        // Матчмейкер мог выдать другой сервер, не перезапуская игру: тогда маршрут /32 остался
+        // на адресе, где игры уже нет. Проверяем это до замера — иначе окна будут «не измеряются»,
+        // и оптимизация будет воевать с пустым адресом.
+        if (await TryRebindServerAsync(ct).ConfigureAwait(false))
+        {
+            return Current;
+        }
+
         PathMeasurement window = await MeasureAsync(ct).ConfigureAwait(false);
         _recentWindows.Add(window);
         RecordHistory(window);
@@ -306,6 +323,17 @@ public sealed class RealtimeOptimizer
         _lastJitterMs = window.JitterMs;
         _lastLossPercent = window.LossPercent;
         UpdateFloor(window.RttMedianMs);
+
+        // После смены сервера «до» набирается заново — иначе сравнивать новый сервер было бы не с чем,
+        // а порог деградации по RTT остался бы от прежнего адреса.
+        if (_baselineRttMs is null)
+        {
+            _baselineWindows.Add(window.RttMedianMs);
+            if (_baselineWindows.Count >= Math.Max(1, _options.BaselineWindows))
+            {
+                _baselineRttMs = Median(_baselineWindows);
+            }
+        }
 
         bool degraded = window.LossPercent > _options.DegradationLossPercent
                         || window.JitterMs > _options.DegradationJitterMs
@@ -415,16 +443,18 @@ public sealed class RealtimeOptimizer
             finalRttMs = final.RttMedianMs;
         }
 
-        double? improvement = _baselineRttMs is { } baseline && finalRttMs is { } after
+        double? reportBaseline = _baselineIsForAnotherServer ? null : _baselineRttMs;
+
+        double? improvement = reportBaseline is { } baseline && finalRttMs is { } after
             ? Math.Round(baseline - after, 1)
             : null;
 
-        string summary = BuildHonestSummary(finalRttMs, improvement, everythingReverted);
+        string summary = BuildHonestSummary(reportBaseline, finalRttMs, improvement, everythingReverted);
 
         var report = new RealtimeStopReport(
             GameTitleRu: _flow?.GameTitleRu ?? "Игра не определена",
             Endpoint: _flow?.RemoteEndpoint ?? "—",
-            BaselineRttMs: _baselineRttMs,
+            BaselineRttMs: reportBaseline,
             FinalRttMs: finalRttMs,
             FloorRttMs: _floorRttMs,
             ImprovementMs: improvement,
@@ -708,6 +738,159 @@ public sealed class RealtimeOptimizer
         return true;
     }
 
+    /// <summary>
+    /// Смена сервера посреди сессии. Игровые ускорители перестраивают маршрут под новый адрес матча;
+    /// без этого наш /32 остаётся на старом адресе, живой поток «перестаёт измеряться», и программа
+    /// честно сообщает о деградации там, где на самом деле сменился сервер.
+    ///
+    /// Правила:
+    ///   • проверяем редко (раз в <see cref="RealtimeOptions.WindowsBetweenServerChecks"/> окон):
+    ///     чтение таблицы соединений — не бесплатная операция;
+    ///   • пока прежний адрес виден у того же процесса, ничего не меняем: у игры бывает не одно
+    ///     соединение, и «новое» может быть служебным, а не матчем;
+    ///   • прежний маршрут снимаем ДО того, как провайдер узнает новый поток: исполнитель снимает
+    ///     маршрут по адресу, который платформа считает текущим, — иначе сняли бы не тот адрес;
+    ///   • числа «до» начинаем мерить заново: прежний пинг к другому серверу к новому не относится.
+    /// </summary>
+    private async Task<bool> TryRebindServerAsync(CancellationToken ct)
+    {
+        if (_flow is null || _options.WindowsBetweenServerChecks <= 0)
+        {
+            return false;
+        }
+
+        _windowsSinceServerCheck++;
+        if (_windowsSinceServerCheck < _options.WindowsBetweenServerChecks)
+        {
+            return false;
+        }
+
+        _windowsSinceServerCheck = 0;
+
+        IReadOnlyList<GameFlowInfo> flows;
+        try
+        {
+            flows = await _watcher.FindActiveGameFlowsAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Таблица соединений может быть недоступна: это не повод объявлять смену сервера.
+            _warnings.Add($"Не удалось перечитать таблицу соединений ({ex.GetType().Name}) — продолжаем на прежнем сервере.");
+            return false;
+        }
+
+        GameFlowInfo current = _flow;
+
+        bool currentStillVisible = flows.Any(flow => !IsDifferentServer(flow, current)
+            && (flow.ProcessId == current.ProcessId
+                || string.Equals(flow.ProcessName, current.ProcessName, StringComparison.OrdinalIgnoreCase)));
+
+        if (currentStillVisible)
+        {
+            return false;
+        }
+
+        GameFlowInfo? next = flows.FirstOrDefault(flow => flow.ProcessId == current.ProcessId && IsDifferentServer(flow, current))
+            ?? flows.FirstOrDefault(flow => string.Equals(flow.ProcessName, current.ProcessName, StringComparison.OrdinalIgnoreCase)
+                                            && IsDifferentServer(flow, current));
+
+        if (next is null)
+        {
+            // Игры в таблице нет вовсе: не выдумываем «смену сервера», обычная логика деградации
+            // сообщит, что поток не измеряется.
+            return false;
+        }
+
+        var notes = new List<string>
+        {
+            $"Сервер игры сменился: было {current.RemoteEndpoint}:{current.RemotePort}, стало {next.RemoteEndpoint}:{next.RemotePort}. " +
+            "Маршрут ставим заново. Замеры «до» относятся к прежнему серверу, поэтому выигрыш за эту сессию " +
+            "мы заявлять не будем: сравнивать пинг двух разных серверов — не результат оптимизации."
+        };
+
+        OptimizationActionDescriptor? previousRoute = _appliedRouteAction
+            ? _applied.FirstOrDefault(action => action.Kind == OptimizationActionKind.RouteForGame)
+            : null;
+
+        if (previousRoute is not null)
+        {
+            OptimizationActionOutcome revert = await RevertAsync(previousRoute, ct).ConfigureAwait(false);
+            _applied.Remove(previousRoute);
+            _appliedRouteAction = false;
+
+            // Старый маршрут не снялся — новый /32 на другой адрес всё равно можно поставить,
+            // но о мусоре в таблице надо сказать прямо.
+            notes.Add(revert.Succeeded
+                ? $"Маршрут к прежнему серверу {current.RemoteEndpoint} снят."
+                : $"Маршрут к прежнему серверу {current.RemoteEndpoint} снять не удалось ({revert.MessageRu}): удалите его вручную или кнопкой «Починить сеть».");
+        }
+
+        _flow = next;
+        _activePathId = null;
+        _failedPathIds.Clear();
+        _lastSwitchUtc = null;
+        _healthyWindowsSinceReview = 0;
+        _windowsSinceServerCheck = 0;
+        _consecutiveBadWindows = 0;
+        _consecutiveGoodWindows = 0;
+        _baselineRttMs = null;
+        _baselineIsForAnotherServer = true;
+        _confirmationRttMs = null;
+        _floorRttMs = null;
+        _lastRttMs = null;
+        _lastJitterMs = null;
+        _lastLossPercent = null;
+        _baselineWindows.Clear();
+        _recentWindows.Clear();
+
+        if (_pathOptions is not null && _options.AllowRoutingChanges)
+        {
+            IReadOnlyList<RealtimePathOption> options = await _pathOptions.GetOptionsAsync(next, ct).ConfigureAwait(false);
+            RealtimePathOption? preferred = options.FirstOrDefault();
+
+            if (preferred is null)
+            {
+                notes.Add("По свежим замерам узлы не быстрее прямого пути — маршрут к новому серверу не ставим.");
+            }
+            else
+            {
+                OptimizationActionOutcome apply = await _actions.ApplyAsync(preferred.Action, ct).ConfigureAwait(false);
+                if (apply.Succeeded)
+                {
+                    _applied.Add(preferred.Action);
+                    _appliedRouteAction = true;
+                    _activePathId = preferred.PathId;
+                    notes.Add($"Новый маршрут: «{preferred.DisplayName}».");
+                }
+                else
+                {
+                    notes.Add($"Маршрут к новому серверу не поставлен: {apply.MessageRu}");
+                }
+            }
+        }
+
+        foreach (string note in notes)
+        {
+            _warnings.Add(note);
+        }
+
+        string status = string.Join(" ", notes);
+        if (_state == RealtimeOptimizationState.ReadOnlyNoAdmin)
+        {
+            SetStatus(status);
+        }
+        else
+        {
+            SetState(RealtimeOptimizationState.ActiveMonitoring, status);
+        }
+
+        return true;
+    }
+
+    private static bool IsDifferentServer(GameFlowInfo candidate, GameFlowInfo current) =>
+        candidate.RemotePort != current.RemotePort
+        || !string.Equals(candidate.RemoteEndpoint, current.RemoteEndpoint, StringComparison.OrdinalIgnoreCase);
+
     private async Task DegradeAsync(string reason, CancellationToken ct)
     {
         _consecutiveGoodWindows = 0;
@@ -821,7 +1004,8 @@ public sealed class RealtimeOptimizer
         FloorRttMs: _floorRttMs,
         CurrentJitterMs: _lastJitterMs,
         CurrentLossPercent: _lastLossPercent,
-        ImprovementMs: _baselineRttMs is { } baseline && (_lastRttMs ?? _confirmationRttMs) is { } now
+        // После смены сервера «выигрыш за сессию» не считаем: базовая линия принадлежит другому адресу.
+        ImprovementMs: !_baselineIsForAnotherServer && _baselineRttMs is { } baseline && (_lastRttMs ?? _confirmationRttMs) is { } now
             ? Math.Round(baseline - now, 1)
             : null,
         QualityLabelRu: QualityLabel(_lastRttMs ?? _confirmationRttMs ?? _baselineRttMs),
@@ -829,13 +1013,13 @@ public sealed class RealtimeOptimizer
         Warnings: _warnings.ToList(),
         UpdatedUtc: _clock());
 
-    private string BuildHonestSummary(double? finalRttMs, double? improvement, bool everythingReverted)
+    private string BuildHonestSummary(double? baselineRttMs, double? finalRttMs, double? improvement, bool everythingReverted)
     {
         string revertText = everythingReverted
             ? "Изменения сняты, сеть в исходном состоянии."
             : "Часть изменений снять не удалось — нажмите «Починить сеть» и проверьте маршруты вручную.";
 
-        if (_baselineRttMs is not { } baseline || finalRttMs is not { } after)
+        if (baselineRttMs is not { } baseline || finalRttMs is not { } after)
         {
             return $"Замеры «до» или «после» недоступны, поэтому выигрыш не заявляем. {revertText}";
         }
@@ -941,6 +1125,8 @@ public sealed class RealtimeOptimizer
         _switchProblemRu = null;
         _healthyWindowsSinceReview = 0;
         _lastSwitchUtc = null;
+        _windowsSinceServerCheck = 0;
+        _baselineIsForAnotherServer = false;
         _consecutiveBadWindows = 0;
         _consecutiveGoodWindows = 0;
     }
