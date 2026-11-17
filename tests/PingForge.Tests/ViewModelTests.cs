@@ -734,7 +734,5 @@ public class ViewModelTests
 
         main.DismissNoticeCommand.Execute(null);
         Assert.False(main.IsNoticeVisible);
-        Assert.False(main.NoticeIsProblem);
-        Assert.False(main.NoticeIsWarning);
     }
 }

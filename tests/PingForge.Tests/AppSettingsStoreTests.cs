@@ -155,10 +155,15 @@ public sealed class AppSettingsStoreTests : IDisposable
 
         store.Save(new AppSettings("max"));
 
-        string json = File.ReadAllText(store.SettingsFilePath);
-        Assert.Contains("ПолеСлужбы", json, StringComparison.Ordinal);
-        Assert.Contains("ЕщёОдно", json, StringComparison.Ordinal);
-        Assert.Equal("max", new JsonFileSettingsStore(store.SettingsFilePath).Load().PerfProfile);
+        // Ключи читаем из разобранного JSON: писатель экранирует не-ASCII (\u041F…), и поиск
+        // подстроки по тексту файла нашёл бы не то, что лежит на диске.
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(
+            File.ReadAllText(store.SettingsFilePath));
+
+        Assert.True(document.RootElement.TryGetProperty("ПолеСлужбы", out System.Text.Json.JsonElement nested));
+        Assert.Equal(42, nested.GetProperty("вложено").GetInt32());
+        Assert.Equal("текст", document.RootElement.GetProperty("ЕщёОдно").GetString());
+        Assert.Equal("max", document.RootElement.GetProperty("PerfProfile").GetString());
     }
 
     [Fact]
