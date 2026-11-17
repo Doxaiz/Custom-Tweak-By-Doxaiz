@@ -89,8 +89,21 @@ public sealed class JsonFileSettingsStore : IAppSettingsStore
 
         try
         {
-            string json = JsonSerializer.Serialize(settings, Options);
-            SharedFileWriteResult result = _writer.Update(_ => JsonNode.Parse(json)!.AsObject());
+            JsonObject ours = JsonSerializer.SerializeToNode(settings, Options)!.AsObject();
+
+            // Пишем поверх прочитанного, а не вместо него: в этом же файле живут поля, которых окно
+            // не знает (служба пишет свои), и запись «целиком из своей копии» стирала их молча.
+            // Раньше здесь стояло Update(_ => json) — то есть общий файл переписывался снимком,
+            // сделанным при запуске окна.
+            SharedFileWriteResult result = _writer.Update(root =>
+            {
+                foreach ((string key, JsonNode? value) in ours)
+                {
+                    root[key] = value?.DeepClone();
+                }
+
+                return root;
+            });
 
             if (!result.Written)
             {

@@ -50,10 +50,12 @@ public sealed class SettingsViewModel : ObservableObject
         Storage = new StorageInfoViewModel(engine);
         Storage.AttachDialogs(dialogs);
         Export = new SettingsExportViewModel(store, dialogs);
-        UiScale = new UiScaleViewModel();
-        UiScale100Command = new RelayCommand(() => UiScale.Scale = 1.0);
-        UiScale125Command = new RelayCommand(() => UiScale.Scale = 1.25);
-        UiScale150Command = new RelayCommand(() => UiScale.Scale = 1.5);
+        // Масштаб — из настроек: иначе выбранные 125 % слетали при каждом запуске, хотя кнопки
+        // обещали, что выбор останется.
+        UiScale = new UiScaleViewModel { Scale = settings.UiScale <= 0 ? 1.0 : settings.UiScale };
+        UiScale100Command = new RelayCommand(() => SetUiScale(1.0));
+        UiScale125Command = new RelayCommand(() => SetUiScale(1.25));
+        UiScale150Command = new RelayCommand(() => SetUiScale(1.5));
     }
 
     /// <summary>Узлы маршрутизации: список, поиск шлюзов, замер путей. Ничего не меняет сама по себе.</summary>
@@ -75,6 +77,24 @@ public sealed class SettingsViewModel : ObservableObject
     public RelayCommand UiScale150Command { get; }
 
     public AsyncRelayCommand SaveCommand { get; }
+
+    /// <summary>
+    /// Поставить масштаб и запомнить его. Сбой записи не отменяет масштаб — он уже на экране, —
+    /// но и молчать о нём нельзя: после перезапуска вернётся прежний.
+    /// </summary>
+    private void SetUiScale(double scale)
+    {
+        UiScale.Scale = scale;
+
+        try
+        {
+            _store.Save(_store.Load() with { UiScale = UiScale.Scale });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            StatusRu = $"Масштаб применён, но в файл не записался: {ex.Message}. После перезапуска вернётся прежний.";
+        }
+    }
 
     /// <summary>
     /// «Пройти мастер заново». Мастер показывается один раз, но выбор мог быть случайным —
@@ -164,6 +184,7 @@ public sealed class SettingsViewModel : ObservableObject
                 StartMinimized = false,
                 CloseToTray = CloseToTray,
                 JournalRowsShown = loaded.JournalRowsShown <= 0 ? 200 : Math.Clamp(loaded.JournalRowsShown, 1, 500),
+                UiScale = UiScale.Scale,
             };
 
             _store.Save(settings);

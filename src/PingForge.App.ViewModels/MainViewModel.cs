@@ -5,6 +5,19 @@ using PingForge.Service.Protocol;
 
 namespace PingForge.App.ViewModels;
 
+/// <summary>Тон ответа программы: отказ, предупреждение или просто сообщение.</summary>
+public enum NoticeTone
+{
+    /// <summary>Что-то не получилось — красный заголовок.</summary>
+    Problem,
+
+    /// <summary>Сработало, но не так, как ждали (например, версии окна и службы разошлись).</summary>
+    Warning,
+
+    /// <summary>Обычное сообщение: сделано, вот что именно.</summary>
+    Info,
+}
+
 /// <summary>
 /// Главный экран: большая кнопка, состояние и честный итог.
 ///
@@ -125,14 +138,38 @@ public sealed class MainViewModel : ObservableObject
     public bool IsNoticeVisible => !string.IsNullOrWhiteSpace(NoticeRu);
 
     /// <summary>
+    /// Чем закончилось: отказ, предупреждение или просто сообщение. От этого зависит цвет заголовка
+    /// в карточке ответа: раньше «Оптимизация не запустилась» рисовалась тем же циановым, что и
+    /// «Починка сети прошла», и отказ читался как успех.
+    /// </summary>
+    public NoticeTone NoticeKind
+    {
+        get => _noticeTone;
+        private set
+        {
+            if (Set(ref _noticeTone, value))
+            {
+                OnPropertyChanged(nameof(NoticeIsProblem), nameof(NoticeIsWarning));
+            }
+        }
+    }
+
+    private NoticeTone _noticeTone = NoticeTone.Problem;
+
+    public bool NoticeIsProblem => _noticeTone == NoticeTone.Problem;
+
+    public bool NoticeIsWarning => _noticeTone == NoticeTone.Warning;
+
+    /// <summary>
     /// Показать ответ программы на экране. null — убрать.
     /// Публичный не для красоты: так ответ проверяет самопроверка на живой Windows — она показывает
     /// карточку и убеждается, что текст дошёл до разметки, а окно осталось живым.
     /// </summary>
-    public void ShowNotice(string? titleRu, string? messageRu)
+    public void ShowNotice(string? titleRu, string? messageRu, NoticeTone tone = NoticeTone.Problem)
     {
         NoticeTitleRu = titleRu;
         NoticeRu = messageRu;
+        NoticeKind = messageRu is null ? NoticeTone.Problem : tone;
         OnPropertyChanged(nameof(IsNoticeVisible));
     }
 
@@ -392,7 +429,7 @@ public sealed class MainViewModel : ObservableObject
         {
             EngineResponse response = await _engine.SendAsync(EngineCommandKind.RepairNetwork).ConfigureAwait(true);
             StatusRu = response.MessageRu;
-            ShowNotice("Починка сети", response.MessageRu);
+            ShowNotice("Починка сети", response.MessageRu, NoticeTone.Info);
         }
         catch (EngineUnavailableException ex)
         {
@@ -460,7 +497,7 @@ public sealed class MainViewModel : ObservableObject
             if (_engine.VersionState == EngineVersionState.AppDiffers && !_versionWarningShown)
             {
                 _versionWarningShown = true;
-                ShowNotice("Версии различаются", _engine.VersionsNoteRu);
+                ShowNotice("Версии различаются", _engine.VersionsNoteRu, NoticeTone.Warning);
             }
         }
         catch (System.Text.Json.JsonException)

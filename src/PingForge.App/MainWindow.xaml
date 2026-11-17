@@ -11,6 +11,12 @@
         WindowStartupLocation="CenterScreen">
 
   <Grid ClipToBounds="True">
+    <!-- Масштаб интерфейса (100/125/150 %): LayoutTransform пересобирает раскладку, а не растягивает
+         картинку, поэтому текст остаётся резким, а карточки тянутся. При 100 % это тождественное
+         преобразование — обычный вид не меняется. Размер окна под масштаб подгоняет код окна. -->
+    <Grid.LayoutTransform>
+      <ScaleTransform ScaleX="{Binding Settings.UiScale.Scale}" ScaleY="{Binding Settings.UiScale.Scale}" />
+    </Grid.LayoutTransform>
     <!-- Фон: два мягких свечения (акцент и циан) вместо плоской заливки. Это чистый декор,
          он не перехватывает мышь и ничего не измеряет. -->
     <Ellipse Width="720" Height="520" Fill="{StaticResource GlowBrush}" HorizontalAlignment="Left"
@@ -75,13 +81,12 @@
           <Border Grid.Column="0" Background="#08101C" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="14,18">
             <DockPanel>
               <StackPanel DockPanel.Dock="Bottom">
+                <!-- Только путь к файлу настроек. Фраза «программа запускается молча» стояла здесь
+                     и в подвале окна сразу — два одинаковых абзаца на одном экране. Осталась одна,
+                     в подвале. -->
                 <Border Style="{StaticResource SunkenPanel}" Padding="11,9" Margin="0,0,0,6">
-                  <StackPanel>
-                    <TextBlock Style="{StaticResource Caption}" FontSize="11.5" TextWrapping="Wrap"
-                               Text="Программа запускается молча: ничего не меняется, пока вы не нажмёте кнопку." />
-                    <TextBlock Style="{StaticResource Caption}" FontSize="10.5" TextWrapping="Wrap" Margin="0,7,0,0"
-                               Foreground="#6C7E9B" Text="{Binding Settings.SettingsFilePath, StringFormat=Настройки: {0}}" />
-                  </StackPanel>
+                  <TextBlock Style="{StaticResource Caption}" FontSize="10.5" TextWrapping="Wrap"
+                             Foreground="#6C7E9B" Text="{Binding Settings.SettingsFilePath, StringFormat=Настройки: {0}}" />
                 </Border>
               </StackPanel>
 

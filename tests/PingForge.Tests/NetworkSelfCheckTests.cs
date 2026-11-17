@@ -490,12 +490,13 @@ public sealed class NetworkSelfCheckTests
         }
     }
 
-    // Сроки с запасом: на загруженном сборочном раннере Task.Delay(25) легко превращается
-    // в полсотни миллисекунд, и слишком короткая фаза честно не набирала минимум проб.
-    private static BufferbloatOptions Quick => new(
-        IdleDuration: TimeSpan.FromMilliseconds(600),
-        LoadDuration: TimeSpan.FromSeconds(3),
-        SampleInterval: TimeSpan.FromMilliseconds(10),
+    // То же с запасом по времени: на прогоне 44070024910 короткая фаза простоя на загруженном
+    // раннере набрала меньше пяти проб, и тест «сдаётся» получил NotEnoughSamples вместо
+    // LoadFailed. Проверяемое решение от длины окна не зависит, а ожидание — чужая беда.
+    private static BufferbloatOptions Patient => new(
+        IdleDuration: TimeSpan.FromSeconds(2),
+        LoadDuration: TimeSpan.FromSeconds(2),
+        SampleInterval: TimeSpan.FromMilliseconds(5),
         ParallelStreams: 2);
 
     [Fact]
@@ -507,7 +508,7 @@ public sealed class NetworkSelfCheckTests
             // До старта нагрузки задержка 10 мс, под нагрузкой — 110 мс.
             ReplyForCall = _ => new IcmpProbeReply(IcmpProbeStatus.Success, load.Started ? 110 : 10, null),
         };
-        var tester = new BufferbloatLoadTester(icmp, load, Quick);
+        var tester = new BufferbloatLoadTester(icmp, load, Patient);
 
         BufferbloatResult result = await tester.MeasureAsync(IPAddress.Parse("1.1.1.1"));
 
@@ -521,19 +522,19 @@ public sealed class NetworkSelfCheckTests
     [Fact]
     public async Task Bufferbloat_тестер_честно_сдаётся_когда_нагрузить_или_измерить_нельзя()
     {
-        var noBytes = new BufferbloatLoadTester(new FakeIcmp(), new FakeLoad { Bytes = 10 }, Quick);
+        var noBytes = new BufferbloatLoadTester(new FakeIcmp(), new FakeLoad { Bytes = 10 }, Patient);
         Assert.Equal(BufferbloatOutcome.LoadFailed,
             (await noBytes.MeasureAsync(IPAddress.Parse("1.1.1.1"))).Outcome);
 
         var silent = new BufferbloatLoadTester(
             new FakeIcmp { ReplyForCall = _ => new IcmpProbeReply(IcmpProbeStatus.Timeout, 0, null) },
-            new FakeLoad(), Quick);
+            new FakeLoad(), Patient);
         Assert.Equal(BufferbloatOutcome.NotEnoughSamples,
             (await silent.MeasureAsync(IPAddress.Parse("1.1.1.1"))).Outcome);
 
         var denied = new BufferbloatLoadTester(
             new FakeIcmp { ReplyForCall = _ => new IcmpProbeReply(IcmpProbeStatus.PermissionDenied, 0, null) },
-            new FakeLoad(), Quick);
+            new FakeLoad(), Patient);
         Assert.Equal(BufferbloatOutcome.IcmpBlocked,
             (await denied.MeasureAsync(IPAddress.Parse("1.1.1.1"))).Outcome);
     }

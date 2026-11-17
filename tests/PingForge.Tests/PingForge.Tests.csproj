@@ -42,6 +42,10 @@
     <None Include="..\..\src\PingForge.App\Views\SettingsView.xaml" Link="checked-SettingsView.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\App.xaml" Link="checked-App.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\MainWindow.xaml" Link="checked-MainWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Масштаб интерфейса: тест сверяет, что кнопки 100/125/150 % действительно что-то масштабируют. -->
+    <None Include="..\..\src\PingForge.App\MainWindow.xaml.cs" Link="checked-MainWindow.xaml.cs" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Мастер первого запуска: его разметка тоже ссылается на ресурсы темы (опечатка = падение окна). -->
+    <None Include="..\..\src\PingForge.App\Views\OnboardingView.xaml" Link="checked-OnboardingView.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\SplashWindow.xaml" Link="checked-SplashWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\Views\JournalView.xaml" Link="checked-JournalView.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\tools\ui-walkthrough.ps1" Link="checked-ui-walkthrough.ps1" CopyToOutputDirectory="PreserveNewest" />

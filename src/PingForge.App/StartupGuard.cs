@@ -225,6 +225,10 @@ public static class CrashGuard
             Report("Ошибка в фоновой задаче", e.Exception);
             e.SetObserved();
         };
+
+        // Команды окна (кнопки) — тоже путь к ошибке. Без этого исключение из async void-команды
+        // приходило как «ошибка в работе программы» без указания, что именно нажали.
+        ViewModels.AsyncRelayCommand.OnFailure = (whatRu, ex) => Report(whatRu, ex);
     }
 
     public static void Report(string whatRu, Exception ex)

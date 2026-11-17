@@ -142,4 +142,39 @@ public sealed class AppSettingsStoreTests : IDisposable
         Assert.Contains(path, settings.StatusRu);
         Assert.Equal("economy", new JsonFileSettingsStore(path).Load().PerfProfile);
     }
+    [Fact]
+    public void Чужие_поля_файла_не_стираются_при_сохранении_настроек()
+    {
+        // В этом же файле служба держит свои поля, а будущие версии — свои. Запись «целиком из
+        // своей копии» стирала их молча: окно сериализовало только то, что знает само.
+        var store = new JsonFileSettingsStore(PathIn("settings.json"));
+        File.WriteAllText(
+            store.SettingsFilePath,
+            """{"PerfProfile":"balanced","ПолеСлужбы":{"вложено":42},"ЕщёОдно":"текст"}""",
+            System.Text.Encoding.UTF8);
+
+        store.Save(new AppSettings("max"));
+
+        // Ключи читаем из разобранного JSON: писатель экранирует не-ASCII (\u041F…), и поиск
+        // подстроки по тексту файла нашёл бы не то, что лежит на диске.
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(
+            File.ReadAllText(store.SettingsFilePath));
+
+        Assert.True(document.RootElement.TryGetProperty("ПолеСлужбы", out System.Text.Json.JsonElement nested));
+        Assert.Equal(42, nested.GetProperty("вложено").GetInt32());
+        Assert.Equal("текст", document.RootElement.GetProperty("ЕщёОдно").GetString());
+        Assert.Equal("max", document.RootElement.GetProperty("PerfProfile").GetString());
+    }
+
+    [Fact]
+    public void Масштаб_интерфейса_сохраняется_и_читается_обратно()
+    {
+        // Кнопки 100/125/150 % обещают, что выбор останется. Раньше масштаб жил только в памяти
+        // окна и слетал при каждом запуске.
+        var store = new JsonFileSettingsStore(PathIn("settings.json"));
+
+        store.Save(new AppSettings(UiScale: 1.25));
+
+        Assert.Equal(1.25, new JsonFileSettingsStore(store.SettingsFilePath).Load().UiScale);
+    }
 }

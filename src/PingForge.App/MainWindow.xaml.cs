@@ -22,6 +22,22 @@ public partial class MainWindow : Window
 
         DataContext = new ShellViewModel(app);
 
+        // Масштаб интерфейса: раскладка тянется LayoutTransform'ом из разметки, а минимальный размер
+        // окна обязан расти вместе с ней — иначе при 150 % окно «не пускает» содержимое и правый
+        // край обрезается. При 100 % это ровно 860×560, прежние значения.
+        ApplyUiScale();
+        if (DataContext is ShellViewModel shell)
+        {
+            shell.Settings.UiScale.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(UiScaleViewModel.Scale))
+                {
+                    ApplyUiScale();
+                    FitToScreen();
+                }
+            };
+        }
+
         Closing += (_, e) => _app.OnWindowClosing(e);
 
         // Первый пункт меню отмечен прямо в разметке (IsChecked="True"), поэтому событие
@@ -34,6 +50,35 @@ public partial class MainWindow : Window
             FitToScreen();
             ApplySection();
         };
+    }
+
+    /// <summary>
+    /// Минимальный размер окна под текущий масштаб. Ширина и высота содержимого при 150 %
+    /// в полтора раза больше, поэтому и минимум окна в полтора раза больше: иначе окно можно
+    /// ужать так, что разделы и кнопки окажутся за краем.
+    /// </summary>
+    private void ApplyUiScale()
+    {
+        if (DataContext is not ShellViewModel shell)
+        {
+            return;
+        }
+
+        double scale = shell.Settings.UiScale.Scale;
+        Rect work = SystemParameters.WorkArea;
+
+        // На маленьком экране 150 % не должны выталкивать окно за край: минимум растёт вместе
+        // с содержимым, но не больше рабочей области. Внутри есть прокрутка, поэтому ужать окно
+        // до экрана безопаснее, чем потерять правый и нижний край.
+        MinWidth = Math.Min(
+            UiScaleViewModel.MinWidthAt100 * scale,
+            Math.Max(UiScaleViewModel.MinWidthAt100, work.Width - 16));
+        MinHeight = Math.Min(
+            UiScaleViewModel.MinHeightAt100 * scale,
+            Math.Max(UiScaleViewModel.MinHeightAt100, work.Height - 16));
+
+        Width = Math.Max(Width, MinWidth);
+        Height = Math.Max(Height, MinHeight);
     }
 
     /// <summary>

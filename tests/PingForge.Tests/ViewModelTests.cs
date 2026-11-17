@@ -711,4 +711,28 @@ public class ViewModelTests
         {
         }
     }
+    // ── ответ программы: тон, а не один цвет на всё ─────────────────────────────────────────────
+
+    [Fact]
+    public void Отказ_предупреждение_и_сообщение_различаются_тоном()
+    {
+        // Раньше «Оптимизация не запустилась» и «Починка сети прошла» рисовались одним циановым:
+        // отказ читался как успех. Теперь тон задаётся тем, чем закончилось действие.
+        (MainViewModel main, _, _) = BuildMain();
+
+        main.ShowNotice("Оптимизация не запустилась", "Запущенная игра не найдена.");
+        Assert.True(main.NoticeIsProblem);
+        Assert.False(main.NoticeIsWarning);
+
+        main.ShowNotice("Починка сети", "Снято остатков: 2.", NoticeTone.Info);
+        Assert.False(main.NoticeIsProblem);
+        Assert.False(main.NoticeIsWarning);
+
+        main.ShowNotice("Версии различаются", "Окно 1.0.0, служба 1.0.1.", NoticeTone.Warning);
+        Assert.True(main.NoticeIsWarning);
+        Assert.False(main.NoticeIsProblem);
+
+        main.DismissNoticeCommand.Execute(null);
+        Assert.False(main.IsNoticeVisible);
+    }
 }
