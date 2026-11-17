@@ -36,13 +36,13 @@
                             <Setter Property="Stroke" Value="{StaticResource Accent}" />
                           </DataTrigger>
                           <DataTrigger Binding="{Binding LineKind}" Value="2">
-                            <Setter Property="Stroke" Value="#F2C94C" />
+                            <Setter Property="Stroke" Value="{StaticResource Warn}" />
                           </DataTrigger>
                           <DataTrigger Binding="{Binding LineKind}" Value="3">
-                            <Setter Property="Stroke" Value="#A78BFA" />
+                            <Setter Property="Stroke" Value="{StaticResource Violet}" />
                           </DataTrigger>
                           <DataTrigger Binding="{Binding LineKind}" Value="4">
-                            <Setter Property="Stroke" Value="#F2545B" />
+                            <Setter Property="Stroke" Value="{StaticResource Danger}" />
                           </DataTrigger>
                         </Style.Triggers>
                       </Style>

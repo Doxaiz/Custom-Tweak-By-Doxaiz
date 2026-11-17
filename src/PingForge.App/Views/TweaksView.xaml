@@ -89,7 +89,7 @@
               <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="0,8,0,8">
                 <StackPanel>
                   <StackPanel Orientation="Horizontal">
-                    <Border Background="#131C2C" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="999" Padding="8,2" Margin="0,0,8,0">
+                    <Border Background="{StaticResource ChipBg}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="999" Padding="8,2" Margin="0,0,8,0">
                       <TextBlock Text="{Binding PriorityRu}" FontSize="11.5" />
                     </Border>
                     <TextBlock Text="{Binding TitleRu}" FontWeight="SemiBold" />
@@ -205,13 +205,13 @@
                 <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" Text="{Binding WhatItDoesRu}" />
 
                 <WrapPanel Margin="0,8,0,0">
-                  <Border Background="#131C2C" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="999" Padding="8,2" Margin="0,0,6,4">
+                  <Border Background="{StaticResource ChipBg}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="999" Padding="8,2" Margin="0,0,6,4">
                     <TextBlock Text="{Binding VerdictRu}" FontSize="11.5" />
                   </Border>
-                  <Border Background="#131C2C" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="999" Padding="8,2" Margin="0,0,6,4">
+                  <Border Background="{StaticResource ChipBg}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="999" Padding="8,2" Margin="0,0,6,4">
                     <TextBlock Text="{Binding PresetsLineRu}" FontSize="11.5" Foreground="{StaticResource Muted}" />
                   </Border>
-                  <Border Background="#131C2C" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="999" Padding="8,2" Margin="0,0,6,4">
+                  <Border Background="{StaticResource ChipBg}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="999" Padding="8,2" Margin="0,0,6,4">
                     <TextBlock Text="{Binding FocusRu}" FontSize="11.5" Foreground="{StaticResource Muted}" />
                   </Border>
                 </WrapPanel>

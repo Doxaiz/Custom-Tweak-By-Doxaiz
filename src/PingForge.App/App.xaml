@@ -23,6 +23,17 @@
       <Color x:Key="WarnColor">#F2C94C</Color>
       <Color x:Key="DangerColor">#F2545B</Color>
 
+      <!-- Производные тона: второй уровень панелей и третий уровень текста. Отдельные имена
+           нужны, чтобы в разметке не появлялись цвета по месту: иначе через месяц в окне
+           окажется пять почти одинаковых тёмных, и «одна тема» перестанет быть правдой. -->
+      <Color x:Key="DeepColor">#08101C</Color>        <!-- колонка разделов и подвал -->
+      <Color x:Key="BadgeColor">#0B1526</Color>       <!-- плашка эмблемы в шапке -->
+      <Color x:Key="LineStrongColor">#24405C</Color>  <!-- яркая кромка (эмблема, акцентные линии) -->
+      <Color x:Key="DimColor">#6C7E9B</Color>         <!-- третий уровень текста: путь, подпись -->
+      <Color x:Key="RowColor">#0C1420</Color>         <!-- строка журнала -->
+      <Color x:Key="ChipBgColor">#131C2C</Color>      <!-- подложка пилюли -->
+      <Color x:Key="ScrimColor">#F5080D18</Color>     <!-- затемнение под мастером первого запуска -->
+
       <!-- Показ/скрытие карточек по булеву полю модели: без своего кода, средствами WPF. -->
       <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
       <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
@@ -42,6 +53,13 @@
       <SolidColorBrush x:Key="Violet" Color="{StaticResource VioletColor}" />
       <SolidColorBrush x:Key="Warn" Color="{StaticResource WarnColor}" />
       <SolidColorBrush x:Key="Danger" Color="{StaticResource DangerColor}" />
+      <SolidColorBrush x:Key="Deep" Color="{StaticResource DeepColor}" />
+      <SolidColorBrush x:Key="Badge" Color="{StaticResource BadgeColor}" />
+      <SolidColorBrush x:Key="LineStrong" Color="{StaticResource LineStrongColor}" />
+      <SolidColorBrush x:Key="Dim" Color="{StaticResource DimColor}" />
+      <SolidColorBrush x:Key="Row" Color="{StaticResource RowColor}" />
+      <SolidColorBrush x:Key="ChipBg" Color="{StaticResource ChipBgColor}" />
+      <SolidColorBrush x:Key="Scrim" Color="{StaticResource ScrimColor}" />
 
       <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,1">
         <GradientStop Color="{StaticResource AccentColor}" Offset="0" />

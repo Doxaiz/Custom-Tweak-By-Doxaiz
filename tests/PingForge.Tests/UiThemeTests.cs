@@ -172,13 +172,34 @@ public sealed class UiThemeTests
         foreach (string key in new[]
                  {
                      "BgColor", "PanelColor", "PanelTopColor", "SunkenColor", "LineColor", "LineSoftColor",
-                     "TextColor", "MutedColor", "AccentColor", "Accent2Color", "WarnColor", "DangerColor"
+                     "TextColor", "MutedColor", "AccentColor", "Accent2Color", "WarnColor", "DangerColor",
+                     // производные тона: второй уровень панелей и третий уровень текста
+                     "DeepColor", "BadgeColor", "LineStrongColor", "DimColor", "RowColor", "ChipBgColor", "ScrimColor"
                  })
             Assert.Contains($"x:Key=\"{key}\"", app, StringComparison.Ordinal);
 
         Assert.Contains("x:Key=\"UiFont\"", app, StringComparison.Ordinal);
         Assert.Contains("x:Key=\"NumberFont\"", app, StringComparison.Ordinal);
         Assert.Contains("FontFamily", app, StringComparison.Ordinal);
+
+        // И то же правило для окон и разделов: цвет по месту — это часть темы, которой не видно
+        // в App.xaml. Так в разметке жили девять почти одинаковых тёмных, и «одна тема» была
+        // неправдой. Исключение одно — заставка: там нарисован градиент, это картинка,
+        // а не элементы управления.
+        var inline = new List<string>();
+        foreach (string file in XamlFiles.Where(name =>
+                     name != "checked-App.xaml" && name != "checked-SplashWindow.xaml"))
+        {
+            string xaml = Regex.Replace(ReadChecked(file), "<!--.*?-->", string.Empty, RegexOptions.Singleline);
+            foreach (Match color in Regex.Matches(xaml, "#[0-9A-Fa-f]{6,8}"))
+            {
+                inline.Add($"{file}: {color.Value}");
+            }
+        }
+
+        Assert.True(
+            inline.Count == 0,
+            "цвета по месту (добавьте ключ в App.xaml и сошлитесь на него): " + string.Join(", ", inline.Distinct()));
     }
 
     [Fact]
