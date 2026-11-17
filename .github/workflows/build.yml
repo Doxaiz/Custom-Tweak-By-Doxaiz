@@ -326,14 +326,19 @@ jobs:
           Write-Host "  $line"
           Write-Host "::notice file=.github/workflows/build.yml,line=1::$line"
 
+          # Проверки, а не только цифры: аннотаций на шаг отводится немного, и «notice» с числами
+          # до человека может не дойти. Зато зелёный шаг означает, что условия ниже выполнены.
           if (($max - $min) -lt 8) {
             throw 'Снимок окна одноцветный: окно не отрисовалось, судить о вёрстке нечем'
           }
-          if ($mean -gt 140) {
-            Write-Host '::warning file=.github/workflows/build.yml,line=1::Снимок светлый: тёмная тема, похоже, не применилась'
+          if ($darkPct -lt 55) {
+            throw "Снимок окна не тёмный: тёмных пикселей $darkPct%, средняя яркость $mean% — тёмная тема, похоже, не применилась"
           }
           if ($width -lt 1100) {
-            Write-Host "::warning file=.github/workflows/build.yml,line=1::Снимок шириной $width меньше окна 1180 — похоже, край обрезан"
+            throw "Снимок окна шириной $width меньше окна 1180 — край обрезан, вёрстку по нему не проверить"
+          }
+          if ($mean -gt 60) {
+            Write-Host "::warning file=.github/workflows/build.yml,line=1::Снимок темноват наполовину: средняя яркость $mean%"
           }
 
       - name: Установщик — собрать (NSIS)
