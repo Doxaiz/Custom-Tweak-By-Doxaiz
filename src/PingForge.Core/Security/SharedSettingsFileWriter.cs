@@ -146,25 +146,39 @@ public sealed class SharedSettingsFileWriter
             else
             {
                 JsonNode? parsed = null;
+                string? parseProblem = null;
                 try
                 {
                     parsed = JsonNode.Parse(existing);
                 }
                 catch (JsonException ex)
                 {
+                    parseProblem = ex.Message;
+                }
+
+                if (parseProblem is null && parsed is JsonObject objectRoot)
+                {
+                    root = objectRoot;
+                }
+                else
+                {
+                    // Не наши настройки — это и битый JSON, и «валидный JSON, но не объект»:
+                    // массив, строка, число. Раньше второй случай молча превращался в пустой объект,
+                    // и человек терял все настройки без единого следа на диске.
+                    string reason = parseProblem is null
+                        ? $"файл настроек содержит {DescribeJsonKind(parsed)}, а не объект настроек"
+                        : $"файл настроек повреждён ({parseProblem})";
+
                     if (!quarantineBroken)
                     {
                         return SharedFileWriteResult.Failed(
-                            $"файл настроек повреждён ({ex.Message}) — записывать поверх не стал, чтобы не добить чужие данные");
+                            $"{reason} — записывать поверх не стал, чтобы не добить чужие данные");
                     }
 
-                    // Битый файл не затирается: он переименовывается, и причина потери настроек остаётся на диске.
-                    string broken = QuarantinePath(DateTime.Now);
-                    File.Move(_path, broken, overwrite: true);
-                    backupPath = broken;
+                    // Файл не затирается: он переименовывается, и причина потери настроек остаётся на диске.
+                    backupPath = MoveToQuarantine(DateTime.Now);
+                    root = new JsonObject();
                 }
-
-                root = parsed as JsonObject ?? new JsonObject();
             }
 
             // Копия прежней версии — до записи новой. Одна копия, перезаписывается: это не архив,
@@ -177,9 +191,21 @@ public sealed class SharedSettingsFileWriter
 
             JsonObject updated = update(root) ?? root;
 
-            string temp = _path + ".tmp";
-            File.WriteAllText(temp, updated.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
-            File.Move(temp, _path, overwrite: true);
+            // Временный файл — со своим именем на каждую запись. Раньше имя было постоянным
+            // («settings.json.tmp»), а писать без блокировки здесь разрешено (mayWrite = true с
+            // предупреждением). Два таких писателя затирали временный файл друг друга, и на место
+            // настроек вставал обрывок — файл, который потом честно считался «повреждённым».
+            string temp = TempPathNear(_path);
+            try
+            {
+                File.WriteAllText(temp, updated.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
+                File.Move(temp, _path, overwrite: true);
+            }
+            finally
+            {
+                // Обрыв записи не должен оставлять мусор рядом с настройками.
+                TryDelete(temp);
+            }
 
             return SharedFileWriteResult.Ok(backupPath, lockProblem);
         }
@@ -218,9 +244,7 @@ public sealed class SharedSettingsFileWriter
                 // Не разбирается как JSON — значит файл битый, уходим на переименование.
             }
 
-            string broken = QuarantinePath(DateTime.Now);
-            File.Move(_path, broken, overwrite: true);
-            return broken;
+            return MoveToQuarantine(DateTime.Now);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -228,8 +252,74 @@ public sealed class SharedSettingsFileWriter
         }
     }
 
-    private string QuarantinePath(DateTime moment) =>
-        _path + ".broken-" + moment.ToString("yyyy-MM-dd-HH-mm-ss", System.Globalization.CultureInfo.InvariantCulture);
+    /// <summary>
+    /// Путь временного файла рядом с целевым: переименование в пределах одной папки атомарно,
+    /// а уникальное имя не даёт двум писателям затереть друг друга.
+    /// </summary>
+    public static string TempPathNear(string path) =>
+        path + "." + Guid.NewGuid().ToString("N", System.Globalization.CultureInfo.InvariantCulture) + ".tmp";
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Не смогли убрать временный файл — это не повод объявлять запись неудачной:
+            // настройки уже на месте, а мусор уберёт следующая запись или человек.
+        }
+    }
+
+    /// <summary>
+    /// Убрать файл в сторону под свободным именем. Метка — до секунды, поэтому два повреждения в одну
+    /// секунду раньше попадали в одно и то же имя, а переименование с перезаписью стирало первую копию:
+    /// разбирать было уже нечего. Теперь имя занимается без перезаписи, а занятое — пропускается.
+    /// </summary>
+    private string MoveToQuarantine(DateTime moment)
+    {
+        string basePath = _path + ".broken-" + moment.ToString("yyyy-MM-dd-HH-mm-ss", System.Globalization.CultureInfo.InvariantCulture);
+
+        for (int attempt = 1; attempt <= 100; attempt++)
+        {
+            string candidate = attempt == 1
+                ? basePath
+                : basePath + "-" + attempt.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+            if (File.Exists(candidate))
+            {
+                continue;
+            }
+
+            try
+            {
+                File.Move(_path, candidate, overwrite: false);
+                return candidate;
+            }
+            catch (IOException) when (File.Exists(candidate))
+            {
+                // Имя заняли между проверкой и переименованием — берём следующее, а не затираем чужое.
+            }
+        }
+
+        throw new IOException(
+            $"не удалось отложить повреждённый файл настроек: рядом с «{_path}» не нашлось свободного имени");
+    }
+
+    /// <summary>Как назвать по-русски то, что лежит в файле вместо настроек.</summary>
+    private static string DescribeJsonKind(JsonNode? node) => node switch
+    {
+        JsonArray => "список",
+        JsonValue value when value.GetValueKind() == System.Text.Json.JsonValueKind.String => "строка",
+        JsonValue value when value.GetValueKind() == System.Text.Json.JsonValueKind.Number => "число",
+        JsonValue value when value.GetValueKind() is System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False => "признак да/нет",
+        null => "пустое значение",
+        _ => "не объект настроек",
+    };
 
     /// <summary>
     /// Блокировка общего файла. Мьютекс создаётся заново на каждую операцию и переиспользуется

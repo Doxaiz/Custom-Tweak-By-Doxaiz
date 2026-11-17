@@ -22,7 +22,7 @@ public class ServiceDispatcherTests
     [Fact]
     public async Task Ping_отвечает_и_возвращает_тот_же_номер_запроса()
     {
-        EngineResponse response = await Dispatcher().HandleJsonAsync("""{"id":"42","command":"ping"}""");
+        EngineResponse response = await Dispatcher().HandleJsonAsync("""{"id":"42","command":"ping"}""", clientIsAdministrator: true);
 
         Assert.True(response.Ok);
         Assert.Equal("42", response.Id);
@@ -32,7 +32,7 @@ public class ServiceDispatcherTests
     [Fact]
     public async Task Capabilities_отдаёт_описание_команд_в_данных()
     {
-        EngineResponse response = await Dispatcher().HandleJsonAsync("""{"id":"1","command":"capabilities"}""");
+        EngineResponse response = await Dispatcher().HandleJsonAsync("""{"id":"1","command":"capabilities"}""", clientIsAdministrator: true);
 
         Assert.True(response.Ok);
         Assert.NotNull(response.DataJson);
@@ -45,8 +45,8 @@ public class ServiceDispatcherTests
         var ops = new FakeEngineOperations { IsElevationAvailable = false };
         var dispatcher = Dispatcher(ops);
 
-        EngineResponse status = await dispatcher.HandleJsonAsync("""{"id":"1","command":"status"}""");
-        EngineResponse journal = await dispatcher.HandleJsonAsync("""{"id":"2","command":"journal-tail"}""");
+        EngineResponse status = await dispatcher.HandleJsonAsync("""{"id":"1","command":"status"}""", clientIsAdministrator: true);
+        EngineResponse journal = await dispatcher.HandleJsonAsync("""{"id":"2","command":"journal-tail"}""", clientIsAdministrator: true);
 
         Assert.True(status.Ok);
         Assert.True(journal.Ok);
@@ -59,7 +59,7 @@ public class ServiceDispatcherTests
         var ops = new FakeEngineOperations { IsElevationAvailable = false };
 
         EngineResponse response = await Dispatcher(ops)
-            .HandleJsonAsync("""{"id":"12","command":"system-state"}""");
+            .HandleJsonAsync("""{"id":"12","command":"system-state"}""", clientIsAdministrator: true);
 
         Assert.True(response.Ok);
         Assert.True(ops.ReadSystemStateCalled);
@@ -75,7 +75,7 @@ public class ServiceDispatcherTests
         var ops = new FakeEngineOperations { IsElevationAvailable = false };
 
         EngineResponse response = await Dispatcher(ops)
-            .HandleJsonAsync("""{"id":"1","command":"apply-preset","args":{"preset":"low-latency"}}""");
+            .HandleJsonAsync("""{"id":"1","command":"apply-preset","args":{"preset":"low-latency"}}""", clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Contains("администратора", response.MessageRu);
@@ -89,8 +89,8 @@ public class ServiceDispatcherTests
         var ops = new FakeEngineOperations { IsElevationAvailable = false };
         var dispatcher = Dispatcher(ops);
 
-        EngineResponse stop = await dispatcher.HandleJsonAsync("""{"id":"1","command":"realtime-stop"}""");
-        EngineResponse start = await dispatcher.HandleJsonAsync("""{"id":"2","command":"realtime-start"}""");
+        EngineResponse stop = await dispatcher.HandleJsonAsync("""{"id":"1","command":"realtime-stop"}""", clientIsAdministrator: true);
+        EngineResponse start = await dispatcher.HandleJsonAsync("""{"id":"2","command":"realtime-start"}""", clientIsAdministrator: true);
 
         Assert.True(stop.Ok);
         Assert.False(start.Ok);
@@ -102,7 +102,7 @@ public class ServiceDispatcherTests
     [Fact]
     public async Task Пресет_без_аргумента_отклоняется_с_примером()
     {
-        EngineResponse response = await Dispatcher().HandleJsonAsync("""{"id":"1","command":"apply-preset"}""");
+        EngineResponse response = await Dispatcher().HandleJsonAsync("""{"id":"1","command":"apply-preset"}""", clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Contains("preset", response.MessageRu);
@@ -113,7 +113,7 @@ public class ServiceDispatcherTests
     public async Task Неизвестный_пресет_отклоняется_со_списком_доступных()
     {
         EngineResponse response = await Dispatcher()
-            .HandleJsonAsync("""{"id":"1","command":"apply-preset","args":{"preset":"турбо"}}""");
+            .HandleJsonAsync("""{"id":"1","command":"apply-preset","args":{"preset":"турбо"}}""", clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Contains("турбо", response.MessageRu);
@@ -128,9 +128,9 @@ public class ServiceDispatcherTests
         var dispatcher = Dispatcher();
 
         EngineResponse rollback = await dispatcher
-            .HandleJsonAsync("""{"id":"1","command":"apply-preset","args":{"preset":"from-snapshot"}}""");
+            .HandleJsonAsync("""{"id":"1","command":"apply-preset","args":{"preset":"from-snapshot"}}""", clientIsAdministrator: true);
         EngineResponse custom = await dispatcher
-            .HandleJsonAsync("""{"id":"2","command":"apply-preset","args":{"preset":"custom"}}""");
+            .HandleJsonAsync("""{"id":"2","command":"apply-preset","args":{"preset":"custom"}}""", clientIsAdministrator: true);
 
         Assert.False(rollback.Ok);
         Assert.Contains("rollback", rollback.MessageRu);
@@ -144,7 +144,7 @@ public class ServiceDispatcherTests
         var ops = new FakeEngineOperations();
 
         EngineResponse response = await Dispatcher(ops)
-            .HandleJsonAsync("""{"id":"1","command":"apply-preset","args":{"preset":"fps","restorePoint":"true"}}""");
+            .HandleJsonAsync("""{"id":"1","command":"apply-preset","args":{"preset":"fps","restorePoint":"true"}}""", clientIsAdministrator: true);
 
         Assert.True(response.Ok);
         (TweakProfilePreset preset, bool restorePoint) = Assert.Single(ops.AppliedPresets);
@@ -158,7 +158,7 @@ public class ServiceDispatcherTests
         var ops = new FakeEngineOperations();
 
         await Dispatcher(ops).HandleJsonAsync(
-            """{"id":"1","command":"apply-preset","args":{"preset":"low-latency","restorePoint":"false"}}""");
+            """{"id":"1","command":"apply-preset","args":{"preset":"low-latency","restorePoint":"false"}}""", clientIsAdministrator: true);
 
         Assert.False(Assert.Single(ops.AppliedPresets).RestorePoint);
     }
@@ -171,7 +171,7 @@ public class ServiceDispatcherTests
         var ops = new FakeEngineOperations();
 
         EngineResponse response = await Dispatcher(ops).HandleJsonAsync(
-            """{"id":"1","command":"apply-tweaks","args":{"tweaks":"TCP_NO_DELAY, TCP_NO_DELAY, GAME_MODE_ON"}}""");
+            """{"id":"1","command":"apply-tweaks","args":{"tweaks":"TCP_NO_DELAY, TCP_NO_DELAY, GAME_MODE_ON"}}""", clientIsAdministrator: true);
 
         Assert.True(response.Ok);
         Assert.Equal(["TCP_NO_DELAY", "GAME_MODE_ON"], Assert.Single(ops.AppliedTweakSets));
@@ -183,7 +183,7 @@ public class ServiceDispatcherTests
         var ops = new FakeEngineOperations();
 
         EngineResponse response = await Dispatcher(ops)
-            .HandleJsonAsync("""{"id":"1","command":"apply-tweaks","args":{"tweaks":" , , "}}""");
+            .HandleJsonAsync("""{"id":"1","command":"apply-tweaks","args":{"tweaks":" , , "}}""", clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Contains("ни одного твика", response.MessageRu);
@@ -197,7 +197,7 @@ public class ServiceDispatcherTests
 
         // Склейка, а не шаблон: в JSON слишком много фигурных скобок, и интерполяция в них путается.
         string json = "{\"id\":\"1\",\"command\":\"apply-tweaks\",\"args\":{\"tweaks\":\"" + many + "\"}}";
-        EngineResponse response = await Dispatcher().HandleJsonAsync(json);
+        EngineResponse response = await Dispatcher().HandleJsonAsync(json, clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Contains((EngineDispatcher.MaxTweaksPerRequest + 5).ToString(), response.MessageRu);
@@ -210,7 +210,7 @@ public class ServiceDispatcherTests
     {
         var ops = new FakeEngineOperations();
 
-        EngineResponse response = await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"rollback"}""");
+        EngineResponse response = await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"rollback"}""", clientIsAdministrator: true);
 
         Assert.True(response.Ok);
         Assert.True(ops.RollbackCalled);
@@ -222,7 +222,7 @@ public class ServiceDispatcherTests
     {
         var ops = new FakeEngineOperations();
 
-        await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"rollback","args":{"snapshot":"snap-007"}}""");
+        await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"rollback","args":{"snapshot":"snap-007"}}""", clientIsAdministrator: true);
 
         Assert.Equal("snap-007", ops.LastSnapshotId);
     }
@@ -231,7 +231,7 @@ public class ServiceDispatcherTests
     public async Task Предел_записей_журнала_не_превышается_и_объясняется()
     {
         EngineResponse response = await Dispatcher()
-            .HandleJsonAsync("""{"id":"1","command":"journal-tail","args":{"limit":"5000"}}""");
+            .HandleJsonAsync("""{"id":"1","command":"journal-tail","args":{"limit":"5000"}}""", clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Contains("5000", response.MessageRu);
@@ -243,7 +243,7 @@ public class ServiceDispatcherTests
     {
         var ops = new FakeEngineOperations();
 
-        await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"journal-tail","args":{"limit":"50"}}""");
+        await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"journal-tail","args":{"limit":"50"}}""", clientIsAdministrator: true);
 
         Assert.Equal(50, ops.LastJournalLimit);
     }
@@ -252,7 +252,7 @@ public class ServiceDispatcherTests
     public async Task Неизвестный_профиль_потребления_отклоняется_со_списком()
     {
         EngineResponse response = await Dispatcher()
-            .HandleJsonAsync("""{"id":"1","command":"perf-profile","args":{"profile":"турбо"}}""");
+            .HandleJsonAsync("""{"id":"1","command":"perf-profile","args":{"profile":"турбо"}}""", clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Contains("economy", response.MessageRu);
@@ -266,7 +266,7 @@ public class ServiceDispatcherTests
         var ops = new FakeEngineOperations();
 
         EngineResponse response = await Dispatcher(ops)
-            .HandleJsonAsync("""{"id":"1","command":"perf-profile","args":{"profile":"economy"}}""");
+            .HandleJsonAsync("""{"id":"1","command":"perf-profile","args":{"profile":"economy"}}""", clientIsAdministrator: true);
 
         Assert.True(response.Ok);
         Assert.Equal(PerfProfile.Economy, ops.LastProfile);
@@ -279,7 +279,7 @@ public class ServiceDispatcherTests
     {
         var ops = new FakeEngineOperations { ThrowOnStatus = new InvalidOperationException("реестр недоступен") };
 
-        EngineResponse response = await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"status"}""");
+        EngineResponse response = await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"status"}""", clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Contains("реестр недоступен", response.MessageRu);
@@ -291,7 +291,7 @@ public class ServiceDispatcherTests
     {
         var ops = new FakeEngineOperations { ThrowOnStatus = new OperationCanceledException() };
 
-        EngineResponse response = await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"status"}""");
+        EngineResponse response = await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"status"}""", clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Contains("прервана", response.MessageRu);
@@ -301,7 +301,7 @@ public class ServiceDispatcherTests
     [Fact]
     public async Task Битый_запрос_получает_ответ_с_пустым_номером()
     {
-        EngineResponse response = await Dispatcher().HandleJsonAsync("не json");
+        EngineResponse response = await Dispatcher().HandleJsonAsync("не json", clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Equal(string.Empty, response.Id);
@@ -314,7 +314,7 @@ public class ServiceDispatcherTests
 
         foreach (string id in new[] { "a", "b-2", "003" })
         {
-            EngineResponse response = await dispatcher.HandleJsonAsync($$"""{"id":"{{id}}","command":"ping"}""");
+            EngineResponse response = await dispatcher.HandleJsonAsync($$"""{"id":"{{id}}","command":"ping"}""", clientIsAdministrator: true);
             Assert.Equal(id, response.Id);
         }
     }
@@ -324,7 +324,7 @@ public class ServiceDispatcherTests
     {
         var ops = new FakeEngineOperations { StatusDataJson = """{"optimizing":false,"probes":360}""" };
 
-        EngineResponse response = await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"status"}""");
+        EngineResponse response = await Dispatcher(ops).HandleJsonAsync("""{"id":"1","command":"status"}""", clientIsAdministrator: true);
 
         Assert.Equal("""{"optimizing":false,"probes":360}""", response.DataJson);
     }

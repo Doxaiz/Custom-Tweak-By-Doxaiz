@@ -1,3 +1,4 @@
+using System.IO;
 using PingForge.Orchestration.Realtime;
 
 namespace PingForge.App.ViewModels;
@@ -76,6 +77,14 @@ public sealed class OnboardingViewModel : ObservableObject
         ApplyCommand = new AsyncRelayCommand(ApplyAsync, () => !IsApplying);
         LaterCommand = new RelayCommand(CloseWithoutApplying);
 
+        // Мастер не держит окно в заложниках: если настройки не сохранились, он говорит об этом
+        // и даёт закрыть себя. Иначе человек без прав на папку настроек не смог бы работать вовсе.
+        DismissProblemCommand = new RelayCommand(() =>
+        {
+            ResultRu = string.Empty;
+            IsVisible = false;
+        });
+
         AppSettings saved = _store.Load();
         IsVisible = !saved.SetupCompleted;
     }
@@ -90,6 +99,9 @@ public sealed class OnboardingViewModel : ObservableObject
 
     /// <summary>«Позже»: закрыть мастер, ничего не меняя. Выбор тоже запоминается — второй раз не спросим.</summary>
     public RelayCommand LaterCommand { get; }
+
+    /// <summary>«Понятно»: закрыть мастер после сообщения (например, когда настройки не записались).</summary>
+    public RelayCommand DismissProblemCommand { get; }
 
     /// <summary>Показывать ли мастер сейчас.</summary>
     public bool IsVisible
@@ -142,8 +154,17 @@ public sealed class OnboardingViewModel : ObservableObject
     public string ResultRu
     {
         get => _resultRu;
-        private set => Set(ref _resultRu, value);
+        private set
+        {
+            if (Set(ref _resultRu, value))
+            {
+                OnPropertyChanged(nameof(HasResultRu));
+            }
+        }
     }
+
+    /// <summary>Есть что сказать человеку прямо в мастере (в том числе «настройки не сохранились»).</summary>
+    public bool HasResultRu => _resultRu.Length > 0;
 
     public bool IsApplying
     {
@@ -368,8 +389,12 @@ public sealed class OnboardingViewModel : ObservableObject
                 ? "Профиль сохранён. Настройки Windows не менялись."
                 : _tweaks.StatusRu;
 
-            MarkCompleted();
-            IsVisible = false;
+            // Мастер закрывается, только если выбор действительно запомнен. Иначе он остаётся и
+            // показывает причину: иначе человек не узнал бы, что мастер спросит его снова.
+            if (MarkCompleted())
+            {
+                IsVisible = false;
+            }
         }
         finally
         {
@@ -380,8 +405,10 @@ public sealed class OnboardingViewModel : ObservableObject
     /// <summary>Закрыть без изменений. Второй раз мастер не появится: выбор запоминается.</summary>
     public void CloseWithoutApplying()
     {
-        MarkCompleted();
-        IsVisible = false;
+        if (MarkCompleted())
+        {
+            IsVisible = false;
+        }
     }
 
     /// <summary>Открыть мастер снова — кнопка в «Настройках».</summary>
@@ -393,10 +420,26 @@ public sealed class OnboardingViewModel : ObservableObject
         IsVisible = true;
     }
 
-    private void MarkCompleted()
+    /// <summary>Запомнить пройденный мастер. <c>false</c> — записать не удалось, и это сказано человеку.</summary>
+    private bool MarkCompleted()
     {
         AppSettings current = _store.Load();
         string answers = $"{Purpose?.ToString() ?? "нет"};{Strength?.ToString() ?? "нет"};{Problem?.ToString() ?? "нет"}";
-        _store.Save(current with { SetupCompleted = true, SetupAnswersRu = answers });
+
+        try
+        {
+            _store.Save(current with { SetupCompleted = true, SetupAnswersRu = answers });
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            // Без прав на папку настроек (обычный запуск без администратора) запись не пройдёт.
+            // Раньше это исключение улетало из команды кнопки и закрывало программу отчётом о сбое:
+            // первый же запуск выглядел как падение. Теперь мастер закрывается и говорит правду.
+            ResultRu = $"Выбор не сохранился: {ex.Message}. Это права на папку настроек, а не сбой программы: " +
+                       "мастер появится снова при следующем запуске, а применённое останется в журнале. " +
+                       "Нажмите «Понятно», чтобы продолжить работу.";
+            return false;
+        }
     }
 }

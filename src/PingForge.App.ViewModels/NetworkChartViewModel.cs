@@ -289,6 +289,7 @@ public sealed class NetworkChartViewModel : ObservableObject
     {
         var measuredValues = lines
             .SelectMany(pair => pair.Series.Points.Where(p => p.IsMeasured).Select(p => p.Value!.Value))
+            .Where(double.IsFinite)
             .ToList();
 
         if (measuredValues.Count == 0)
@@ -326,41 +327,56 @@ public sealed class NetworkChartViewModel : ObservableObject
         double plotHeight = CanvasHeight - TopPad - BottomPad;
         double span = windowEnd.Ticks - windowStart.Ticks;
 
+        // Положение по X. Пустое окно (длиной в ноль) раньше давало деление на ноль: в разметку
+        // уезжало «Infinity,123.4», и линия не рисовалась вовсе. Точки за окном прижимаются к краю,
+        // а не уходят за панель.
+        double XOf(DateTimeOffset at) => span > 0
+            ? LeftPad + (Math.Clamp((at.Ticks - windowStart.Ticks) / span, 0.0, 1.0) * plotWidth)
+            : LeftPad + plotWidth;
+
+        // Положение по Y в тех же пределах: значение вне шкалы не рисуется за панелью.
+        double YOf(double value) =>
+            TopPad + ((1 - Math.Clamp((value - min) / (max - min), 0.0, 1.0)) * plotHeight);
+
         var segments = new List<ChartLineSegment>();
         foreach ((int lineKind, ChartSeries series) in lines)
         {
-            var current = new List<string>();
+            var current = new List<(double X, double Y)>();
+
+            void Flush()
+            {
+                if (current.Count == 0)
+                {
+                    return;
+                }
+
+                if (current.Count == 1)
+                {
+                    // Одиночная точка — отрезок длиной в полпикселя, чтобы её было видно.
+                    // Раньше координата пересчитывалась обратным разбором уже готовой строки.
+                    (double x, double y) = current[0];
+                    current.Add((Math.Min(x + 0.6, LeftPad + plotWidth), y));
+                }
+
+                segments.Add(new ChartLineSegment(
+                    string.Join(' ', current.Select(point => $"{Format(point.X)},{Format(point.Y)}")),
+                    lineKind));
+                current = [];
+            }
+
             foreach (ChartPoint point in series.Points)
             {
-                if (!point.IsMeasured)
+                // Разрыв: точка без измерения (или с нечисловым значением) не рисуется и в ноль не превращается.
+                if (!point.IsMeasured || point.Value is not { } value || !double.IsFinite(value))
                 {
-                    // Разрыв: точка без измерения не рисуется и в ноль не превращается.
-                    if (current.Count > 0)
-                    {
-                        segments.Add(new ChartLineSegment(string.Join(' ', current), lineKind));
-                        current = [];
-                    }
-
+                    Flush();
                     continue;
                 }
 
-                double x = LeftPad + (point.At.Ticks - windowStart.Ticks) / span * plotWidth;
-                double y = TopPad + (1 - (point.Value!.Value - min) / (max - min)) * plotHeight;
-                current.Add($"{Format(x)},{Format(y)}");
+                current.Add((XOf(point.At), YOf(value)));
             }
 
-            if (current.Count > 0)
-            {
-                // Одиночная точка — отрезок длиной в полпикселя, чтобы её было видно.
-                if (current.Count == 1)
-                {
-                    string single = current[0];
-                    string[] parts = single.Split(',');
-                    current.Add($"{Format(double.Parse(parts[0], CultureInfo.InvariantCulture) + 0.6)},{parts[1]}");
-                }
-
-                segments.Add(new ChartLineSegment(string.Join(' ', current), lineKind));
-            }
+            Flush();
         }
 
         // Три подписи по вертикали: верх, середина, низ — значения шкалы, а не «просто линии».

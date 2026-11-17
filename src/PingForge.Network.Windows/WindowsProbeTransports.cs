@@ -177,20 +177,44 @@ public sealed class UdpDnsQueryTransport : IDnsQueryTransport
             await client.SendAsync(query.AsMemory(), ct).ConfigureAwait(false);
 
             Task<UdpReceiveResult> receive = client.ReceiveAsync(ct).AsTask();
-            Task completed = await Task.WhenAny(receive, Task.Delay(timeout, ct)).ConfigureAwait(false);
-            if (completed != receive || !receive.IsCompletedSuccessfully)
-            {
-                return null;   // таймаут или отмена — это «нет ответа», а не «пустой ответ»
-            }
 
-            UdpReceiveResult result = receive.Result;
-            return ParseResponse(result.Buffer, result.RemoteEndPoint);
+            // Предел ожидания — отменой ожидания, а не гонкой с отдельной задержкой. Раньше здесь был
+            // Task.WhenAny(receive, Task.Delay(...)): при таймауте чтение оставалось без наблюдателя
+            // (клиент закрывался, и его исключение всплывало позже как ненаблюдаемое), а сама задержка
+            // не отменялась и продолжала тикать после ответа.
+            using var waitForAnswer = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            waitForAnswer.CancelAfter(timeout);
+
+            try
+            {
+                UdpReceiveResult result = await receive.WaitAsync(waitForAnswer.Token).ConfigureAwait(false);
+                return ParseResponse(result.Buffer, result.RemoteEndPoint);
+            }
+            catch (OperationCanceledException)
+            {
+                // Нет ответа за отведённое время (или отмена) — «нет ответа», а не «пустой ответ».
+                // Незавершённое чтение гасим: клиент сейчас закроется, а его исключение не должно
+                // всплывать в случайном месте.
+                Observe(receive);
+                return null;
+            }
         }
         catch (Exception ex) when (ex is SocketException or OperationCanceledException or ObjectDisposedException)
         {
             return null;
         }
     }
+
+    /// <summary>
+    /// Посмотреть на брошенную задачу и забрать её исключение. Иначе сбой чтения после таймаута
+    /// всплывает при сборке мусора — в месте, которое к DNS-запросу отношения не имеет.
+    /// </summary>
+    private static void Observe(Task task) =>
+        _ = task.ContinueWith(
+            static finished => _ = finished.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     /// <summary>Минимальный DNS-запрос: заголовок (RD=1, QDCOUNT=1) + вопрос A/IN.</summary>
     private static byte[] BuildQuery(string domain, ushort transactionId)

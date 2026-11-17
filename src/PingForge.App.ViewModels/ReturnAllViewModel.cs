@@ -49,7 +49,13 @@ public sealed class ReturnAllViewModel : ObservableObject
                         OnPropertyChanged(nameof(LastSteps));
                     }
                 }
-            } catch { }
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                // Сам возврат состоялся, но список шагов пришёл нечитаемым. Раньше это глоталось,
+                // и человек видел «готово» без шагов, считая, что шагов не было.
+                StatusRu = $"{StatusRu} Список шагов прочитать не удалось: {ex.Message}".Trim();
+            }
         }
         catch (EngineUnavailableException ex) { StatusRu = $"Не удалось, служба не отвечает: {ex.Message}"; }
         finally { IsRunning = false; }
@@ -151,7 +157,12 @@ public sealed class StorageInfoViewModel : ObservableObject
                     if (root.TryGetProperty("latestBackupName", out var lb)) _latestBackupName = lb.ValueKind == System.Text.Json.JsonValueKind.String ? lb.GetString() : null;
                     if (root.TryGetProperty("corruptFiles", out var cf) && cf.ValueKind == System.Text.Json.JsonValueKind.Number) _corruptFiles = cf.GetInt32();
                     OnPropertyChanged(nameof(SizeRu), nameof(SummaryRu), nameof(HealthRu), nameof(BackupsRu), nameof(CorruptRu), nameof(CanRestore));
-                } catch { }
+                }
+                catch (System.Text.Json.JsonException ex)
+                {
+                    // Числа о базе пришли нечитаемыми: показывать прежние как свежие нельзя.
+                    StatusRu = $"{StatusRu} Данные о базе прочитать не удалось: {ex.Message}".Trim();
+                }
             }
         }
         catch (EngineUnavailableException ex) { StatusRu = ex.Message; }

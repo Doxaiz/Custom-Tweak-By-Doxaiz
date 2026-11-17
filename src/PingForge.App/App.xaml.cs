@@ -271,20 +271,37 @@ public partial class App : Application
     /// </summary>
     private void HideSplash()
     {
-        if (_splash is null)
+        SplashWindow? splash = _splash;
+        if (splash is null)
         {
             return;
         }
 
+        TimeSpan shown = DateTime.UtcNow - _splashShownUtc;
+        TimeSpan remaining = TimeSpan.FromMilliseconds(700) - shown;
+        if (remaining <= TimeSpan.Zero)
+        {
+            CloseSplash(splash);
+            return;
+        }
+
+        // Не блокируем поток интерфейса. Раньше здесь стоял Thread.Sleep до 700 мс: окно уже
+        // показано, а программа в это время не отвечала — на медленной машине это выглядело
+        // как «окно зависло при запуске». Заставка закрывается по таймеру сама.
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = remaining };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            CloseSplash(splash);
+        };
+        timer.Start();
+    }
+
+    private void CloseSplash(SplashWindow splash)
+    {
         try
         {
-            TimeSpan shown = DateTime.UtcNow - _splashShownUtc;
-            if (shown < TimeSpan.FromMilliseconds(700))
-            {
-                Thread.Sleep(TimeSpan.FromMilliseconds(700) - shown);
-            }
-
-            _splash.Close();
+            splash.Close();
         }
         catch (Exception ex)
         {
@@ -292,7 +309,10 @@ public partial class App : Application
         }
         finally
         {
-            _splash = null;
+            if (ReferenceEquals(_splash, splash))
+            {
+                _splash = null;
+            }
         }
     }
 

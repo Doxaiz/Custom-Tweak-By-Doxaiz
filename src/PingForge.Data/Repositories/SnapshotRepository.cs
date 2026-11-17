@@ -147,18 +147,19 @@ public sealed class SnapshotRepository
 
     public string DatabasePathViaInitializer => _database.DatabasePath;
 
-    public async Task<long> GetDatabaseFileSizeAsync(CancellationToken ct = default)
+    /// <summary>
+    /// Размер файла базы. Если файл не читается — исключение, а не 0: ноль означает пустую базу,
+    /// и «не смогли прочитать» не должно выглядеть как «база пуста». Вызывающий решает, что сказать.
+    /// </summary>
+    public Task<long> GetDatabaseFileSizeAsync(CancellationToken ct = default)
     {
-        try
+        string? path = _database.DatabasePath;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
         {
-            string? path = _database.DatabasePath;
-            if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
-            {
-                return new FileInfo(path).Length;
-            }
+            return Task.FromResult(0L);
         }
-        catch { }
-        return 0;
+
+        return Task.FromResult(new FileInfo(path).Length);
     }
 
     /// <summary>Снапшоты, по которым ещё не был выполнен полный откат — используются при старте службы.</summary>
