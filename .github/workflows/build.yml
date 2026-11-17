@@ -235,14 +235,21 @@ jobs:
                    '  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }',
                    '  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);',
                    '  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);',
+                   '  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);',
+                   '  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();',
                    '}'
           Add-Type -TypeDefinition ($pfWin -join [Environment]::NewLine)
 
+          # DPI: без этого окно и его прямоугольник считаются в «уменьшенных» пикселях,
+          # и на экране с масштабом снимок выходит обрезанным по правому краю.
+          [PfWin]::SetProcessDPIAware() | Out-Null
           [PfWin]::SetForegroundWindow($handle) | Out-Null
           Start-Sleep -Milliseconds 800
 
           # Снимок — только окно программы, а не весь рабочий стол: это картинка продукта,
           # и в ней не должно быть чужих окон сборочной машины.
+          # Снимаем PrintWindow, а не с экрана: окно 1180×820 бывает больше экрана раннера,
+          # и тогда CopyFromScreen терял правый край вместе с полосой прокрутки.
           $rect = New-Object PfWin+RECT
           [PfWin]::GetWindowRect($handle, [ref]$rect) | Out-Null
           $width = $rect.Right - $rect.Left
@@ -251,7 +258,14 @@ jobs:
 
           $bitmap = New-Object System.Drawing.Bitmap $width, $height
           $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-          $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+          $graphics.Clear([System.Drawing.Color]::FromArgb(7, 11, 20))
+          $hdc = $graphics.GetHdc()
+          $printed = [PfWin]::PrintWindow($handle, $hdc, 2)   # 2 = PW_RENDERFULLCONTENT
+          $graphics.ReleaseHdc($hdc)
+          if (-not $printed) {
+            Write-Host '  PrintWindow не смог — снимаю с экрана'
+            $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+          }
           $shot = Join-Path (Get-Location) 'dist\app-window.png'
           $bitmap.Save($shot, [System.Drawing.Imaging.ImageFormat]::Png)
           $graphics.Dispose(); $bitmap.Dispose()
