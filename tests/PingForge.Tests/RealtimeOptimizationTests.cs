@@ -29,6 +29,23 @@ public sealed class RealtimeOptimizationTests
         // Таблица соединений читается один раз: объяснение приходит от того же прохода.
         Assert.Equal(1, watcher.Calls);
     }
+    [Fact]
+    public async Task Поток_не_измеряется_отказ_называет_игру_и_адрес()
+    {
+        // Игру нашли, а замер не вышел (меню, фильтрация ICMP, чужой путь). Отказ обязан назвать игру
+        // и адрес: иначе человек не понимает, ту ли игру вообще нашли, и «не измеряется» нечем проверить.
+        var watcher = new StubWatcher(Fortnite());
+        var measurements = new ScriptedMeasurements { Fallback = Unmeasurable() };
+        var optimizer = new RealtimeOptimizer(watcher, measurements, new RecordingRunner());
+
+        RealtimeSnapshot snapshot = await optimizer.StartAsync();
+
+        Assert.Equal(RealtimeOptimizationState.Failed, snapshot.State);
+        Assert.Contains("Fortnite", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("3.4.5.6:9000", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("не измеряется", snapshot.StatusRu, StringComparison.Ordinal);
+    }
+
     private sealed class StubWatcher : IGameFlowWatcher
     {
         public StubWatcher(params GameFlowInfo[] flows) => Flows = flows;
@@ -127,6 +144,9 @@ public sealed class RealtimeOptimizationTests
 
     private static PathMeasurement Measurable(double rtt, double jitter = 2, double loss = 0) =>
         new(true, rtt, jitter, loss, 12, "Замер живого потока игры (SIO_TCP_INFO).");
+
+    private static PathMeasurement Unmeasurable() =>
+        PathMeasurement.Unmeasurable("Ни одна проба не вернулась: узел скрыт за фильтрацией.");
 
     private static GameFlowInfo Fortnite(AntiCheatStatus antiCheat = AntiCheatStatus.VerifiedSafe) =>
         new(4242, "FortniteClient-Win64-Shipping", "Fortnite", "3.4.5.6", 9000, "UDP", antiCheat);

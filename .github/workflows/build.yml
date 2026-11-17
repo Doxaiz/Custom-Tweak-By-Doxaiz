@@ -545,6 +545,47 @@ jobs:
             exit 1
           }
 
+      # G1: распознавание игрового потока на живой Windows — Minecraft (Java) и Fortnite.
+      # Настоящих игр на раннере нет (лицензия, аккаунт, GPU), поэтому проверяется живой сетевой поток
+      # процесса с именем клиента игры: служба видит то же, что у человека с запущенной игрой.
+      - name: "G1 - game flow detection: Minecraft/Fortnite names (live)"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ann = 'file=tools/games-live-checks.ps1,line=1'
+          try {
+            $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+            $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
+            $smoke = "${{ runner.temp }}/art/bin/PingForge.EngineSmoke/release/PingForge.EngineSmoke.exe"
+            if (-not (Test-Path $setup)) { throw "no setup file: $setup" }
+            if (-not (Test-Path $smoke)) { throw "no smoke file: $smoke" }
+
+            $svc = Get-Service -Name PingForge -ErrorAction SilentlyContinue
+            if ($null -eq $svc) {
+              $install = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+              if ($install.ExitCode -ne 0) { throw "setup exit $($install.ExitCode)" }
+              (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(120))
+              Start-Sleep -Seconds 4
+            } elseif ($svc.Status -ne 'Running') {
+              Start-Service PingForge
+              (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+            }
+
+            & tools\games-live-checks.ps1 -SmokePath $smoke
+            $code = $LASTEXITCODE
+            Write-Host "::notice $ann::games-live exit=$code"
+
+            $uninstaller = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\Uninstall.exe'
+            if (Test-Path $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait | Out-Null }
+
+            if ($code -ne 0) { throw "games live checks exit $code" }
+          } catch {
+            Write-Host "::error $ann::games-live failed: $($_.Exception.Message -replace '%','%25')"
+            $uninstaller = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\Uninstall.exe'
+            if (Test-Path $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait | Out-Null }
+            exit 1
+          }
+
       # Задача U: повреждённый файл базы не должен ронять службу в цикле рестартов.
       # Шаг сам ставит установщик, портит заголовок базы, проверяет запуск и убирает за собой.
       - name: "U - corrupted database: service starts (live)"
