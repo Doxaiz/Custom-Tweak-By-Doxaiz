@@ -1,4 +1,5 @@
 using PingForge.Core.Abstractions;
+using PingForge.Core.Security;
 using PingForge.Core.Diagnostics;
 using PingForge.Core.Tweaks;
 using PingForge.Data;
@@ -107,6 +108,13 @@ public static class ServiceProgram
         // место. Копия снимается средствами SQLite, а не копированием файла.
         var database = new SqliteDatabaseInitializer(Path.Combine(DataDirectory, "pingforge.db"));
         var backups = new DatabaseBackupService(database);
+
+        // ── Кому принадлежит каталог данных ────────────────────────────────────────────────────
+        // Откат снапшота пишет прежние значения в реестр от имени системы, а снапшоты лежат в базе
+        // в этом каталоге. Значит подмена файла базы — это подмена того, что система применит.
+        // Права не переписываем (чужой ACL молча ломать нельзя), но и молчать не имеем права.
+        DataTrustReport directoryTrust = WindowsDataDirectoryTrust.InspectDirectory(DataDirectory);
+        Log(directoryTrust.MessageRu);
         DatabaseStartupReport databaseReport = await backups.PrepareForStartAsync(ct: ct).ConfigureAwait(false);
         Log(databaseReport.DescribeRu());
 
@@ -127,6 +135,13 @@ public static class ServiceProgram
                 ex.Message);
             Log(databaseReport.DescribeRu());
             await database.EnsureInitializedAsync(ct).ConfigureAwait(false);
+        }
+
+        // Права у файла свои: каталог может быть закрыт, а база — открыта на запись всем.
+        DataTrustReport databaseTrust = WindowsDataDirectoryTrust.InspectFile(database.DatabasePath);
+        if (!databaseTrust.IsTrusted)
+        {
+            Log(databaseTrust.MessageRu);
         }
 
         var snapshotRepository = new SnapshotRepository(database);
