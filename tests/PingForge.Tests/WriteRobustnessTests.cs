@@ -56,6 +56,63 @@ public sealed class WriteRobustnessTests : IDisposable
     }
 
     [Fact]
+    public void Два_повреждения_подряд_не_затирают_первую_копию()
+    {
+        // Метка карантина — до секунды, а переименование было с перезаписью: второе повреждение в ту же
+        // секунду стирало первую копию, и разбирать причину потери настроек становилось нечем.
+        string path = PathIn("settings.json");
+        SharedSettingsFileWriter writer = IsolatedWriter(path, "quarantine");
+
+        File.WriteAllText(path, "{ первое повреждение");
+        SharedFileWriteResult first = writer.Update(root => root);
+
+        File.WriteAllText(path, "{ второе повреждение");
+        SharedFileWriteResult second = writer.Update(root => root);
+
+        Assert.True(first.Written, first.ProblemRu);
+        Assert.True(second.Written, second.ProblemRu);
+        Assert.NotEqual(first.BackupPathRu, second.BackupPathRu);
+        Assert.Equal("{ первое повреждение", File.ReadAllText(first.BackupPathRu));
+        Assert.Equal("{ второе повреждение", File.ReadAllText(second.BackupPathRu));
+    }
+
+    [Fact]
+    public void Список_вместо_настроек_откладывается_а_не_стирается_молча()
+    {
+        // Валидный JSON, но не объект («[1,2]», «5», «"текст"») раньше молча превращался в пустой
+        // объект: настройки исчезали без копии, без сообщения и без возможности разобраться.
+        string path = PathIn("settings.json");
+        SharedSettingsFileWriter writer = IsolatedWriter(path, "notobject");
+
+        File.WriteAllText(path, "[1,2]");
+        SharedFileWriteResult result = writer.Update(root =>
+        {
+            root["PerfProfile"] = "balanced";
+            return root;
+        });
+
+        Assert.True(result.Written, result.ProblemRu);
+        Assert.NotEqual(string.Empty, result.BackupPathRu);
+        Assert.Equal("[1,2]", File.ReadAllText(result.BackupPathRu));
+        Assert.Equal("balanced", JsonNode.Parse(File.ReadAllText(path))!["PerfProfile"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Список_вместо_настроек_не_перезаписывается_если_затирать_нельзя()
+    {
+        // Тот же случай, но запись профиля службой: чужой файл не трогаем вовсе и говорим почему.
+        string path = PathIn("settings.json");
+        SharedSettingsFileWriter writer = IsolatedWriter(path, "notobject-refuse");
+
+        File.WriteAllText(path, "5");
+        SharedFileWriteResult result = writer.Update(root => root, quarantineBroken: false);
+
+        Assert.False(result.Written);
+        Assert.Contains("не объект настроек", result.ProblemRu, StringComparison.Ordinal);
+        Assert.Equal("5", File.ReadAllText(path));
+    }
+
+    [Fact]
     public async Task Два_писателя_без_общей_блокировки_не_оставляют_обрывок()
     {
         // «Общей блокировки нет» — это не выдумка теста: так бывает, когда мьютекс создать не удалось,
@@ -102,10 +159,30 @@ public sealed class WriteRobustnessTests : IDisposable
         Exception? thrown = Record.Exception(() => setup.CloseWithoutApplying());
 
         Assert.Null(thrown);
-        Assert.False(setup.IsVisible);
         Assert.True(store.SaveAttempts > 0, "запись должна была состояться — иначе тест ничего не проверил");
         Assert.Contains("не сохранился", setup.ResultRu, StringComparison.Ordinal);
         Assert.Contains("права", setup.ResultRu, StringComparison.OrdinalIgnoreCase);
+        Assert.True(setup.HasResultRu);
+
+        // Мастер остаётся на экране с причиной (выбор не запомнен — спросим снова), но не держит окно:
+        // «Понятно» закрывает его, и человек продолжает работу.
+        Assert.True(setup.IsVisible);
+        setup.DismissProblemCommand.Execute(null);
+        Assert.False(setup.IsVisible);
+        Assert.False(setup.HasResultRu);
+    }
+
+    [Fact]
+    public void Мастер_закрывается_обычным_путём_когда_настройки_записались()
+    {
+        var store = new InMemorySettingsStore();
+        OnboardingViewModel setup = BuildSetup(store);
+
+        setup.CloseWithoutApplying();
+
+        Assert.False(setup.IsVisible);
+        Assert.True(store.Load().SetupCompleted);
+        Assert.False(setup.HasResultRu);
     }
 
     private static OnboardingViewModel BuildSetup(IAppSettingsStore store)
