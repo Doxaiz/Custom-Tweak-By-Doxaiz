@@ -278,6 +278,37 @@ public class OnboardingAndLauncherTests
     }
 
     [Fact]
+    public async Task Своя_игра_поверх_Java_заменяет_карточку_и_возвращается_при_удалении()
+    {
+        (GameLauncherViewModel launcher, _, _, _, _) = BuildLauncher();
+        string exe = Path.Combine(Path.GetTempPath(), "javaw.exe");
+        File.WriteAllBytes(exe, []);
+
+        try
+        {
+            int builtins = launcher.Cards.Count;
+            await launcher.AddCustomGameAsync(exe, "Мой сервер Minecraft");
+
+            Assert.Equal(builtins, launcher.Cards.Count); // замена карточки, а не вторая запись
+            GameCardViewModel card = launcher.Cards.Single(candidate => candidate.ProcessName == "javaw.exe");
+            Assert.True(card.IsCustom);
+            Assert.Equal("Мой сервер Minecraft", card.TitleRu);
+            Assert.Contains("заменила встроенную", launcher.StatusRu);
+
+            Assert.True(launcher.RemoveCustomGame(card));
+
+            GameCardViewModel restored = launcher.Cards.Single(candidate => candidate.ProcessName == "javaw.exe");
+            Assert.False(restored.IsCustom);
+            Assert.Equal("Minecraft (Java)", restored.TitleRu);
+            Assert.Equal(builtins, launcher.Cards.Count);
+        }
+        finally
+        {
+            File.Delete(exe);
+        }
+    }
+
+    [Fact]
     public async Task Открытие_игры_запускает_её_и_просит_движок_начать_оптимизацию()
     {
         (GameLauncherViewModel launcher, FakeProbe probe, FakeStarter starter, _, _) = BuildLauncher();

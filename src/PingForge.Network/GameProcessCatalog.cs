@@ -255,11 +255,12 @@ public sealed class GameProcessCatalog
     /// <summary>
     /// Каталог «встроенные + свои». Битые записи своих игр (пустое имя/название, дубли встроенных)
     /// пропускаются, а не ломают список: служба обязана работать со встроенными играми в любом случае.
+    /// Исключение — встроенная запись общего процесса (<see cref="KnownGame.RequiresPortMatch"/>): своя
+    /// игра её заменяет, иначе Minecraft на нестандартном порту не назвать игрой никак.
     /// </summary>
     public static GameProcessCatalog WithCustomGames(IEnumerable<CustomGameEntry>? customGames)
     {
         var games = new List<KnownGame>(DefaultGames);
-        var known = new HashSet<string>(DefaultGames.Select(game => Normalize(game.ProcessName)), StringComparer.OrdinalIgnoreCase);
 
         foreach (CustomGameEntry entry in customGames ?? [])
         {
@@ -269,12 +270,27 @@ public sealed class GameProcessCatalog
             }
 
             string processName = Normalize(entry.ProcessName);
-            if (!known.Add(processName) || IsIgnored(processName))
+            if (IsIgnored(processName))
             {
                 continue;
             }
 
-            games.Add(CustomGameValidation.ToKnownGame(new CustomGameEntry(processName, entry.TitleRu.Trim())));
+            KnownGame custom = CustomGameValidation.ToKnownGame(new CustomGameEntry(processName, entry.TitleRu.Trim()));
+            int existing = games.FindIndex(game => string.Equals(Normalize(game.ProcessName), processName, StringComparison.OrdinalIgnoreCase));
+
+            if (existing < 0)
+            {
+                games.Add(custom);
+                continue;
+            }
+
+            // Общий процесс (javaw.exe) человек вправе назвать своей игрой: без этого сервер на
+            // нестандартном порту не оптимизировать никак. Встроенную однозначную игру не перекрываем:
+            // «cs2.exe = моя игра» — это не уточнение, а подмена.
+            if (games[existing].RequiresPortMatch)
+            {
+                games[existing] = custom;
+            }
         }
 
         return new GameProcessCatalog(games);

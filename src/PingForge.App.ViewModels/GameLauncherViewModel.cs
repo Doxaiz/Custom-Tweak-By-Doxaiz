@@ -362,7 +362,12 @@ public sealed class GameLauncherViewModel : ObservableObject
     /// </summary>
     public Task AddCustomGameAsync(string? executablePath, string? titleRu)
     {
-        var existing = _cards.Select(card => card.ProcessName).ToArray();
+        // Общий процесс (javaw.exe/java.exe) дублем не считается: свою игру поверх него человек
+        // добавляет осознанно — иначе сервер на нестандартном порту не оптимизировать никак.
+        var existing = _cards
+            .Where(card => !card.Game.RequiresPortMatch)
+            .Select(card => card.ProcessName)
+            .ToArray();
         if (!CustomGameValidation.TryCreate(executablePath, titleRu, File.Exists, existing, out CustomGameEntry? entry, out string errorRu))
         {
             StatusRu = $"Игра не добавлена: {errorRu}";
@@ -370,11 +375,35 @@ public sealed class GameLauncherViewModel : ObservableObject
         }
 
         KnownGame game = CustomGameValidation.ToKnownGame(entry!);
-        var card = new GameCardViewModel(game, executablePath!.Trim(), OpenAsync, ChoosePathAsync);
-        _cards.Add(card);
+        var card = new GameCardViewModel(game, executablePath!.Trim(), OpenAsync, ChoosePathAsync, Regions);
+
+        int existingIndex = -1;
+        for (int index = 0; index < _cards.Count; index++)
+        {
+            if (string.Equals(_cards[index].ProcessName, game.ProcessName, StringComparison.OrdinalIgnoreCase))
+            {
+                existingIndex = index;
+                break;
+            }
+        }
+
+        bool replacedBuiltin = existingIndex >= 0;
+        if (replacedBuiltin)
+        {
+            _cards[existingIndex] = card;
+        }
+        else
+        {
+            _cards.Add(card);
+        }
+
         SaveCustomGames(extraPath: (game.ProcessName, executablePath.Trim()));
-        StatusRu = $"Своя игра «{game.TitleRu}» добавлена. Анти-чит у неё неизвестен — программа этого не скрывает. " +
-            "Служба подхватит её при следующем запуске службы.";
+        StatusRu = replacedBuiltin
+            ? $"Своя игра «{game.TitleRu}» заменила встроенную запись для общего процесса {game.ProcessName}: " +
+              "теперь этот процесс считается вашей игрой на любом порту. Анти-чит неизвестен — программа этого не скрывает. " +
+              "Служба подхватит замену при следующем запуске службы."
+            : $"Своя игра «{game.TitleRu}» добавлена. Анти-чит у неё неизвестен — программа этого не скрывает. " +
+              "Служба подхватит её при следующем запуске службы.";
         OnPropertyChanged(nameof(SummaryRu));
         return Task.CompletedTask;
     }
@@ -390,6 +419,23 @@ public sealed class GameLauncherViewModel : ObservableObject
         }
 
         _cards.Remove(card);
+
+        // Если своей игрой был назван общий процесс (javaw.exe), встроенная запись возвращается:
+        // без неё карточка Minecraft исчезла бы из списка до перезапуска окна.
+        KnownGame? builtin = GameProcessCatalog.DefaultGames.FirstOrDefault(game =>
+            game.RequiresPortMatch &&
+            string.Equals(game.ProcessName, card.ProcessName, StringComparison.OrdinalIgnoreCase));
+        if (builtin is not null)
+        {
+            string? remembered = _store.Load().GamePaths?.GetValueOrDefault(builtin.ProcessName);
+            _cards.Add(new GameCardViewModel(
+                builtin,
+                !string.IsNullOrWhiteSpace(remembered) && File.Exists(remembered) ? remembered : null,
+                OpenAsync,
+                ChoosePathAsync,
+                Regions));
+        }
+
         SaveCustomGames();
         StatusRu = $"Своя игра «{card.TitleRu}» удалена. Теперь этот процесс снова «кандидат, а не игра» — " +
             "оптимизация для него не запустится, пока игру не добавят снова.";
