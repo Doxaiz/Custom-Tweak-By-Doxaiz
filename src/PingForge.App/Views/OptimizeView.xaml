@@ -14,9 +14,12 @@
           <TextBlock Style="{StaticResource Caption}" Text="{Binding EmptyRu}" />
         </Border>
 
-        <Viewbox Stretch="Uniform" Margin="0,4,0,0"
-                 Visibility="{Binding IsEmpty, Converter={StaticResource InverseBoolToVisibility}}">
-          <Canvas Width="560" Height="132" Background="Transparent">
+        <!-- График живёт на «утопленной» панели — так же, как пустое состояние: без данных
+             панель одна и та же, меняется только содержимое. -->
+        <Border Style="{StaticResource SunkenPanel}" Padding="8,6" Margin="0,4,0,0"
+                Visibility="{Binding IsEmpty, Converter={StaticResource InverseBoolToVisibility}}">
+          <Viewbox Stretch="Uniform">
+            <Canvas Width="560" Height="132" Background="Transparent">
             <!-- Линии: отрезки без разрывов, разрыв измерения — новый отрезок, а не ноль. -->
             <ItemsControl ItemsSource="{Binding Segments}">
               <ItemsControl.ItemTemplate>
@@ -76,8 +79,9 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-          </Canvas>
-        </Viewbox>
+            </Canvas>
+          </Viewbox>
+        </Border>
 
         <!-- Легенда: строка на линию, из DescribeRu ряда — со значением и числом измеренных точек. -->
         <ItemsControl ItemsSource="{Binding LegendLines}" Margin="0,4,0,0">
