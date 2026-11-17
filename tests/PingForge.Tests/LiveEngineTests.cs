@@ -148,8 +148,19 @@ public class LiveEngineTests
         await optimizer.StartAsync();
         Assert.True(monitor.IsActive);
 
-        using var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
-        await monitor.RunAsync(stop.Token);
+        // Ждём до трёх окон, а не «сколько успеется за 300 мс»: на загруженном раннере этого
+        // хватало ровно на одно окно (прогон 44079925781: «окон контроля было 1»), и тест
+        // говорил «контроль не идёт» про работающий контроль. Предел в пять секунд остаётся:
+        // если контроль действительно стоит, тест падает, а не висит.
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task loop = monitor.RunAsync(stop.Token);
+        while (monitor.Ticks < 3 && !loop.IsCompleted)
+        {
+            await Task.Delay(10);
+        }
+
+        stop.Cancel();
+        await loop;
 
         Assert.True(monitor.Ticks >= 3, $"окон контроля было {monitor.Ticks} — контроль не идёт");
     }
