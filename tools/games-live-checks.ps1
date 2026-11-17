@@ -134,7 +134,12 @@ function Invoke-RealtimeCheck([string]$title) {
     $out = & $SmokePath '--realtime' 2>&1 | Out-String
     $code = $LASTEXITCODE
     Write-Host $out
-    Ann 'notice' "G $title — exit $code"
+
+    # В аннотацию кладём и ответ службы: «exit 2» без причины читается как загадка,
+    # а причина важна — здесь проверяется НАЗЫВАНИЕ игры, а не замер пинга.
+    $startLine = (($out -split "`r?`n" | Where-Object { $_.StartsWith('Старт:') }) -join ' ').Trim()
+    if ($startLine.Length -gt 300) { $startLine = $startLine.Substring(0, 300) }
+    Ann 'notice' "G $title — exit $code; $startLine"
 
     # Служба отдаёт два ответа: в снимке старта есть игра и адрес с портом, в отчёте остановки — адрес
     # без порта. Берём игру и адрес из старта, остановку используем как запасной источник и как признак,
