@@ -40,6 +40,12 @@
     <!-- Задача D: «Игры» показывают регионы и порты из справочника — это проверяется по разметке. -->
     <None Include="..\..\src\PingForge.App\Views\GamesView.xaml" Link="checked-GamesView.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\Views\SettingsView.xaml" Link="checked-SettingsView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\App.xaml" Link="checked-App.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\MainWindow.xaml" Link="checked-MainWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\SplashWindow.xaml" Link="checked-SplashWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\Views\JournalView.xaml" Link="checked-JournalView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\ui-walkthrough.ps1" Link="checked-ui-walkthrough.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\.github\workflows\build.yml" Link="checked-build.yml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeAclFactory.cs" Link="checked-PipeAclFactory.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeClientInspector.cs" Link="checked-PipeClientInspector.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Host\ServiceProgram.cs" Link="checked-ServiceProgram.cs" CopyToOutputDirectory="PreserveNewest" />

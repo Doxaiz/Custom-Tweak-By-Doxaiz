@@ -281,6 +281,61 @@ jobs:
           Start-Sleep -Seconds 2
           Write-Host 'Окно показывается, программа закрыта. Снимок уйдёт в артефакты сборки.'
 
+      # Картинку в песочнице не посмотреть (артефакты лежат на чужом хранилище), поэтому
+      # о снимке говорит сама сборка: размер, средняя яркость и доля тёмных пикселей уходят
+      # в аннотацию. Так видно три вещи: окно снято целиком, тёмная тема применилась,
+      # и снимок не пустой. Это проверка доказательства, а не замена взгляду человека.
+      - name: Снимок окна — что на нём (размер и яркость)
+        if: always()
+        shell: pwsh
+        run: |
+          $shot = 'dist\app-window.png'
+          if (-not (Test-Path $shot)) {
+            Write-Host '::warning file=.github/workflows/build.yml,line=1::Снимка окна нет — о вёрстке судить нечем'
+            exit 0
+          }
+
+          Add-Type -AssemblyName System.Drawing
+          $bmp = New-Object System.Drawing.Bitmap $shot
+          $width = $bmp.Width
+          $height = $bmp.Height
+          $sum = 0.0
+          $dark = 0
+          $bright = 0
+          $n = 0
+          $min = 255.0
+          $max = 0.0
+          for ($y = 0; $y -lt $height; $y += 4) {
+            for ($x = 0; $x -lt $width; $x += 4) {
+              $c = $bmp.GetPixel($x, $y)
+              $l = 0.2126 * $c.R + 0.7152 * $c.G + 0.0722 * $c.B
+              $sum += $l
+              $n++
+              if ($l -lt 40) { $dark++ }
+              if ($l -gt 140) { $bright++ }
+              if ($l -lt $min) { $min = $l }
+              if ($l -gt $max) { $max = $l }
+            }
+          }
+          $bmp.Dispose()
+
+          $mean = if ($n -gt 0) { [math]::Round($sum / $n, 1) } else { 0 }
+          $darkPct = if ($n -gt 0) { [math]::Round(100 * $dark / $n, 1) } else { 0 }
+          $brightPct = if ($n -gt 0) { [math]::Round(100 * $bright / $n, 1) } else { 0 }
+          $line = "Снимок окна {0}x{1}: средняя яркость {2}%, тёмных {3}%, светлых {4}%" -f $width, $height, $mean, $darkPct, $brightPct
+          Write-Host "  $line"
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::$line"
+
+          if (($max - $min) -lt 8) {
+            throw 'Снимок окна одноцветный: окно не отрисовалось, судить о вёрстке нечем'
+          }
+          if ($mean -gt 140) {
+            Write-Host '::warning file=.github/workflows/build.yml,line=1::Снимок светлый: тёмная тема, похоже, не применилась'
+          }
+          if ($width -lt 1100) {
+            Write-Host "::warning file=.github/workflows/build.yml,line=1::Снимок шириной $width меньше окна 1180 — похоже, край обрезан"
+          }
+
       - name: Установщик — собрать (NSIS)
         run: |
           $ErrorActionPreference = 'Stop'
