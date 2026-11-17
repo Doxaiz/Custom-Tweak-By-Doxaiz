@@ -891,6 +891,10 @@ public sealed class LiveEngineOperations : IEngineOperations
 
     public async Task<EngineOperationResult> GetStorageInfoAsync(CancellationToken ct = default)
     {
+        // Сбои чтения не глотаются: раньше здесь стояли пустые `catch { }`, и «0 КБ, снапшотов: 0»
+        // выглядело как факт, хотя означало «прочитать не смогли». Ноль должен значить ноль.
+        var readProblems = new List<string>();
+
         long dbBytes = 0;
         string dbPath = string.Empty;
         try
@@ -898,18 +902,49 @@ public sealed class LiveEngineOperations : IEngineOperations
             dbBytes = await _snapshots.GetDatabaseFileSizeAsync(ct).ConfigureAwait(false);
             dbPath = _snapshots.DatabasePath;
         }
-        catch { }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            readProblems.Add($"размер базы — {ex.Message}");
+        }
 
         if (string.IsNullOrWhiteSpace(dbPath))
         {
             dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PingForge", "pingforge.db");
-            try { if (File.Exists(dbPath)) dbBytes = new FileInfo(dbPath).Length; } catch { }
+            try
+            {
+                if (File.Exists(dbPath))
+                {
+                    dbBytes = new FileInfo(dbPath).Length;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                readProblems.Add($"размер файла базы — {ex.Message}");
+            }
         }
 
         int snapshotCount = 0;
         int journalCount = 0;
-        try { snapshotCount = (await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false)).Count; } catch { }
-        try { if (_journal is not null) journalCount = await _journal.CountModificationLogEntriesAsync(ct).ConfigureAwait(false); } catch { }
+        try
+        {
+            snapshotCount = (await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false)).Count;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            readProblems.Add($"число снапшотов — {ex.Message}");
+        }
+
+        try
+        {
+            if (_journal is not null)
+            {
+                journalCount = await _journal.CountModificationLogEntriesAsync(ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            readProblems.Add($"число записей журнала — {ex.Message}");
+        }
 
         // Задача U: рядом с размером — честное состояние базы: проходит ли quick_check, сколько
         // резервных копий и не осталось ли отложенных испорченных файлов.
@@ -953,8 +988,12 @@ public sealed class LiveEngineOperations : IEngineOperations
             ? string.Empty
             : $" Отложенных испорченных файлов: {corruptFiles} — они лежат рядом и не удаляются.";
 
+        string readNote = readProblems.Count == 0
+            ? string.Empty
+            : $" Не прочитано: {string.Join("; ", readProblems)} — эти числа не «ноль», а «неизвестно».";
+
         string message = $"База: {dbPath} — {dbBytes / 1024} КБ, снапшотов: {snapshotCount}, " +
-            $"записей журнала: {journalCount}. {healthNote}; {backupNote}.{corruptNote}" +
+            $"записей журнала: {journalCount}. {healthNote}; {backupNote}.{corruptNote}{readNote}" +
             (_databaseNote is null ? string.Empty : $" ВНИМАНИЕ: {_databaseNote}");
 
         var data = Encode(new StorageInfoData(
@@ -1044,13 +1083,28 @@ public sealed class LiveEngineOperations : IEngineOperations
         }
 
         int deleted = 0;
+        var deleteProblems = new List<string>();
         foreach (var s in ordered)
         {
             if (keepIds.Contains(s.SnapshotId)) continue;
-            try { await _snapshots.DeleteSnapshotAsync(s.SnapshotId, ct).ConfigureAwait(false); deleted++; } catch { }
+            try
+            {
+                await _snapshots.DeleteSnapshotAsync(s.SnapshotId, ct).ConfigureAwait(false);
+                deleted++;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Раньше сбой удаления глотался, и «Удалено: N» читалось как «всё убрано».
+                deleteProblems.Add($"{s.SnapshotId} — {ex.Message}");
+            }
         }
 
-        string msg = deleted == 0 ? $"Старых снапшотов для удаления нет (всего {all.Count}, лимит {keepLast}, новее {olderThanDays} дн. не трогаем)." : $"Удалено снапшотов: {deleted}, осталось: {all.Count - deleted}.";
+        string deleteNote = deleteProblems.Count == 0
+            ? string.Empty
+            : $" Не удалось удалить ({deleteProblems.Count}): {string.Join("; ", deleteProblems)}.";
+        string msg = (deleted == 0
+            ? $"Старых снапшотов для удаления нет (всего {all.Count}, лимит {keepLast}, новее {olderThanDays} дн. не трогаем)."
+            : $"Удалено снапшотов: {deleted}, осталось: {all.Count - deleted}.") + deleteNote;
         return EngineOperationResult.Success(msg, Encode(new CleanupData(deleted, all.Count - deleted)));
     }
 
