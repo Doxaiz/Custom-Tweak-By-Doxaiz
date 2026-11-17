@@ -492,6 +492,67 @@ public sealed class RealtimeOptimizationTests
     }
 
     [Fact]
+    public async Task Сервер_сменился_маршрут_переставляется_а_числа_начинаются_заново()
+    {
+        // Матчмейкер выдал другой сервер, игра не перезапускалась: прежний /32 указывает на адрес,
+        // где игры уже нет. Маршрут обязан переехать, а «до» — мериться заново: старый пинг
+        // к другому серверу к новому не относится.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 38);
+
+        var measurements = new ScriptedMeasurements(Measurable(80), Measurable(80), Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(WindowsBetweenServerChecks: 1));
+        Assert.Equal("3.4.5.6:9000", optimizer.Current.Endpoint);
+
+        watcher.Flows = [Fortnite() with { RemoteEndpoint = "34.16.9.77", RemotePort = 9001 }];
+
+        await optimizer.TickOnceAsync();
+
+        Assert.Equal("34.16.9.77:9001", optimizer.Current.Endpoint);
+        Assert.Contains("Сервер игры сменился", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("34.16.9.77:9001", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Equal(2, runner.Applied.Count(a => a == "route:game-server")); // прежний адрес и новый
+        Assert.Contains("route:game-server", runner.Reverted);
+        Assert.Null(optimizer.Current.BaselineRttMs); // «до» к новому серверу ещё не измерено
+
+        // Отчёт при остановке не заявляет выигрыш: базовая линия относится к прежнему серверу.
+        RealtimeStopReport report = await optimizer.StopAsync();
+        Assert.Null(report.BaselineRttMs);
+        Assert.Contains("недоступны", report.HonestSummaryRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("Пинг снизился", report.HonestSummaryRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Пока_прежний_адрес_виден_у_игры_сервер_не_считается_сменившимся()
+    {
+        // У игры бывает не одно соединение (матч + служебное). Пока прежний адрес на месте,
+        // переставлять маршрут нельзя: «новое» соединение может быть вовсе не тем сервером.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 38);
+        var measurements = new ScriptedMeasurements(Measurable(80), Measurable(80), Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(WindowsBetweenServerChecks: 1));
+
+        watcher.Flows =
+        [
+            Fortnite(),
+            Fortnite() with { RemoteEndpoint = "34.16.9.77", RemotePort = 9001 }
+        ];
+
+        await optimizer.TickOnceAsync();
+
+        Assert.Equal("3.4.5.6:9000", optimizer.Current.Endpoint);
+        Assert.Single(runner.Applied, a => a == "route:game-server");
+        Assert.Empty(runner.Reverted);
+        Assert.DoesNotContain("сменился", optimizer.Current.StatusRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Degradation_WithoutAlternative_MarksDegraded_AndSaysTweaksCannotFixIt()
     {
         var watcher = new StubWatcher(Fortnite());
