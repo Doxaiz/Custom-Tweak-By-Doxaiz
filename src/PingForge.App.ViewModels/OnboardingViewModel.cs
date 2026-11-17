@@ -1,3 +1,4 @@
+using System.IO;
 using PingForge.Orchestration.Realtime;
 
 namespace PingForge.App.ViewModels;
@@ -397,6 +398,18 @@ public sealed class OnboardingViewModel : ObservableObject
     {
         AppSettings current = _store.Load();
         string answers = $"{Purpose?.ToString() ?? "нет"};{Strength?.ToString() ?? "нет"};{Problem?.ToString() ?? "нет"}";
-        _store.Save(current with { SetupCompleted = true, SetupAnswersRu = answers });
+
+        try
+        {
+            _store.Save(current with { SetupCompleted = true, SetupAnswersRu = answers });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            // Без прав на папку настроек (обычный запуск без администратора) запись не пройдёт.
+            // Раньше это исключение улетало из команды кнопки и закрывало программу отчётом о сбое:
+            // первый же запуск выглядел как падение. Теперь мастер закрывается и говорит правду.
+            ResultRu = $"Выбор не сохранился: {ex.Message}. Это права на папку настроек, а не сбой программы: " +
+                       "мастер появится снова при следующем запуске, а применённое останется в журнале.";
+        }
     }
 }

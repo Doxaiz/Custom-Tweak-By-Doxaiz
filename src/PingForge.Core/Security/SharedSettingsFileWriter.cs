@@ -177,9 +177,21 @@ public sealed class SharedSettingsFileWriter
 
             JsonObject updated = update(root) ?? root;
 
-            string temp = _path + ".tmp";
-            File.WriteAllText(temp, updated.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
-            File.Move(temp, _path, overwrite: true);
+            // Временный файл — со своим именем на каждую запись. Раньше имя было постоянным
+            // («settings.json.tmp»), а писать без блокировки здесь разрешено (mayWrite = true с
+            // предупреждением). Два таких писателя затирали временный файл друг друга, и на место
+            // настроек вставал обрывок — файл, который потом честно считался «повреждённым».
+            string temp = TempPathNear(_path);
+            try
+            {
+                File.WriteAllText(temp, updated.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
+                File.Move(temp, _path, overwrite: true);
+            }
+            finally
+            {
+                // Обрыв записи не должен оставлять мусор рядом с настройками.
+                TryDelete(temp);
+            }
 
             return SharedFileWriteResult.Ok(backupPath, lockProblem);
         }
@@ -225,6 +237,29 @@ public sealed class SharedSettingsFileWriter
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Путь временного файла рядом с целевым: переименование в пределах одной папки атомарно,
+    /// а уникальное имя не даёт двум писателям затереть друг друга.
+    /// </summary>
+    public static string TempPathNear(string path) =>
+        path + "." + Guid.NewGuid().ToString("N", System.Globalization.CultureInfo.InvariantCulture) + ".tmp";
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Не смогли убрать временный файл — это не повод объявлять запись неудачной:
+            // настройки уже на месте, а мусор уберёт следующая запись или человек.
         }
     }
 
