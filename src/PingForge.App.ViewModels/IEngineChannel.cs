@@ -76,7 +76,8 @@ public sealed record AppSettings(
     string? RoutingDefaultNode = null,
     bool RoutingAutoSelect = false,
     bool RoutingMultipathEnabled = false,
-    string? RoutingSecondaryNode = null);
+    string? RoutingSecondaryNode = null,
+    double UiScale = 1.0);
 
 /// <summary>Память вместо файла: так проверяются «сохранилось / не сохранилось» без диска.</summary>
 public sealed class InMemorySettingsStore : IAppSettingsStore

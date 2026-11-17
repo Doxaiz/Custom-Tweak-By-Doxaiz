@@ -440,11 +440,15 @@
         </Setter>
       </Style>
 
-      <!-- Поля ввода: без системной светлой рамки. -->
+      <!-- Поля ввода: без системной светлой рамки. Выделение и курсор тоже свои: системное
+           выделение — светлый прямоугольник, на котором светлый текст не читается, а без
+           подсказки фокуса поле с клавиатуры не отличить от обычной панели. -->
       <Style TargetType="TextBox">
         <Setter Property="Background" Value="{StaticResource Sunken}" />
         <Setter Property="Foreground" Value="{StaticResource Text}" />
         <Setter Property="CaretBrush" Value="{StaticResource Accent}" />
+        <Setter Property="SelectionBrush" Value="{StaticResource Accent2}" />
+        <Setter Property="SelectionTextBrush" Value="#04121D" />
         <Setter Property="BorderBrush" Value="{StaticResource Line}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="9,7" />
@@ -452,10 +456,21 @@
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="TextBox">
-              <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+              <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                       BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
                 <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
               </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="#31456A" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent2}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter Property="Opacity" Value="0.5" />
+                </Trigger>
+              </ControlTemplate.Triggers>
             </ControlTemplate>
           </Setter.Value>
         </Setter>
@@ -514,6 +529,12 @@
                 <Trigger Property="IsDropDownOpen" Value="True">
                   <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent2}" />
                 </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent2}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter Property="Opacity" Value="0.5" />
+                </Trigger>
               </ControlTemplate.Triggers>
             </ControlTemplate>
           </Setter.Value>
@@ -557,7 +578,9 @@
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="Thumb">
-              <Border x:Name="Chrome" Background="#2B3A56" CornerRadius="3" Margin="2,0,2,0" />
+              <!-- MinHeight: в очень длинном списке ползунок иначе сжимается в точку, и его
+                   невозможно ни увидеть, ни схватить мышью. -->
+              <Border x:Name="Chrome" Background="#2B3A56" CornerRadius="3" Margin="2,0,2,0" MinHeight="24" />
               <ControlTemplate.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                   <Setter TargetName="Chrome" Property="Background" Value="#3E547C" />
@@ -656,6 +679,104 @@
                 </Trigger>
                 <Trigger Property="IsMouseOver" Value="True">
                   <Setter TargetName="Chrome" Property="Background" Value="#1A2740" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter Property="Opacity" Value="0.45" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Абзац для чтения: ограниченная длина строки. Текст во всю ширину окна (900+ точек)
+           читать тяжело — глаз теряет начало следующей строки. 760 точек — примерно 90 знаков. -->
+      <Style x:Key="ReadableText" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="LineHeight" Value="19" />
+        <Setter Property="MaxWidth" Value="760" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+      </Style>
+
+      <!-- Переключатели и флажки: системные светлые кружки и квадраты на тёмной панели выглядят
+           как чужие обломки, а их подпись берёт системный чёрный цвет и на тёмном фоне пропадает.
+           Здесь свои: тёмная подложка, акцент при включении, видимый фокус с клавиатуры. -->
+      <Style TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="RadioButton">
+              <StackPanel Orientation="Horizontal" Background="Transparent">
+                <Grid Width="16" Height="16" VerticalAlignment="Center">
+                  <Ellipse x:Name="Ring" Fill="{StaticResource Sunken}" Stroke="{StaticResource Line}" StrokeThickness="1.5" />
+                  <Ellipse x:Name="Dot" Width="7" Height="7" Fill="Transparent" />
+                </Grid>
+                <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
+              </StackPanel>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                  <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource Accent}" />
+                  <Setter TargetName="Dot" Property="Fill" Value="{StaticResource Accent}" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource Accent2}" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource Accent2}" />
+                  <Setter TargetName="Ring" Property="StrokeThickness" Value="2" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter Property="Opacity" Value="0.45" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <Style TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="CheckBox">
+              <StackPanel Orientation="Horizontal" Background="Transparent">
+                <Border x:Name="Box" Width="17" Height="17" CornerRadius="5" VerticalAlignment="Center"
+                        Background="{StaticResource Sunken}" BorderBrush="{StaticResource Line}" BorderThickness="1.4">
+                  <Path x:Name="Check" Data="M2,8 L6,12 L14,3" Visibility="Collapsed"
+                        Stroke="{StaticResource Accent}" StrokeThickness="2"
+                        StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                        Width="12" Height="12" Stretch="Uniform"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
+              </StackPanel>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                  <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}" />
+                  <Setter TargetName="Box" Property="Background" Value="#13251F" />
+                  <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent2}" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent2}" />
+                  <Setter TargetName="Box" Property="BorderThickness" Value="2" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter Property="Opacity" Value="0.45" />
                 </Trigger>
               </ControlTemplate.Triggers>
             </ControlTemplate>

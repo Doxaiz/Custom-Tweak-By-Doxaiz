@@ -52,6 +52,13 @@ public sealed class RelayCommand : ICommand
 
     public event EventHandler? CanExecuteChanged;
 
+    /// <summary>
+    /// Куда сообщать об исключении из команды, нажатой кнопкой. Окно при запуске подставляет
+    /// <c>CrashGuard.Report</c> (журнал + отчёт + окно с текстом); в тестах обработчика нет,
+    /// и тогда исключение уходит дальше — тест обязан видеть падение, а не тишину.
+    /// </summary>
+    public static Action<string, Exception>? OnFailure { get; set; }
+
     public bool CanExecute(object? parameter) => _canExecute?.Invoke() ?? true;
 
     public void Execute(object? parameter)
@@ -90,7 +97,17 @@ public sealed class AsyncRelayCommand : ICommand
 
     public async void Execute(object? parameter)
     {
-        await ExecuteAsync().ConfigureAwait(true);
+        // async void из XAML: исключение отсюда раньше уходило в DispatcherUnhandledException,
+        // то есть человек получал «ошибка в работе программы» без понимания, какая кнопка её дала.
+        // Теперь оно ловится здесь, называется командой и уходит в общий отчёт об ошибке.
+        try
+        {
+            await ExecuteAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex) when (OnFailure is not null)
+        {
+            OnFailure("Ошибка при выполнении команды", ex);
+        }
     }
 
     /// <summary>Выполнить команду и дождаться результата — так делают тесты и горячие клавиши.</summary>

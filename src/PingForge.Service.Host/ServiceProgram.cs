@@ -115,6 +115,17 @@ public static class ServiceProgram
         // Права не переписываем (чужой ACL молча ломать нельзя), но и молчать не имеем права.
         DataTrustReport directoryTrust = WindowsDataDirectoryTrust.InspectDirectory(DataDirectory);
         Log(directoryTrust.MessageRu);
+
+        // Общий файл настроек: его пишут и окно, и служба. Если писать в него может любой пользователь,
+        // чужие правки приходят сюда как «настройки человека» (профиль, узлы, свои игры), и заметить
+        // это иначе негде — права каталога не всегда говорят о правах файла.
+        // «Файла ещё нет» или «права не прочитали» — не повод шуметь на каждом старте: говорим,
+        // только когда писать в файл действительно может кто угодно.
+        DataTrustReport settingsTrust = WindowsDataDirectoryTrust.InspectFile(ServiceSettings.FilePath(DataDirectory));
+        if (settingsTrust.NeedsAttention)
+        {
+            Log(settingsTrust.MessageRu);
+        }
         DatabaseStartupReport databaseReport = await backups.PrepareForStartAsync(ct: ct).ConfigureAwait(false);
         Log(databaseReport.DescribeRu());
 

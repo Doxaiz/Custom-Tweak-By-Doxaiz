@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using PingForge.App.ViewModels;
 using Xunit;
 
 namespace PingForge.Tests;
@@ -31,7 +32,8 @@ public sealed class UiThemeTests
         "checked-TweaksView.xaml",
         "checked-GamesView.xaml",
         "checked-SettingsView.xaml",
-        "checked-JournalView.xaml"
+        "checked-JournalView.xaml",
+        "checked-OnboardingView.xaml"
     };
 
     private static string ReadChecked(string name)
@@ -136,4 +138,122 @@ public sealed class UiThemeTests
         Assert.Contains("PrintWindow", build, StringComparison.Ordinal);
         Assert.Contains("SetProcessDPIAware", build, StringComparison.Ordinal);
     }
+    [Fact]
+    public void Переключатели_и_поля_ввода_оформлены_под_тёмную_тему()
+    {
+        // Системные переключатели и флажки светлые, их подпись берёт системный чёрный цвет и на
+        // тёмной панели пропадает: в мастере первого запуска вопросы было не прочитать.
+        // Выделение в поле ввода по умолчанию тоже светлое — светлый текст на нём не виден.
+        string app = ReadChecked("checked-App.xaml");
+
+        foreach (string target in new[] { "RadioButton", "CheckBox" })
+        {
+            Assert.Contains($"TargetType=\"{target}\"", app, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("SelectionBrush", app, StringComparison.Ordinal);
+        Assert.Contains("SelectionTextBrush", app, StringComparison.Ordinal);
+        Assert.Contains("CaretBrush", app, StringComparison.Ordinal);
+
+        // Ползунок прокрутки не должен сжиматься в точку в длинном списке.
+        Assert.Contains("MinHeight=\"24\"", app, StringComparison.Ordinal);
+
+        // Абзац для чтения: ограниченная длина строки.
+        Assert.Contains("x:Key=\"ReadableText\"", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Контраст_в_подписи_совпадает_с_настоящей_палитрой()
+    {
+        // Подпись про контраст когда-то осталась от прежней палитры (0.2): цвета назывались не те,
+        // и «15.3:1» относилось к цветам, которых на экране уже не было. Здесь числа считаются
+        // по цветам из App.xaml и сверяются с тем, что видит человек в «Настройках».
+        string app = ReadChecked("checked-App.xaml");
+        string text = ColorOf(app, "TextColor");
+        string muted = ColorOf(app, "MutedColor");
+        string bg = ColorOf(app, "BgColor");
+
+        string note = new UiScaleViewModel().WcagNoteRu;
+
+        Assert.Contains(text, note, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(muted, note, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(bg, note, StringComparison.OrdinalIgnoreCase);
+
+        string textRatio = RatioText(ContrastRatio(text, bg));
+        string mutedRatio = RatioText(ContrastRatio(muted, bg));
+        Assert.Contains(textRatio, note, StringComparison.Ordinal);
+        Assert.Contains(mutedRatio, note, StringComparison.Ordinal);
+
+        // И сами числа обязаны проходить AAA для обычного текста — иначе подпись была бы ложью.
+        Assert.True(ContrastRatio(text, bg) >= 7.0);
+        Assert.True(ContrastRatio(muted, bg) >= 7.0);
+    }
+
+    [Fact]
+    public void Минимум_окна_в_подписи_масштаба_совпадает_с_разметкой()
+    {
+        // В подписи стояло 800×500 при настоящем минимуме 860×560 — человек читал неправду.
+        string window = ReadChecked("checked-MainWindow.xaml");
+        int width = int.Parse(Required(window, "MinWidth=\"(\\d+)\""));
+        int height = int.Parse(Required(window, "MinHeight=\"(\\d+)\""));
+
+        Assert.Equal((int)UiScaleViewModel.MinWidthAt100, width);
+        Assert.Equal((int)UiScaleViewModel.MinHeightAt100, height);
+
+        string note = new UiScaleViewModel().ScaleLabelRu;
+        Assert.Contains($"{width}×{height}", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Масштаб_интерфейса_действительно_масштабирует_а_не_только_пишет_проценты()
+    {
+        // Кнопки «100 / 125 / 150 %» раньше меняли только подпись: окно оставалось прежним.
+        string window = ReadChecked("checked-MainWindow.xaml");
+        Assert.Contains("LayoutTransform", window, StringComparison.Ordinal);
+        Assert.Contains("ScaleTransform", window, StringComparison.Ordinal);
+        Assert.Contains("Settings.UiScale.Scale", window, StringComparison.Ordinal);
+
+        string code = ReadChecked("checked-MainWindow.xaml.cs");
+        Assert.Contains("ApplyUiScale", code, StringComparison.Ordinal);
+        Assert.Contains("MinWidthAt100", code, StringComparison.Ordinal);
+    }
+
+    private static string Required(string text, string pattern)
+    {
+        Match found = Regex.Match(text, pattern);
+        Assert.True(found.Success, $"в разметке не нашлось «{pattern}»");
+        return found.Groups[1].Value;
+    }
+
+    private static string ColorOf(string app, string key)
+    {
+        Match found = Regex.Match(app, $"<Color x:Key=\"{key}\"[^>]*>(#[0-9A-Fa-f]{{6}})</Color>");
+        Assert.True(found.Success, $"в теме нет цвета «{key}»");
+        return found.Groups[1].Value.ToUpperInvariant();
+    }
+
+    /// <summary>Отношение контраста по WCAG 2.1: (L1 + 0,05) / (L2 + 0,05).</summary>
+    private static double ContrastRatio(string first, string second)
+    {
+        double a = RelativeLuminance(first);
+        double b = RelativeLuminance(second);
+        return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
+    }
+
+    private static double RelativeLuminance(string hex)
+    {
+        static double Channel(string part)
+        {
+            double value = Convert.ToInt32(part, 16) / 255.0;
+            return value <= 0.03928 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
+        }
+
+        return (0.2126 * Channel(hex.Substring(1, 2))) +
+               (0.7152 * Channel(hex.Substring(3, 2))) +
+               (0.0722 * Channel(hex.Substring(5, 2)));
+    }
+
+    /// <summary>Число так, как оно написано по-русски: «17,1:1».</summary>
+    private static string RatioText(double ratio) =>
+        ratio.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture).Replace('.', ',') + ":1";
 }

@@ -123,9 +123,29 @@
     <Border Style="{StaticResource Card}" Margin="0,0,0,12"
             Visibility="{Binding IsNoticeVisible, Converter={StaticResource BoolToVisibility}}">
       <StackPanel>
-        <TextBlock Text="{Binding NoticeTitleRu}" FontWeight="SemiBold"
-                   Foreground="{StaticResource Accent2}" TextWrapping="Wrap" />
-        <TextBlock x:Name="NoticeText" Text="{Binding NoticeRu}" TextWrapping="Wrap" Margin="0,7,0,0" />
+        <!-- Цвет заголовка — по тону ответа: отказ красный, предупреждение жёлтое, сообщение
+             циановое. Одним цветом отказ и удача выглядели одинаково. -->
+        <TextBlock Text="{Binding NoticeTitleRu}">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="TextWrapping" Value="Wrap" />
+              <Setter Property="FontWeight" Value="SemiBold" />
+              <Setter Property="Foreground" Value="{StaticResource Accent2}" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding NoticeIsProblem}" Value="True">
+                  <Setter Property="Foreground" Value="{StaticResource Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding NoticeIsWarning}" Value="True">
+                  <Setter Property="Foreground" Value="{StaticResource Warn}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+
+        <!-- Абзац ограничен по длине строки: во всю ширину окна его тяжело читать. -->
+        <TextBlock x:Name="NoticeText" Style="{StaticResource ReadableText}"
+                   Text="{Binding NoticeRu}" Margin="0,7,0,0" />
         <Button Style="{StaticResource GhostButton}" Content="Понятно" Margin="0,13,0,0"
                 HorizontalAlignment="Left" Command="{Binding DismissNoticeCommand}" />
       </StackPanel>
