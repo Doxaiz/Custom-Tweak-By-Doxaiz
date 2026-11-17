@@ -52,13 +52,6 @@ public sealed class RelayCommand : ICommand
 
     public event EventHandler? CanExecuteChanged;
 
-    /// <summary>
-    /// Куда сообщать об исключении из команды, нажатой кнопкой. Окно при запуске подставляет
-    /// <c>CrashGuard.Report</c> (журнал + отчёт + окно с текстом); в тестах обработчика нет,
-    /// и тогда исключение уходит дальше — тест обязан видеть падение, а не тишину.
-    /// </summary>
-    public static Action<string, Exception>? OnFailure { get; set; }
-
     public bool CanExecute(object? parameter) => _canExecute?.Invoke() ?? true;
 
     public void Execute(object? parameter)
@@ -81,6 +74,13 @@ public sealed class AsyncRelayCommand : ICommand
     private readonly Func<Task> _execute;
     private readonly Func<bool>? _canExecute;
     private bool _running;
+
+    /// <summary>
+    /// Куда сообщать об исключении из команды, нажатой кнопкой. Окно при запуске подставляет
+    /// <c>CrashGuard.Report</c> (журнал + отчёт + окно с текстом); в тестах обработчика нет,
+    /// и тогда исключение уходит дальше — тест обязан видеть падение, а не тишину.
+    /// </summary>
+    public static Action<string, Exception>? OnFailure { get; set; }
 
     public AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute = null)
     {
