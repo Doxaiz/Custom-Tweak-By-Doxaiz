@@ -165,14 +165,19 @@ public class NetworkFlowTests
     {
         // Порты игры — это признак «это матч, а не браузер». Если в подсказку попадёт 443 или 53,
         // ранжирование начнёт называть игрой обновление или DNS. Проверяем весь каталог, а не одну игру.
-        int[] forbidden = [80, 443, 53, 123, 5353, 5355, 67, 68, 25, 110, 143];
+        int[] forbiddenHints = [80, 443, 53, 123, 5353, 5355, 67, 68, 25, 110, 143];
+
+        // В диапазонах игр mDNS/LLMNR (5353/5355) встречаются законно — например, League of Legends
+        // играет в 5000–5500. Служебные порты внутри процесса игры всё равно получают минус в Score,
+        // а вот веб-порты и DNS в диапазоне игры — это уже ошибка каталога.
+        int[] forbiddenRanges = [80, 443, 53, 123, 67, 68, 25, 110, 143];
 
         foreach (KnownGame game in GameProcessCatalog.DefaultGames)
         {
             foreach (int port in game.PortHints ?? [])
             {
                 Assert.InRange(port, 1, 65535);
-                Assert.DoesNotContain(port, forbidden);
+                Assert.DoesNotContain(port, forbiddenHints);
             }
 
             foreach ((int from, int to) in game.PortRanges ?? [])
@@ -180,7 +185,7 @@ public class NetworkFlowTests
                 Assert.InRange(from, 1, 65535);
                 Assert.InRange(to, 1, 65535);
                 Assert.True(from <= to, $"{game.TitleRu}: диапазон {from}–{to} перевёрнут");
-                Assert.DoesNotContain(forbidden, port => port >= from && port <= to);
+                Assert.DoesNotContain(forbiddenRanges, port => port >= from && port <= to);
             }
         }
     }
