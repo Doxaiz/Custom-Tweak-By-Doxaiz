@@ -101,8 +101,14 @@ public sealed class WindowsGameFlowWatcher : IGameFlowReporter
                 ? "этот процесс не входит в список известных игр"
                 : "эти процессы не входят в список известных игр";
 
-            return $"{what}: {list} — {why}, а название по имени файла программа не угадывает.{more} " +
-                "Если среди них ваша игра — добавьте её в список известных игр, и кнопка возьмёт именно этот поток.";
+            // У общего процесса (javaw.exe/java.exe) совет «добавьте в список» неверен: он уже в списке,
+            // просто порт не подтвердил игру. Обещать кнопку, которая возьмёт не тот поток, нельзя.
+            string next = best.Any(candidate => candidate.IsAmbiguousProcess)
+                ? "Процесс с общим именем (javaw.exe/java.exe) игрой не назван: добавление в список здесь не поможет — " +
+                  "нужен поток на порт самой игры, и он подтвердится сам."
+                : "Если среди них ваша игра — добавьте её в список известных игр, и кнопка возьмёт именно этот поток.";
+
+            return $"{what}: {list} — {why}, а название по имени файла программа не угадывает.{more} {next}";
         }
 
         if (report.RowsRead == 0)
@@ -110,8 +116,12 @@ public sealed class WindowsGameFlowWatcher : IGameFlowReporter
             return "Таблица соединений пуста: возможно, нет прав на её чтение или сеть сейчас не используется.";
         }
 
+        string ipv6 = report.Ipv6FlowRows > 0
+            ? $" IPv6-соединений с публичными адресами: {report.Ipv6FlowRows} — маршрут по IPv6 программа не ставит."
+            : string.Empty;
+
         return $"Публичных соединений не найдено: прочитано строк — {report.RowsRead}, " +
-            $"с публичными адресами — {report.PublicFlowRows}. Зайдите в матч и нажмите кнопку снова.";
+            $"с публичными адресами — {report.PublicFlowRows}.{ipv6} Зайдите в матч и нажмите кнопку снова.";
     }
 
     private async Task<IReadOnlyList<RawConnectionRow>> ReadRowsAsync(CancellationToken ct)

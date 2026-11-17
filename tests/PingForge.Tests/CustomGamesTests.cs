@@ -11,7 +11,7 @@ namespace PingForge.Tests;
 ///
 /// Проверяется вся цепочка, а не одна кнопка: запись в общий файл настроек, каталог
 /// «встроенные + свои», детектор (своя — игра с неизвестным анти-читом, удалённая — снова
-/// «кандидат, а не игра»), отказы на плохом пути и то, что встроенные 20 незыблемы.
+/// «кандидат, а не игра»), отказы на плохом пути и то, что встроенные игры незыблемы.
 /// </summary>
 public sealed class CustomGamesTests
 {
@@ -67,7 +67,7 @@ public sealed class CustomGamesTests
 
         Assert.Equal(GameProcessCatalog.DefaultGames.Count + 1, catalog.All.Count);
         Assert.Single(catalog.CustomGames);
-        Assert.Equal(20, GameProcessCatalog.DefaultGames.Count);
+        Assert.Equal(22, GameProcessCatalog.DefaultGames.Count);
     }
 
     // ── валидация добавления ──────────────────────────────────────────────────────────────

@@ -50,8 +50,10 @@ public sealed class Win32ConnectionTableProvider : IRawConnectionTableProvider
 
         if (_includeIpv6)
         {
-            // IPv6 читаем только когда попросили: игровые серверы почти всегда IPv4, а лишние строки
-            // в интерфейсе сбивают с толку. Ошибка IPv6 не считается ошибкой чтения IPv4.
+            // IPv6 читаем только когда попросили. Служба просит: сервер игры бывает IPv6-ным
+            // (Minecraft Bedrock, IPv6-only серверы), и человеку нужно видеть его в отчёте, а не пустой
+            // список. Маршрут по IPv6 продукт не ставит — детектор такие строки считает и объясняет.
+            // Ошибка IPv6 не считается ошибкой чтения IPv4.
             TryReadTcp(AfInet6, rows, out _);
             TryReadUdp(AfInet6, rows, out _);
         }
