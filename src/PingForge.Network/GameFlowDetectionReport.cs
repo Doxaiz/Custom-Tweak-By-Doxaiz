@@ -34,7 +34,8 @@ public sealed record UnknownGameCandidate(
     int CandidateCount,
     string EndpointText,
     string ReasonRu,
-    int Score = 0);
+    int Score = 0,
+    bool IsAmbiguousProcess = false);
 
 /// <summary>Итог одного поиска игры: что нашли, что не смогли прочитать и что из этого следует.</summary>
 public sealed record GameFlowDetectionReport(
@@ -43,7 +44,8 @@ public sealed record GameFlowDetectionReport(
     IReadOnlyList<string> NotesRu,
     int RowsRead,
     int PublicFlowRows,
-    int UnreadProcesses)
+    int UnreadProcesses,
+    int Ipv6FlowRows = 0)
 {
     /// <summary>Потоки в порядке «сначала наиболее игровые» — то, что нужно кнопке оптимизации.</summary>
     public IReadOnlyList<GameFlowInfo> Flows => Games.Select(g => g.Flow).ToList();

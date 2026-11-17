@@ -80,7 +80,7 @@ internal static class ServiceSettings
 
     /// <summary>
     /// Свои игры из общего файла (задача A). Чтение терпимое: нет файла, битый JSON, мусор вместо
-    /// списка или битые записи внутри — служба работает с 20 встроенными играми, а сюда
+    /// списка или битые записи внутри — служба работает со встроенными играми, а сюда
     /// возвращается пустой список и объяснение для журнала. Падать из-за чужих игр нельзя.
     /// </summary>
     public static IReadOnlyList<PingForge.Network.CustomGameEntry> ReadCustomGames(string dataDirectory, out string? problemRu)
@@ -91,7 +91,7 @@ internal static class ServiceSettings
         {
             if (!Writer(dataDirectory).TryRead(out string json, out _))
             {
-                problemRu = "файл настроек не прочитался — свои игры не загружены, работаю с 20 известными";
+                problemRu = "файл настроек не прочитался — свои игры не загружены, работаю со встроенным списком игр";
                 return [];
             }
 
@@ -118,7 +118,7 @@ internal static class ServiceSettings
 
             if (customGames.Value.ValueKind != JsonValueKind.Array)
             {
-                problemRu = "в настройках вместо списка своих игр лежит не список — свои игры не загружены, работаю с 20 известными";
+                problemRu = "в настройках вместо списка своих игр лежит не список — свои игры не загружены, работаю со встроенным списком игр";
                 return [];
             }
 
@@ -142,7 +142,7 @@ internal static class ServiceSettings
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            problemRu = $"настройки своих игр не прочитались ({ex.GetType().Name}) — работаю с 20 известными";
+            problemRu = $"настройки своих игр не прочитались ({ex.GetType().Name}) — работаю со встроенным списком игр";
             return [];
         }
     }

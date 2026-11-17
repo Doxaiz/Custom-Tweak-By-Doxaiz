@@ -2,14 +2,70 @@ using PingForge.Core.Models;
 
 namespace PingForge.Network;
 
-/// <summary>Известная игра: имя процесса, анти-чит и честный статус его совместимости с сетевым фильтром.</summary>
+/// <summary>
+/// Известная игра: имя процесса, анти-чит и честный статус его совместимости с сетевым фильтром.
+/// <para><c>PortHints</c>/<c>PortRanges</c> — порты, по которым игру можно подтвердить при ранжировании потоков
+/// процесса: игровой UDP-порт часто меняется, одиночным числом его не описать.</para>
+/// <para><c>RequiresPortMatch</c> — процесс общий для многих программ (javaw.exe — это и Minecraft, и любая другая
+/// Java-программа). Тогда игру называем только при совпадении порта с подсказкой, иначе — честный «кандидат,
+/// а не игра».</para>
+/// </summary>
 public sealed record KnownGame(
     string ProcessName,
     string TitleRu,
     string AntiCheatName,
     AntiCheatStatus AntiCheat,
     string NoteRu = "",
-    bool IsCustom = false);
+    bool IsCustom = false,
+    IReadOnlyList<int>? PortHints = null,
+    IReadOnlyList<(int From, int To)>? PortRanges = null,
+    bool RequiresPortMatch = false)
+{
+    /// <summary>Совпал ли удалённый порт с портом/диапазоном этой игры.</summary>
+    public bool MatchesPort(int port)
+    {
+        if (port <= 0)
+        {
+            return false;
+        }
+
+        if (PortHints is not null && PortHints.Contains(port))
+        {
+            return true;
+        }
+
+        if (PortRanges is not null)
+        {
+            foreach ((int from, int to) in PortRanges)
+            {
+                if (port >= from && port <= to)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Текст для человека: какие порты подтверждают именно эту игру.</summary>
+    public string DescribePortsRu()
+    {
+        var parts = new List<string>();
+
+        if (PortHints is { Count: > 0 })
+        {
+            parts.Add(string.Join(", ", PortHints));
+        }
+
+        if (PortRanges is not null)
+        {
+            parts.AddRange(PortRanges.Select(range => $"{range.From}–{range.To}"));
+        }
+
+        return parts.Count == 0 ? "порты не заданы" : string.Join(", ", parts);
+    }
+}
 
 /// <summary>Своя игра человека в общем файле настроек: имя процесса и название, которое он дал.</summary>
 public sealed record CustomGameEntry(string ProcessName, string TitleRu);
@@ -112,7 +168,27 @@ public sealed class GameProcessCatalog
     public static IReadOnlyList<KnownGame> DefaultGames { get; } = new[]
     {
         new KnownGame("fortniteclient-win64-shipping.exe", "Fortnite", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested,
-            "Оверлеи сторонних программ лучше выключить: часть анти-читов считает их подозрительными."),
+            "Игровой UDP-порт матча у Fortnite заранее неизвестен (5795–5847 и 7000–9100 в разных сезонах), " +
+            "поэтому поток матча опознаётся по процессу, протоколу UDP и собеседнику из трассировки стека. " +
+            "Без трассировки UDP поток матча не виден — это честное «не нашли», а не ошибка. " +
+            "Оверлеи сторонних программ лучше выключить: часть анти-читов считает их подозрительными.",
+            PortHints: [7777, 7778, 9000, 5222],
+            PortRanges: [(5795, 5847), (7000, 9100), (10000, 10100)]),
+        new KnownGame("javaw.exe", "Minecraft (Java)", "анти-чит не проверялся", AntiCheatStatus.Untested,
+            "Клиент Minecraft на Java — это javaw.exe, и точно так же называется любая Java-программа. " +
+            "Игру подтверждает порт соединения: 25565 (а также диапазон 25500–25600 — у серверов и прокси " +
+            "бывают соседние порты). Если порт другой, программа Minecraft не называет и показывает процесс " +
+            "кандидатом: угадывать игру по общему имени файла — значит направить маршрут в чужое соединение. " +
+            "Запускать игру нужно лаунчером Minecraft: javaw.exe — уже запущенный клиент, сам он не стартует.",
+            PortHints: [25565],
+            PortRanges: [(25500, 25600)],
+            RequiresPortMatch: true),
+        new KnownGame("minecraft.windows.exe", "Minecraft (Bedrock)", "анти-чит не проверялся", AntiCheatStatus.Untested,
+            "Bedrock из Microsoft Store — пакет UWP с именем процесса minecraft.windows.exe. Сервер общается " +
+            "по UDP: 19132 (IPv4) и 19133 (IPv6). UDP-собеседник виден только при включённой трассировке " +
+            "сетевого стека; без неё поток не найдётся.",
+            PortHints: [19132, 19133],
+            PortRanges: [(19132, 19133)]),
         new KnownGame("cs2.exe", "Counter-Strike 2", "VAC", AntiCheatStatus.Untested,
             "VAC работает в пользовательском режиме, но совместимость фильтра мы не проверяли."),
         new KnownGame("dota2.exe", "Dota 2", "VAC", AntiCheatStatus.Untested),
@@ -173,12 +249,12 @@ public sealed class GameProcessCatalog
 
     public IReadOnlyList<KnownGame> All => _games;
 
-    /// <summary>Только свои игры человека (встроенные 20 так не помечены и не удаляются).</summary>
+    /// <summary>Только свои игры человека (встроенные так не помечены и не удаляются).</summary>
     public IReadOnlyList<KnownGame> CustomGames => _games.Where(game => game.IsCustom).ToList();
 
     /// <summary>
     /// Каталог «встроенные + свои». Битые записи своих игр (пустое имя/название, дубли встроенных)
-    /// пропускаются, а не ломают список: служба обязана работать с 20 известными в любом случае.
+    /// пропускаются, а не ломают список: служба обязана работать со встроенными играми в любом случае.
     /// </summary>
     public static GameProcessCatalog WithCustomGames(IEnumerable<CustomGameEntry>? customGames)
     {
@@ -216,6 +292,14 @@ public sealed class GameProcessCatalog
         if (_byExe.TryGetValue(norm, out game!))
         {
             return true;
+        }
+
+        // Java: у клиента Minecraft процесс javaw.exe, у серверных сборок и лаунчеров — java.exe.
+        // Это один и тот же общий процесс, поэтому подтверждение идёт портом (см. RequiresPortMatch).
+        if (norm.Equals("java.exe", StringComparison.OrdinalIgnoreCase)
+            || norm.Equals("javaw.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return _byExe.TryGetValue("javaw.exe", out game!);
         }
 
         // Фортнайт в творческом/лобби часто запускается обёрткой EAC/BE с суффиксом _be/_eac: ловим префиксом.

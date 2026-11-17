@@ -109,8 +109,9 @@ public static class GameRouteCatalog
             "У РФ-игроков часто лучший путь — к РФ-серверам; проверьте выбор серверов в лончере перед матчем."),
         new GameRouteTarget("Minecraft (Java)", "javaw.exe", true,
             new[] { "Зависит от выбранного вами сервера" },
-            new[] { "TCP 25565, UDP 19132 (Bedrock)" },
-            "Имя процесса javaw.exe нужно указывать вручную: у разных сборок оно одно и то же, поэтому автоопределение молчит."),
+            new[] { "TCP 25565, UDP 19132/19133 (Bedrock)" },
+            "javaw.exe — общий процесс: сетевой детектор подтверждает игру портом (25565, диапазон 25500–25600), " +
+            "а без совпадения порта честно молчит и показывает процесс кандидатом."),
         new GameRouteTarget("Dead by Daylight", "deadbydaylight-win64-shipping.exe", false,
             new[] { "Европа", "США", "Азия" },
             Array.Empty<string>(),

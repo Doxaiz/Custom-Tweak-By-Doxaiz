@@ -169,10 +169,13 @@ public static class ServiceProgram
             ? "UDP-собеседники: наблюдение идёт, служба увидит UDP-поток игры."
             : $"UDP-собеседники: наблюдение не идёт — {udpPeers.ProblemRu ?? "причина не названа"}. Остальное работает.");
 
+        // IPv6 читаем: у Minecraft Bedrock и IPv6-only серверов поток иначе невидим вовсе. Маршрут по IPv6
+        // продукт не ставит, поэтому такие потоки попадают в отчёт с пояснением, а не в оптимизацию.
         using var network = new WindowsGameNetworkPlatform(
             platform,
             GameProcessCatalog.WithCustomGames(customGames),
-            peerTracker: udpPeers);
+            peerTracker: udpPeers,
+            includeIpv6: true);
 
         // Настоящие транспорты: ICMP-эхо, время TCP-рукопожатия, системный DNS.
         var icmp = new SystemNetIcmpProbe();

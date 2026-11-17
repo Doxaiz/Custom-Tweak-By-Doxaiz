@@ -256,7 +256,13 @@ public sealed class GameLauncherViewModel : ObservableObject
     public async Task FindInstalledAsync()
     {
         StatusRu = "Ищу игры в библиотеках Steam и обычных папках…";
-        IReadOnlyCollection<string> names = _cards.Select(card => card.ProcessName).ToArray();
+
+        // Общий процесс (javaw.exe) искать на диске бессмысленно: найденный чужой javaw.exe — не игра,
+        // и кнопка «Открыть» запустила бы его без аргументов. Такую игру человек открывает лаунчером сам.
+        IReadOnlyCollection<string> names = _cards
+            .Where(card => !card.Game.RequiresPortMatch)
+            .Select(card => card.ProcessName)
+            .ToArray();
 
         try
         {
