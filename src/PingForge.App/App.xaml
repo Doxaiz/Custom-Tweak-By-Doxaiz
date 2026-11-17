@@ -5,14 +5,23 @@
              ShutdownMode="OnExplicitShutdown">
   <Application.Resources>
     <ResourceDictionary>
-      <!-- Тёмная тема: цвета те же, что в витрине (docs/custom-tweak-by-doxaiz.html), чтобы макет и программа выглядели одинаково. -->
-      <Color x:Key="BgColor">#0B1120</Color>
-      <Color x:Key="PanelColor">#111A2B</Color>
+      <!-- Тёмная тема: цвета те же, что в витрине (docs/custom-tweak-by-doxaiz.html), чтобы макет и программа выглядели одинаково.
+           Палитра 0.3: фон глубже, панели с мягким градиентом, текст чуть теплее — на тёмном фоне меньше «грязи»
+           вокруг мелких подписей, а акценты (зелёный + циан) остаются те же, что в логотипе. -->
+      <Color x:Key="BgColor">#070B14</Color>
+      <Color x:Key="BgGlowColor">#0D1930</Color>
+      <Color x:Key="PanelColor">#111A2A</Color>
+      <Color x:Key="PanelTopColor">#152034</Color>
+      <Color x:Key="SunkenColor">#0B1220</Color>
       <Color x:Key="LineColor">#1E2A42</Color>
-      <Color x:Key="TextColor">#E6EDF7</Color>
-      <Color x:Key="MutedColor">#8FA0BD</Color>
+      <Color x:Key="LineSoftColor">#182135</Color>
+      <Color x:Key="TextColor">#E9EFFB</Color>
+      <Color x:Key="MutedColor">#8FA1BD</Color>
       <Color x:Key="AccentColor">#4ADE80</Color>
       <Color x:Key="Accent2Color">#38BDF8</Color>
+      <Color x:Key="VioletColor">#A78BFA</Color>
+      <Color x:Key="WarnColor">#F2C94C</Color>
+      <Color x:Key="DangerColor">#F2545B</Color>
 
       <!-- Показ/скрытие карточек по булеву полю модели: без своего кода, средствами WPF. -->
       <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
@@ -22,16 +31,42 @@
 
       <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />
       <SolidColorBrush x:Key="Panel" Color="{StaticResource PanelColor}" />
+      <SolidColorBrush x:Key="Sunken" Color="{StaticResource SunkenColor}" />
       <SolidColorBrush x:Key="Line" Color="{StaticResource LineColor}" />
+      <SolidColorBrush x:Key="LineSoft" Color="{StaticResource LineSoftColor}" />
       <SolidColorBrush x:Key="Text" Color="{StaticResource TextColor}" />
       <SolidColorBrush x:Key="Muted" Color="{StaticResource MutedColor}" />
       <SolidColorBrush x:Key="Accent" Color="{StaticResource AccentColor}" />
       <SolidColorBrush x:Key="Accent2" Color="{StaticResource Accent2Color}" />
+      <SolidColorBrush x:Key="Violet" Color="{StaticResource VioletColor}" />
+      <SolidColorBrush x:Key="Warn" Color="{StaticResource WarnColor}" />
+      <SolidColorBrush x:Key="Danger" Color="{StaticResource DangerColor}" />
 
       <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,1">
         <GradientStop Color="{StaticResource AccentColor}" Offset="0" />
         <GradientStop Color="{StaticResource Accent2Color}" Offset="1" />
       </LinearGradientBrush>
+
+      <!-- Панель: очень мягкий градиент сверху вниз. Он и даёт «объём» без тяжёлых теней:
+           верхняя кромка светлее, нижняя — фон. -->
+      <LinearGradientBrush x:Key="CardGradient" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="{StaticResource PanelTopColor}" Offset="0" />
+        <GradientStop Color="{StaticResource PanelColor}" Offset="1" />
+      </LinearGradientBrush>
+
+      <LinearGradientBrush x:Key="HeaderGradient" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#0B1220" Offset="0" />
+        <GradientStop Color="#090F1A" Offset="1" />
+      </LinearGradientBrush>
+
+      <RadialGradientBrush x:Key="GlowBrush" GradientOrigin="0.5,0.5" Center="0.5,0.5" RadiusX="0.6" RadiusY="0.6">
+        <GradientStop Color="#3322D3EE" Offset="0" />
+        <GradientStop Color="#101B2E4A" Offset="0.55" />
+        <GradientStop Color="#000B1120" Offset="1" />
+      </RadialGradientBrush>
+
+      <FontFamily x:Key="UiFont">Segoe UI</FontFamily>
+      <FontFamily x:Key="NumberFont">Consolas, Segoe UI</FontFamily>
 
       <!-- Логотип: неоновая монограмма D с мотивом сетевого маршрута (узлы и путь пинга),
            циан → электрический голубой → умеренный фиолетовый. Локальный векторный ресурс:
@@ -87,6 +122,7 @@
 
       <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="TextWrapping" Value="Wrap" />
       </Style>
@@ -97,43 +133,182 @@
       <Style x:Key="Title" TargetType="TextBlock">
         <Setter Property="TextWrapping" Value="Wrap" />
         <Setter Property="Foreground" Value="{StaticResource Text}" />
-        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="23" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Margin" Value="0,0,0,10" />
+        <Setter Property="Margin" Value="0,0,0,12" />
+      </Style>
+
+      <Style x:Key="H2" TargetType="TextBlock">
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Margin" Value="0,0,0,6" />
       </Style>
 
       <Style x:Key="Caption" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource Muted}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="TextWrapping" Value="Wrap" />
       </Style>
 
-      <Style x:Key="Card" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource Panel}" />
-        <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+      <Style x:Key="CaptionStrong" TargetType="TextBlock" BasedOn="{StaticResource Caption}">
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontSize" Value="12.5" />
+      </Style>
+
+      <!-- Надпись капсом: подпись к показателю. Interlocked-кегль мельче, поэтому 10.5. -->
+      <Style x:Key="StatLabel" TargetType="TextBlock" BasedOn="{StaticResource Caption}">
+        <Setter Property="FontSize" Value="10.5" />
+        <Setter Property="Foreground" Value="#7E90AD" />
+      </Style>
+
+      <Style x:Key="StatValue" TargetType="TextBlock">
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontFamily" Value="{StaticResource NumberFont}" />
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+      </Style>
+
+      <Style x:Key="Mono" TargetType="TextBlock" BasedOn="{StaticResource Caption}">
+        <Setter Property="FontFamily" Value="{StaticResource NumberFont}" />
+      </Style>
+
+      <!-- Плитка показателя: своя рамка внутри карточки, чтобы числа читались группой. -->
+      <Style x:Key="StatTile" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource Sunken}" />
+        <Setter Property="BorderBrush" Value="{StaticResource LineSoft}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="12" />
-        <Setter Property="Padding" Value="14" />
-        <Setter Property="Margin" Value="0,0,0,10" />
+        <Setter Property="Padding" Value="13,11" />
+        <Setter Property="Margin" Value="0,0,10,0" />
+      </Style>
+
+      <Style x:Key="Divider" TargetType="Border">
+        <Setter Property="Height" Value="1" />
+        <Setter Property="Background" Value="{StaticResource LineSoft}" />
+        <Setter Property="Margin" Value="0,12,0,12" />
+      </Style>
+
+      <!-- Плашка-статус: точка + текст, как в шапке. -->
+      <Style x:Key="Pill" TargetType="Border">
+        <Setter Property="Background" Value="#0F1930" />
+        <Setter Property="BorderBrush" Value="#22314E" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="999" />
+        <Setter Property="Padding" Value="10,4" />
+      </Style>
+
+      <Style x:Key="Card" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource CardGradient}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="14" />
+        <Setter Property="Padding" Value="17,15" />
+        <Setter Property="Margin" Value="0,0,0,12" />
+        <Setter Property="Effect">
+          <Setter.Value>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="2" Direction="270" Opacity="0.28" Color="#000000" />
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Главная карточка экрана: тонкая акцентная кромка и чуть больше воздуха. -->
+      <Style x:Key="HeroCard" TargetType="Border" BasedOn="{StaticResource Card}">
+        <Setter Property="BorderBrush" Value="#2A4A46" />
+        <Setter Property="Padding" Value="20,18" />
+        <Setter Property="Background">
+          <Setter.Value>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+              <GradientStop Color="#13233A" Offset="0" />
+              <GradientStop Color="#101A2C" Offset="1" />
+            </LinearGradientBrush>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Вложенная панель без тени: таблицы, графики, пустые состояния. -->
+      <Style x:Key="SunkenPanel" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource Sunken}" />
+        <Setter Property="BorderBrush" Value="{StaticResource LineSoft}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="10" />
       </Style>
 
       <Style x:Key="PrimaryButton" TargetType="Button">
         <Setter Property="Background" Value="{StaticResource AccentGradient}" />
-        <Setter Property="Foreground" Value="#04101F" />
-        <Setter Property="FontSize" Value="15" />
+        <Setter Property="Foreground" Value="#04121D" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="14.5" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Padding" Value="22,12" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="Button">
-              <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+              <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="12"
+                      Padding="{TemplateBinding Padding}" BorderBrush="Transparent" BorderThickness="1.5">
                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
               </Border>
               <ControlTemplate.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                  <Setter TargetName="Chrome" Property="Opacity" Value="0.9" />
+                  <Setter TargetName="Chrome" Property="Opacity" Value="0.92" />
+                  <Setter TargetName="Chrome" Property="Effect">
+                    <Setter.Value>
+                      <DropShadowEffect BlurRadius="18" ShadowDepth="0" Opacity="0.45" Color="#4ADE80" />
+                    </Setter.Value>
+                  </Setter>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                  <Setter TargetName="Chrome" Property="Opacity" Value="0.8" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="#E9EFFB" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter TargetName="Chrome" Property="Opacity" Value="0.4" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <Style x:Key="GhostButton" TargetType="Button">
+        <Setter Property="Background" Value="#16203A" />
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Padding" Value="13,8" />
+        <Setter Property="BorderBrush" Value="#24334F" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="Button">
+              <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Chrome" Property="Background" Value="#1D2942" />
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="#31456A" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                  <Setter TargetName="Chrome" Property="Background" Value="#131C2E" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent2}" />
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
                   <Setter TargetName="Chrome" Property="Opacity" Value="0.45" />
@@ -144,43 +319,68 @@
         </Setter>
       </Style>
 
-      <Style x:Key="GhostButton" TargetType="Button">
-        <Setter Property="Background" Value="#182338" />
-        <Setter Property="Foreground" Value="{StaticResource Text}" />
-        <Setter Property="Padding" Value="12,8" />
-        <Setter Property="BorderBrush" Value="{StaticResource Line}" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="Template">
-          <Setter.Value>
-            <ControlTemplate TargetType="Button">
-              <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                      BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10" Padding="{TemplateBinding Padding}">
-                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-              </Border>
-            </ControlTemplate>
-          </Setter.Value>
-        </Setter>
-      </Style>
-
+      <!-- Раздел в левой колонке: выбранный — светлая плашка с акцентной кромкой слева. -->
       <Style x:Key="NavButton" TargetType="RadioButton">
         <Setter Property="Foreground" Value="{StaticResource Muted}" />
-        <Setter Property="Padding" Value="12,9" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="14,10" />
         <Setter Property="Margin" Value="0,0,0,4" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="RadioButton">
-              <Border x:Name="Chrome" Background="Transparent" CornerRadius="10" Padding="{TemplateBinding Padding}">
-                <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
+              <Grid>
+                <Border x:Name="Chrome" Background="Transparent" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                  <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
+                </Border>
+                <Border x:Name="Marker" Width="3" CornerRadius="2" HorizontalAlignment="Left" Margin="0,9,0,9"
+                        Background="Transparent" />
+              </Grid>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                  <Setter TargetName="Chrome" Property="Background" Value="#18243C" />
+                  <Setter TargetName="Marker" Property="Background" Value="{StaticResource Accent}" />
+                  <Setter Property="Foreground" Value="{StaticResource Text}" />
+                  <Setter Property="FontWeight" Value="SemiBold" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Chrome" Property="Background" Value="#141E33" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Marker" Property="Background" Value="{StaticResource Accent2}" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Чип пресета: плашка-переключатель вместо системной радиокнопки. -->
+      <Style x:Key="Chip" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource Muted}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="RadioButton">
+              <Border x:Name="Chrome" Background="#131D30" BorderBrush="#23314C" BorderThickness="1"
+                      CornerRadius="999" Padding="13,7">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
               </Border>
               <ControlTemplate.Triggers>
                 <Trigger Property="IsChecked" Value="True">
-                  <Setter TargetName="Chrome" Property="Background" Value="#16223A" />
+                  <Setter TargetName="Chrome" Property="Background" Value="#1B3A34" />
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent}" />
                   <Setter Property="Foreground" Value="{StaticResource Text}" />
+                  <Setter Property="FontWeight" Value="SemiBold" />
                 </Trigger>
                 <Trigger Property="IsMouseOver" Value="True">
-                  <Setter TargetName="Chrome" Property="Background" Value="#141F33" />
+                  <Setter TargetName="Chrome" Property="Background" Value="#1A2740" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent2}" />
                 </Trigger>
               </ControlTemplate.Triggers>
             </ControlTemplate>
@@ -194,9 +394,9 @@
         <Setter Property="Template">
           <Setter.Value>
             <ControlTemplate TargetType="CheckBox">
-              <Grid Width="44" Height="25">
+              <Grid Width="46" Height="26">
                 <Border x:Name="Track" Background="#1B2740" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="999" />
-                <Ellipse x:Name="Knob" Width="17" Height="17" Fill="#8FA0BD" HorizontalAlignment="Left" Margin="4,0,0,0" />
+                <Ellipse x:Name="Knob" Width="18" Height="18" Fill="#8FA0BD" HorizontalAlignment="Left" Margin="4,0,0,0" />
               </Grid>
               <ControlTemplate.Triggers>
                 <Trigger Property="IsChecked" Value="True">
@@ -204,7 +404,258 @@
                   <Setter TargetName="Track" Property="BorderBrush" Value="Transparent" />
                   <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
                   <Setter TargetName="Knob" Property="Margin" Value="0,0,4,0" />
-                  <Setter TargetName="Knob" Property="Fill" Value="#04101F" />
+                  <Setter TargetName="Knob" Property="Fill" Value="#04121D" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Track" Property="BorderBrush" Value="#2F4368" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource Accent2}" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Строка списка: тонкая линия снизу, как в таблицах. -->
+      <Style x:Key="ListRow" TargetType="Border">
+        <Setter Property="BorderBrush" Value="{StaticResource LineSoft}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="Padding" Value="0,8,0,8" />
+      </Style>
+
+      <Style TargetType="ToolTip">
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="ToolTip">
+              <Border Background="#0D1626" BorderBrush="#2A3A57" BorderThickness="1" CornerRadius="8" Padding="9,6">
+                <ContentPresenter />
+              </Border>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Поля ввода: без системной светлой рамки. -->
+      <Style TargetType="TextBox">
+        <Setter Property="Background" Value="{StaticResource Sunken}" />
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="CaretBrush" Value="{StaticResource Accent}" />
+        <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="9,7" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="TextBox">
+              <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+                <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
+              </Border>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Выпадающий список: без системной светло-серой рамки. Содержимое списка рисуется
+           на тёмной панели, поэтому белый текст остаётся читаемым. -->
+      <Style TargetType="ComboBox">
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="ComboBox">
+              <Grid>
+                <Border x:Name="Chrome" Background="{StaticResource Sunken}" BorderBrush="{StaticResource Line}"
+                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ContentPresenter Grid.Column="0" IsHitTestVisible="False" VerticalAlignment="Center"
+                                      Content="{TemplateBinding SelectionBoxItem}"
+                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+                    <Path Grid.Column="1" VerticalAlignment="Center" Margin="9,1,1,0"
+                          Data="M0,0 L4.5,4.5 L9,0" Stroke="{StaticResource Muted}" StrokeThickness="1.6"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                  </Grid>
+                </Border>
+                <ToggleButton x:Name="ToggleButton" Focusable="False" ClickMode="Press"
+                              IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                  <ToggleButton.Template>
+                    <ControlTemplate TargetType="ToggleButton">
+                      <Border Background="Transparent" />
+                    </ControlTemplate>
+                  </ToggleButton.Template>
+                </ToggleButton>
+                <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" PopupAnimation="Fade"
+                       IsOpen="{TemplateBinding IsDropDownOpen}">
+                  <Border Background="#0D1626" BorderBrush="#2C3D5C" BorderThickness="1" CornerRadius="10"
+                          Padding="4" Margin="0,4,0,0" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                          MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                      <ItemsPresenter />
+                    </ScrollViewer>
+                  </Border>
+                </Popup>
+              </Grid>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="#31456A" />
+                </Trigger>
+                <Trigger Property="IsDropDownOpen" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent2}" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <Style TargetType="ComboBoxItem">
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="ComboBoxItem">
+              <Border x:Name="Chrome" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                <ContentPresenter />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                  <Setter TargetName="Chrome" Property="Background" Value="#1D2942" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Полоса прокрутки: тонкая, без стрелок. Стрелки в тёмной теме выглядят как обломки
+           системной темы, а колесо мыши и перетаскивание ползунка остаются как были. -->
+      <Style x:Key="ScrollBarPageButton" TargetType="RepeatButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="RepeatButton">
+              <Border Background="Transparent" />
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <Style x:Key="ScrollBarThumb" TargetType="Thumb">
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="Thumb">
+              <Border x:Name="Chrome" Background="#2B3A56" CornerRadius="3" Margin="2,0,2,0" />
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Chrome" Property="Background" Value="#3E547C" />
+                </Trigger>
+                <Trigger Property="IsDragging" Value="True">
+                  <Setter TargetName="Chrome" Property="Background" Value="{StaticResource Accent2}" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <Style TargetType="ScrollBar">
+        <Setter Property="Width" Value="10" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="ScrollBar">
+              <Grid Background="{TemplateBinding Background}">
+                <Track x:Name="VTrack" Orientation="Vertical" IsDirectionReversed="True">
+                  <Track.DecreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageUpCommand" />
+                  </Track.DecreaseRepeatButton>
+                  <Track.Thumb>
+                    <Thumb Style="{StaticResource ScrollBarThumb}" />
+                  </Track.Thumb>
+                  <Track.IncreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageDownCommand" />
+                  </Track.IncreaseRepeatButton>
+                </Track>
+                <Track x:Name="HTrack" Orientation="Horizontal" Visibility="Collapsed">
+                  <Track.DecreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageLeftCommand" />
+                  </Track.DecreaseRepeatButton>
+                  <Track.Thumb>
+                    <Thumb Style="{StaticResource ScrollBarThumb}" />
+                  </Track.Thumb>
+                  <Track.IncreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageRightCommand" />
+                  </Track.IncreaseRepeatButton>
+                </Track>
+              </Grid>
+              <ControlTemplate.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                  <Setter TargetName="VTrack" Property="Visibility" Value="Collapsed" />
+                  <Setter TargetName="HTrack" Property="Visibility" Value="Visible" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+          <Trigger Property="Orientation" Value="Horizontal">
+            <Setter Property="Width" Value="NaN" />
+            <Setter Property="Height" Value="10" />
+          </Trigger>
+        </Style.Triggers>
+      </Style>
+
+      <!-- Вкладки журнала: пилюли в один ряд, без системной рамки. -->
+      <Style TargetType="TabControl">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="TabControl">
+              <StackPanel>
+                <TabPanel IsItemsHost="True" Margin="0,0,0,10" />
+                <ContentPresenter ContentSource="SelectedContent" />
+              </StackPanel>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <Style TargetType="TabItem">
+        <Setter Property="Foreground" Value="{StaticResource Muted}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Margin" Value="0,0,8,0" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="TabItem">
+              <Border x:Name="Chrome" Background="#131D30" BorderBrush="#23314C" BorderThickness="1"
+                      CornerRadius="999" Padding="14,7">
+                <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                  <Setter TargetName="Chrome" Property="Background" Value="#18243C" />
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent2}" />
+                  <Setter Property="Foreground" Value="{StaticResource Text}" />
+                  <Setter Property="FontWeight" Value="SemiBold" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Chrome" Property="Background" Value="#1A2740" />
                 </Trigger>
               </ControlTemplate.Triggers>
             </ControlTemplate>

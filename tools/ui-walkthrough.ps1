@@ -1,4 +1,4 @@
-﻿<#
+﻿﻿<#
     Проверка приложения «как человек» на настоящей Windows.
 
     Что делает скрипт — и только это:
@@ -32,8 +32,6 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Drawing
-Add-Type -AssemblyName System.Windows.Forms
-
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -102,11 +100,30 @@ public static class PfWin
         return SendMessageTimeout(hWnd, 0x0000, IntPtr.Zero, IntPtr.Zero, 0x0002, 2000, out result) != IntPtr.Zero;
     }
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
+
+    /// Считать процесс «понимающим DPI»: тогда GetWindowRect и PrintWindow возвращают
+    /// физические пиксели, а не уменьшенные системой координаты.
+    [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+
+    /// Размер экрана в пикселях — чтобы честно сказать, влезает ли окно на экран.
+    /// Через GetSystemMetrics, а не System.Windows.Forms: сборка Windows PowerShell 5.1 не
+    /// подключает WinForms к Add-Type, и такой код просто не скомпилировался бы.
+    public static string ScreenSize()
+    {
+        return GetSystemMetrics(0) + "x" + GetSystemMetrics(1);
+    }
+    [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
 }
 "@
 
 $shots = 0
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir -Force | Out-Null }
+
+# Один раз на процесс: без этого снимок окна и его координаты считаются в «уменьшенных»
+# пикселях, и на экране с масштабом 125 % картинка выходит обрезанной по правому краю.
+[PfWin]::SetProcessDPIAware() | Out-Null
+Write-Host "  [снимок] экран: $([PfWin]::ScreenSize())"
+
 
 function Say([string]$text) { Write-Host "  $text" }
 
@@ -122,9 +139,19 @@ function Save-Window([IntPtr]$handle, [string]$name)
     [PfWin]::SetForegroundWindow($handle) | Out-Null
     Start-Sleep -Milliseconds 600
 
+    # PrintWindow рисует САМО окно в память: снимок не зависит от того, что окно больше экрана
+    # или чем-то перекрыто. Раньше был CopyFromScreen — на сборочной машине экран меньше окна
+    # 1180×820, и правый край снимка просто обрезался, поэтому по нему нельзя было судить о вёрстке.
     $bitmap = New-Object System.Drawing.Bitmap $width, $height
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-    $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+    $graphics.Clear([System.Drawing.Color]::FromArgb(7, 11, 20))
+    $hdc = $graphics.GetHdc()
+    $printed = [PfWin]::PrintWindow($handle, $hdc, 2)   # 2 = PW_RENDERFULLCONTENT
+    $graphics.ReleaseHdc($hdc)
+    if (-not $printed) {
+        Say '[снимок] PrintWindow не смог — снимаю с экрана'
+        $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+    }
 
     $file = Join-Path $OutDir ("{0:d2}-{1}.png" -f $script:shots, $name)
     $bitmap.Save($file, [System.Drawing.Imaging.ImageFormat]::Png)

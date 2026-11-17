@@ -9,7 +9,7 @@
     <!-- Пресеты: числа приходят из каталога, поэтому подпись не может разойтись с составом. -->
     <Border Style="{StaticResource Card}">
       <StackPanel>
-        <TextBlock Style="{StaticResource Caption}" Text="ПРЕСЕТ" FontWeight="SemiBold" Margin="0,0,0,8" />
+        <TextBlock Style="{StaticResource StatLabel}" Text="ПРЕСЕТ" Margin="0,0,0,9" />
         <ItemsControl ItemsSource="{Binding Presets}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
@@ -18,7 +18,7 @@
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <RadioButton GroupName="Preset" Margin="0,0,8,8" Cursor="Hand"
+              <RadioButton GroupName="Preset" Margin="0,0,8,8" Style="{StaticResource Chip}"
                            Content="{Binding ChipRu}"
                            ToolTip="{Binding PurposeRu}"
                            IsChecked="{Binding IsSelected, Mode=TwoWay, RelativeSource={RelativeSource Self}}"

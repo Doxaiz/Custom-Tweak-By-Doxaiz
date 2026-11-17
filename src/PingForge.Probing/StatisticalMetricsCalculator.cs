@@ -200,7 +200,7 @@ public static class StatisticalMetricsCalculator
         method switch
         {
             ProbeMethodUsed.LiveTcpEstats =>
-                "Метод замера: живой TCP-поток игры (SIO_TCP_INFO). Дополнительные пакеты не отправляются, точность наивысшая.",
+                "Метод замера: живой TCP-поток игры (статистика уже открытого соединения). Дополнительные пакеты не отправляются.",
             ProbeMethodUsed.LiveUdpPassiveFlow =>
                 "Метод замера: живой UDP-поток игры по ответам сервера. Оценка приблизительная: окно наблюдения даёт средние значения.",
             ProbeMethodUsed.ActiveIcmpEcho =>
