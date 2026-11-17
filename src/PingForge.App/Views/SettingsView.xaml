@@ -241,10 +241,17 @@
         <TextBlock Text="Масштаб интерфейса" FontWeight="SemiBold" />
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" Text="{Binding UiScale.ScaleLabelRu}" />
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding UiScale.WcagNoteRu}" TextWrapping="Wrap" />
+        <!-- Пилюли-переключатели, а не три одинаковые кнопки: видно, какая ступень включена. -->
         <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-          <Button Style="{StaticResource GhostButton}" Content="100 %" Command="{Binding UiScale100Command}" Margin="0,0,12,0" AutomationProperties.Name="Масштаб 100 процентов" />
-          <Button Style="{StaticResource GhostButton}" Content="125 %" Command="{Binding UiScale125Command}" Margin="0,0,12,0" AutomationProperties.Name="Масштаб 125 процентов" />
-          <Button Style="{StaticResource GhostButton}" Content="150 %" Command="{Binding UiScale150Command}" AutomationProperties.Name="Масштаб 150 процентов" />
+          <RadioButton Style="{StaticResource Chip}" GroupName="UiScale" Content="100 %" Margin="0,0,10,0"
+                       AutomationProperties.Name="Масштаб 100 процентов"
+                       IsChecked="{Binding UiScale.Scale, Mode=TwoWay, Converter={StaticResource ScaleOption}, ConverterParameter=1.0}" />
+          <RadioButton Style="{StaticResource Chip}" GroupName="UiScale" Content="125 %" Margin="0,0,10,0"
+                       AutomationProperties.Name="Масштаб 125 процентов"
+                       IsChecked="{Binding UiScale.Scale, Mode=TwoWay, Converter={StaticResource ScaleOption}, ConverterParameter=1.25}" />
+          <RadioButton Style="{StaticResource Chip}" GroupName="UiScale" Content="150 %"
+                       AutomationProperties.Name="Масштаб 150 процентов"
+                       IsChecked="{Binding UiScale.Scale, Mode=TwoWay, Converter={StaticResource ScaleOption}, ConverterParameter=1.5}" />
         </StackPanel>
       </StackPanel>
     </Border>

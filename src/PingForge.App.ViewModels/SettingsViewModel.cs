@@ -53,9 +53,17 @@ public sealed class SettingsViewModel : ObservableObject
         // Масштаб — из настроек: иначе выбранные 125 % слетали при каждом запуске, хотя кнопки
         // обещали, что выбор останется.
         UiScale = new UiScaleViewModel { Scale = settings.UiScale <= 0 ? 1.0 : settings.UiScale };
-        UiScale100Command = new RelayCommand(() => SetUiScale(1.0));
-        UiScale125Command = new RelayCommand(() => SetUiScale(1.25));
-        UiScale150Command = new RelayCommand(() => SetUiScale(1.5));
+
+        // Масштаб меняют пилюли в «Настройках» (двусторонняя привязка прямо к Scale), поэтому
+        // запоминаем его на каждое изменение, а не в отдельной кнопке: иначе выбор оставался
+        // только на экране до перезапуска.
+        UiScale.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(UiScaleViewModel.Scale))
+            {
+                PersistUiScale();
+            }
+        };
     }
 
     /// <summary>Узлы маршрутизации: список, поиск шлюзов, замер путей. Ничего не меняет сама по себе.</summary>
@@ -72,20 +80,14 @@ public sealed class SettingsViewModel : ObservableObject
 
     public UiScaleViewModel UiScale { get; }
 
-    public RelayCommand UiScale100Command { get; }
-    public RelayCommand UiScale125Command { get; }
-    public RelayCommand UiScale150Command { get; }
-
     public AsyncRelayCommand SaveCommand { get; }
 
     /// <summary>
-    /// Поставить масштаб и запомнить его. Сбой записи не отменяет масштаб — он уже на экране, —
-    /// но и молчать о нём нельзя: после перезапуска вернётся прежний.
+    /// Запомнить масштаб. Сбой записи не отменяет масштаб — он уже на экране, — но и молчать
+    /// о нём нельзя: после перезапуска вернётся прежний.
     /// </summary>
-    private void SetUiScale(double scale)
+    private void PersistUiScale()
     {
-        UiScale.Scale = scale;
-
         try
         {
             _store.Save(_store.Load() with { UiScale = UiScale.Scale });

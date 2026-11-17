@@ -357,6 +357,10 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .presetcard{background:#0f1725;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .presetcard h4{margin:0 0 4px;font-size:14px}
 .presetcard .cnt{color:var(--accent);font-weight:700}
+.scaleopts{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.scaleopts label{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);border:1px solid var(--line2);border-radius:999px;padding:6px 13px;cursor:pointer}
+.scaleopts input{margin:0;accent-color:var(--accent)}
+.scaleopts label:has(input:checked){color:var(--text);border-color:var(--accent);background:#18243c;font-weight:600}
 .chiprow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chiprow span{background:#0e1622;border:1px solid var(--line);border-radius:8px;padding:2px 7px;font-size:11.5px;color:var(--muted)}
 .overflow-safe{overflow-wrap:anywhere;word-break:break-word}
@@ -2253,6 +2257,21 @@ def build(data: dict, progress: dict) -> str:
   </div>
 
   {{consumption_block}}
+
+  <!-- Масштаб интерфейса: та же карточка, что в программе (раздел «Настройки»). -->
+  <div class="card">
+    <h3>Масштаб интерфейса</h3>
+    <p class="small muted">Раскладка пересобирается, текст остаётся резким, карточки тянутся.
+    Окно не меньше 860×560 точек при 100 %; при 125 % и 150 % минимум окна растёт вместе с содержимым
+    и не выходит за рабочую область экрана. Выбранный масштаб запоминается в настройках.</p>
+    <div class="scaleopts" role="group" aria-label="Масштаб интерфейса">
+      <label><input type="radio" name="uiscale" checked><span>100 %</span></label>
+      <label><input type="radio" name="uiscale"><span>125 %</span></label>
+      <label><input type="radio" name="uiscale"><span>150 %</span></label>
+    </div>
+    <p class="note-inline">Контраст основного текста #E9EFFB на фоне #070B14 — 17,1:1, подписей #8FA1BD — 7,5:1:
+    выше требования AA (4,5:1) и выше AAA (7:1) для обычного текста.</p>
+  </div>
 
   <h2 id="settings-misc">Прочее</h2>
   <div class="card tight">
