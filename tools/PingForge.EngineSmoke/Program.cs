@@ -37,10 +37,14 @@ internal static class Program
         var flags = new HashSet<string>(args.Where(a => a.StartsWith("--", StringComparison.Ordinal)), StringComparer.Ordinal);
         string? pipeName = args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
         bool specialMode = flags.Contains("--expect-identity") || flags.Contains("--try-apply")
-            || flags.Contains("--apply-and-rollback") || flags.Contains("--rollback-only");
+            || flags.Contains("--apply-and-rollback") || flags.Contains("--rollback-only")
+            || flags.Contains("--realtime");
         Console.WriteLine("Custom Tweak By Doxaiz — живая проверка службы");
 
-        using var channel = new NamedPipeEngineChannel(pipeName, TimeSpan.FromSeconds(30));
+        // Живая оптимизация ищет поток и меряет «до» — это дольше обычного запроса,
+        // поэтому для неё предел канала поднят до двух минут сверх срока самой команды.
+        TimeSpan channelTimeout = flags.Contains("--realtime") ? TimeSpan.FromSeconds(200) : TimeSpan.FromSeconds(30);
+        using var channel = new NamedPipeEngineChannel(pipeName, channelTimeout);
         // Печатаем имя канала, к которому ПОДКЛЮЧИЛИСЬ: без аргумента клиент сам выбирает канал
         // по своим правам (основной от администратора, иначе чтение), и прежний текст мог соврать.
         Console.WriteLine(pipeName is null
@@ -250,6 +254,32 @@ internal static class Program
                         : "канал/ACL (подключение или диспетчер)";
                 Console.WriteLine($"Итог: отказ пришёл до применения, слой: {layer}. Ничего не изменено.");
                 return 0;
+            }
+
+            if (flags.Contains("--realtime"))
+            {
+                // Живая проверка распознавания игрового потока на настоящей Windows: служба ищет игру
+                // по живой таблице соединений и трассировке UDP, называет игру и адрес сервера,
+                // а затем мы сразу останавливаем оптимизацию, чтобы ничего не осталось в системе.
+                EngineResponse start = await client.SendAsync(EngineCommandKind.RealtimeStart);
+                Console.WriteLine($"Старт: {(start.Ok ? start.MessageRu : "ОТКАЗ: " + start.MessageRu)}");
+                Console.WriteLine($"StartData: {start.DataJson ?? "нет"}");
+
+                EngineResponse stop;
+                try
+                {
+                    stop = await client.SendAsync(EngineCommandKind.RealtimeStop);
+                }
+                catch (EngineUnavailableException)
+                {
+                    Console.WriteLine("Остановка не удалась: служба недоступна. Проверьте службу перед повторным запуском.");
+                    return 2;
+                }
+
+                Console.WriteLine($"Остановка: {(stop.Ok ? stop.MessageRu : "ОТКАЗ: " + stop.MessageRu)}");
+                Console.WriteLine($"StopData: {stop.DataJson ?? "нет"}");
+
+                return start.Ok && stop.Ok ? 0 : 2;
             }
 
             if (flags.Contains("--apply-and-rollback"))
