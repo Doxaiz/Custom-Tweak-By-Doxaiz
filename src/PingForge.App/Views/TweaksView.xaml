@@ -79,10 +79,14 @@
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
                    Text="Мышь, клавиатура, фоновая запись и очередь пакетов на сетевой карте — это задержка на вашей стороне, до сети. Проверка только читает: ничего не применяется." />
 
-        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-          <Button Style="{StaticResource GhostButton}" Content="Проверить задержку ввода" Command="{Binding CheckCommand}" Margin="0,0,12,0" />
-          <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" Text="{Binding StatusRu}" MaxWidth="520" />
-        </StackPanel>
+        <Grid Margin="0,10,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Button Grid.Column="0" Style="{StaticResource GhostButton}" Content="Проверить задержку ввода" Command="{Binding CheckCommand}" Margin="0,0,12,0" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Style="{StaticResource Caption}" VerticalAlignment="Center" Text="{Binding StatusRu}" />
+        </Grid>
 
         <TextBlock Style="{StaticResource Caption}" Margin="0,8,0,0" Text="{Binding SummaryRu}" />
 
