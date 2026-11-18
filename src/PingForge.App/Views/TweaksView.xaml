@@ -181,13 +181,72 @@
       </StackPanel>
     </Border>
 
+    <!-- Порядок и поиск: в каталоге 47 карточек, и у человека два разных вопроса — «с чего начать»
+         и «где тот твик из статьи». Порядок меняет только последовательность, поиск — видимую часть;
+         отметки и пресеты при этом не трогаются. -->
+    <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+      <StackPanel>
+        <TextBlock Style="{StaticResource StatLabel}" Text="ПОРЯДОК" Margin="0,0,0,9" />
+        <ItemsControl ItemsSource="{Binding Orders}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <RadioButton GroupName="TweakOrder" Margin="0,0,8,8" Style="{StaticResource Chip}"
+                           Content="{Binding TitleRu}"
+                           ToolTip="{Binding HintRu}"
+                           IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,10" TextWrapping="Wrap"
+                   Text="{Binding OrderLineRu}" />
+
+        <TextBlock Style="{StaticResource StatLabel}" Text="ПОИСК" Margin="0,0,0,6" />
+        <StackPanel Orientation="Horizontal">
+          <TextBox Width="300" VerticalContentAlignment="Center"
+                   ToolTip="Название, описание, код или назначение твика"
+                   Text="{Binding SearchRu, UpdateSourceTrigger=PropertyChanged}" />
+          <Button Style="{StaticResource GhostButton}" Content="Очистить" Margin="8,0,0,0"
+                  Command="{Binding ClearSearchCommand}" />
+        </StackPanel>
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
+                   Text="{Binding SearchLineRu}" />
+      </StackPanel>
+    </Border>
+
+    <!-- Список пуст только когда искать правда нечего: пустой экран без объяснения — ошибка. -->
+    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,10" TextWrapping="Wrap"
+               Text="{Binding EmptyLineRu}"
+               Visibility="{Binding HasVisibleRows, Converter={StaticResource InverseBoolToVisibility}}" />
+
     <!-- Карточки твиков: сетка по две в ряд, как в витрине. Фильтр показывает часть списка. -->
-    <ItemsControl ItemsSource="{Binding VisibleRows}">
-      <ItemsControl.ItemsPanel>
-        <ItemsPanelTemplate>
-          <WrapPanel />
-        </ItemsPanelTemplate>
-      </ItemsControl.ItemsPanel>
+    <!-- Карточки твиков по группам: заголовок с числом карточек и числом отмеченных, внутри — сетка
+         по две в ряд. Числа считаются по ползункам, поэтому заголовок не может разойтись со списком. -->
+    <ItemsControl ItemsSource="{Binding Groups}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <StackPanel>
+            <Grid Margin="0,2,0,8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="{Binding TitleRu}" FontWeight="SemiBold" FontSize="14"
+                         VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Style="{StaticResource Caption}" VerticalAlignment="Center"
+                         Text="{Binding CountRu}" />
+            </Grid>
+            <ItemsControl ItemsSource="{Binding Rows}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
         <DataTemplate>
           <Border Style="{StaticResource Card}" Width="420" Margin="0,0,10,10">
@@ -226,6 +285,10 @@
               </StackPanel>
             </Grid>
           </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
         </DataTemplate>
       </ItemsControl.ItemTemplate>
     </ItemsControl>

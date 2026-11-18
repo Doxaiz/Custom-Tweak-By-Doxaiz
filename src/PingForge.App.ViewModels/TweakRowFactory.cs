@@ -86,6 +86,19 @@ public static class TweakRowFactory
         return membership;
     }
 
+    /// <summary>
+    /// Канонический порядок подкатегорий: по нему строятся группы в разделе «Твики».
+    /// Один список на всё окно — чтобы порядок групп и порядок каталога не разъехались.
+    /// </summary>
+    public static IReadOnlyList<string> FocusGroupsRu { get; } =
+    [
+        FocusRu(TweakFocus.Ping),
+        FocusRu(TweakFocus.Speed),
+        FocusRu(TweakFocus.Fps),
+        FocusRu(TweakFocus.Input),
+        FocusRu(TweakFocus.System),
+    ];
+
     /// <summary>Порядок подкатегорий в интерфейсе: пинг → скорость → кадры → ввод → система.</summary>
     public static int FocusOrder(TweakFocus focus) => focus switch
     {

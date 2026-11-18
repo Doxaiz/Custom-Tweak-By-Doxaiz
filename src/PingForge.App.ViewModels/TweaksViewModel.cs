@@ -22,6 +22,10 @@ public sealed class TweaksViewModel : ObservableObject
     private PresetViewModel? _selectedPreset;
     private bool _isApplying;
     private List<TweakRowViewModel>? _visibleFilter;
+    private TweakOrder _order = TweakOrder.ByPurpose;
+    private string _searchRu = string.Empty;
+    private IReadOnlyList<TweakGroupViewModel> _groups = [];
+    private IReadOnlyList<TweakRowViewModel> _visibleRows = [];
 
     public TweaksViewModel(
         EngineClient engine,
@@ -41,6 +45,14 @@ public sealed class TweaksViewModel : ObservableObject
         SelectAllCommand = new RelayCommand(() => SelectAll());
         SelectNoneCommand = new RelayCommand(() => SelectNone());
         ClearFilterCommand = new RelayCommand(ClearFilter, () => IsFiltered);
+        ClearSearchCommand = new RelayCommand(ClearSearch, () => _searchRu.Length > 0);
+
+        Orders =
+        [
+            new TweakOrderOptionViewModel(TweakOrder.ByPurpose, SelectOrder),
+            new TweakOrderOptionViewModel(TweakOrder.RecommendedFirst, SelectOrder),
+            new TweakOrderOptionViewModel(TweakOrder.Alphabetical, SelectOrder),
+        ];
 
         foreach (TweakRowViewModel row in _rows)
         {
@@ -48,8 +60,19 @@ public sealed class TweaksViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(CheckedCount), nameof(SelectionLineRu));
                 ApplySelectedCommand.RaiseCanExecuteChanged();
+
+                // Подписи групп считаются по ползункам: переключили твик — «включено 5» в заголовке
+                // должно измениться сразу. Сами группы при этом не пересобираются, иначе открытые
+                // блоки «Подробнее» схлопывались бы у человека на глазах.
+                foreach (TweakGroupViewModel group in _groups)
+                {
+                    group.RefreshCounts();
+                }
             };
         }
+
+        Rebuild();
+        Orders[0].MarkSelected(true);
     }
 
     public IReadOnlyList<TweakRowViewModel> Rows => _rows;
@@ -76,8 +99,105 @@ public sealed class TweaksViewModel : ObservableObject
         OnPropertyChanged(nameof(InputLatency));
     }
 
-    /// <summary>Строки, которые видит человек: весь каталог или отфильтрованная часть (задача F).</summary>
-    public IReadOnlyList<TweakRowViewModel> VisibleRows => _visibleFilter ?? _rows;
+    /// <summary>
+    /// Строки, которые видит человек, — в том порядке, в каком они стоят на экране. Это и каталог,
+    /// и фильтр по кодам (задача F), и поиск; плоский список нужен тем, кто не смотрит на группы.
+    /// </summary>
+    public IReadOnlyList<TweakRowViewModel> VisibleRows => _visibleRows;
+
+    /// <summary>Группы карточек на экране: «по назначению» — по подкатегориям, иначе одна группа.</summary>
+    public IReadOnlyList<TweakGroupViewModel> Groups => _groups;
+
+    /// <summary>Режимы порядка для кнопок-пилюль. Подписи и пояснения — из <see cref="TweakOrdering"/>.</summary>
+    public IReadOnlyList<TweakOrderOptionViewModel> Orders { get; }
+
+    /// <summary>Текущий порядок карточек.</summary>
+    public TweakOrder Order => _order;
+
+    /// <summary>Строка, по которой ищут: название, описание или код.</summary>
+    public string SearchRu
+    {
+        get => _searchRu;
+        set
+        {
+            string cleaned = value ?? string.Empty;
+            if (!Set(ref _searchRu, cleaned))
+            {
+                return;
+            }
+
+            ClearSearchCommand.RaiseCanExecuteChanged();
+            Rebuild();
+        }
+    }
+
+    /// <summary>Подпись под поиском: сколько нашлось и по чему идёт поиск.</summary>
+    public string SearchLineRu
+    {
+        get
+        {
+            if (_searchRu.Trim().Length == 0)
+            {
+                return "Поиск идёт по названию, описанию, коду и назначению — например, «DNS» или «TCP_ACK».";
+            }
+
+            if (_visibleRows.Count == 0)
+            {
+                return "Ничего не найдено: измените запрос. Отметки и пресеты при этом не менялись.";
+            }
+
+            return _visibleRows.Count == 1
+                ? "Найден 1 твик — поиск идёт по названию, описанию, коду и назначению."
+                : $"Найдено {_visibleRows.Count} из {_rows.Count} — поиск идёт по названию, описанию, коду и назначению.";
+        }
+    }
+
+    /// <summary>Строка для пустого экрана: показывается только когда показывать нечего.</summary>
+    public string EmptyLineRu => _visibleRows.Count > 0
+        ? string.Empty
+        : _searchRu.Trim().Length == 0
+            ? "Список пуст: в каталоге нет ни одного твика."
+            : "По этому запросу в каталоге ничего нет. Очистите поиск или измените запрос.";
+
+    public bool HasVisibleRows => _visibleRows.Count > 0;
+
+    public RelayCommand ClearSearchCommand { get; }
+
+    /// <summary>Сменить порядок карточек: тот же список, другая последовательность.</summary>
+    public void SelectOrder(TweakOrder order)
+    {
+        if (_order == order)
+        {
+            return;
+        }
+
+        _order = order;
+        foreach (TweakOrderOptionViewModel option in Orders)
+        {
+            option.MarkSelected(option.Order == order);
+        }
+
+        OnPropertyChanged(nameof(Order), nameof(OrderLineRu));
+        Rebuild();
+    }
+
+    /// <summary>Строка о текущем порядке: чем он полезен, а не просто «сортировка».</summary>
+    public string OrderLineRu =>
+        $"{TweakOrdering.TitleRu(_order)}: {TweakOrdering.HintRu(_order)}";
+
+    /// <summary>Сбросить поиск: снова видно всё, что не урезано фильтром по кодам.</summary>
+    public void ClearSearch()
+    {
+        if (_searchRu.Length == 0)
+        {
+            return;
+        }
+
+        _searchRu = string.Empty;
+        OnPropertyChanged(nameof(SearchRu));
+        ClearSearchCommand.RaiseCanExecuteChanged();
+        Rebuild();
+    }
 
     /// <summary>Включён ли фильтр по кодам (из карточки задержки ввода или проверки настроек).</summary>
     public bool IsFiltered => _visibleFilter is not null;
@@ -103,7 +223,8 @@ public sealed class TweaksViewModel : ObservableObject
 
         // Ни одного совпадения — фильтр не включается: пустой список без объяснения был бы ошибкой.
         _visibleFilter = matched.Count > 0 ? matched : null;
-        OnPropertyChanged(nameof(VisibleRows), nameof(IsFiltered), nameof(FilterLineRu));
+        Rebuild();
+        OnPropertyChanged(nameof(IsFiltered), nameof(FilterLineRu));
         ClearFilterCommand.RaiseCanExecuteChanged();
         StatusRu = matched.Count == 0
             ? "Среди твиков каталога нет ни одного из перечисленных кодов — фильтр не включён, показан весь список."
@@ -114,9 +235,30 @@ public sealed class TweaksViewModel : ObservableObject
     public void ClearFilter()
     {
         _visibleFilter = null;
-        OnPropertyChanged(nameof(VisibleRows), nameof(IsFiltered), nameof(FilterLineRu));
+        Rebuild();
+        OnPropertyChanged(nameof(IsFiltered), nameof(FilterLineRu));
         ClearFilterCommand.RaiseCanExecuteChanged();
         StatusRu = "Фильтр снят: показан весь каталог твиков.";
+    }
+
+    /// <summary>
+    /// Пересобрать экранный список: фильтр по кодам → поиск → порядок и группы. Одна точка, где
+    /// решается, что видно, — иначе поиск, фильтр и порядок начинают спорить друг с другом.
+    /// </summary>
+    private void Rebuild()
+    {
+        IEnumerable<TweakRowViewModel> source = _visibleFilter ?? _rows;
+
+        IEnumerable<TweakRowViewModel> filtered = string.IsNullOrWhiteSpace(_searchRu)
+            ? source
+            : source.Where(row => TweakOrdering.MatchesSearch(row, _searchRu));
+
+        _groups = TweakOrdering.BuildGroups(filtered, _order);
+        _visibleRows = _groups.SelectMany(group => group.Rows).ToList();
+
+        OnPropertyChanged(
+            nameof(Groups), nameof(VisibleRows), nameof(SearchLineRu), nameof(EmptyLineRu),
+            nameof(HasVisibleRows), nameof(OrderLineRu));
     }
 
     /// <summary>
