@@ -39,6 +39,7 @@ public sealed class TweaksViewModel : ObservableObject
         Presets = presets ?? throw new ArgumentNullException(nameof(presets));
 
         ApplyPresetCommand = new AsyncRelayCommand(ApplySelectedPresetAsync, () => SelectedPreset is not null);
+        ShowPresetCommand = new RelayCommand(ShowPresetTweaks, () => SelectedPreset is not null);
         RollbackCommand = new AsyncRelayCommand(RollbackAsync);
         ApplySelectedCommand = new AsyncRelayCommand(ApplyCheckedAsync, () => CheckedCount > 0);
         SelectRecommendedCommand = new RelayCommand(() => SelectRecommended());
@@ -369,6 +370,9 @@ public sealed class TweaksViewModel : ObservableObject
 
     public AsyncRelayCommand ApplyPresetCommand { get; }
 
+    /// <summary>Показать состав выбранного пресета: отбор карточек, а не применение.</summary>
+    public RelayCommand ShowPresetCommand { get; }
+
     public AsyncRelayCommand ApplySelectedCommand { get; }
 
     /// <summary>Вернуть прежние настройки одной кнопкой.</summary>
@@ -394,6 +398,7 @@ public sealed class TweaksViewModel : ObservableObject
             if (Set(ref _selectedPreset, value))
             {
                 ApplyPresetCommand.RaiseCanExecuteChanged();
+                ShowPresetCommand.RaiseCanExecuteChanged();
                 OnPropertyChanged(nameof(SelectedPresetNoteRu));
             }
         }
@@ -402,7 +407,35 @@ public sealed class TweaksViewModel : ObservableObject
     /// <summary>Пояснение к выбранному пресету: что именно он делает и сколько твиков применит.</summary>
     public string SelectedPresetNoteRu => SelectedPreset is null
         ? "Пресет не выбран."
-        : $"{SelectedPreset.PurposeRu}. Применится твиков: {SelectedPreset.Count}.";
+        : $"{SelectedPreset.PurposeRu}. Применится твиков: {SelectedPreset.Count}. " +
+          "Состав можно посмотреть до применения — кнопкой «Показать состав»: ползунки при этом не двигаются.";
+
+    /// <summary>
+    /// Показать состав выбранного пресета — те самые твики, которые применит служба. Это отбор:
+    /// ползунки и отметки не меняются, «Применить пресет» остаётся обычным нажатием с подтверждением.
+    /// </summary>
+    public void ShowPresetTweaks()
+    {
+        if (SelectedPreset is null)
+        {
+            StatusRu = "Пресет не выбран: нажмите на один из трёх, чтобы увидеть состав.";
+            return;
+        }
+
+        PresetViewModel preset = SelectedPreset;
+        if (!preset.HasCodes)
+        {
+            StatusRu = $"Состав пресета «{preset.TitleRu}» каталог не отдал — показать нечего. " +
+                "Применение пресета от этого не меняется.";
+            return;
+        }
+
+        int matched = ShowOnlyCodes(preset.CodesOrEmpty);
+        StatusRu = matched == VisibleRows.Count
+            ? $"Показан состав пресета «{preset.TitleRu}»: {matched} твиков. Отметки и ползунки не менялись."
+            : $"Состав пресета «{preset.TitleRu}»: {matched} твиков в каталоге, сейчас видно {VisibleRows.Count} — " +
+              "поиск или фильтры сузили список. Отметки не менялись.";
+    }
 
     public bool IsApplying
     {

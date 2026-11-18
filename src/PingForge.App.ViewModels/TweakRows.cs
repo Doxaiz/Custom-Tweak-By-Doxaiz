@@ -228,13 +228,24 @@ public sealed record JournalRowViewModel(
         : $"не получилось: {ExplanationRu}";
 }
 
-/// <summary>Модель представления пресета: состав и подпись собираются из данных, а не пишутся руками.</summary>
+/// <summary>
+/// Модель представления пресета: состав и подпись собираются из данных, а не пишутся руками.
+/// <paramref name="Codes"/> — те самые коды, которые применит служба: по ним человек может посмотреть
+/// состав пресета до нажатия «Применить», а не верить числу на слово.
+/// </summary>
 public sealed record PresetViewModel(
     TweakProfilePreset Preset,
     string WireName,
     string TitleRu,
     string PurposeRu,
-    int Count)
+    int Count,
+    IReadOnlyList<string>? Codes = null)
 {
     public string ChipRu => $"{TitleRu} · {Count}";
+
+    /// <summary>Коды твиков пресета; пустой список, если состав не передан.</summary>
+    public IReadOnlyList<string> CodesOrEmpty => Codes ?? [];
+
+    /// <summary>Можно ли показать состав: коды известны и их столько же, сколько обещано в подписи.</summary>
+    public bool HasCodes => CodesOrEmpty.Count > 0;
 }
