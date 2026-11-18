@@ -24,7 +24,7 @@
                   ToolTip="Переискать библиотеки Steam и обычные папки" />
           <Button Style="{StaticResource GhostButton}" Content="Добавить игру" Margin="0,8,0,0"
                   Command="{Binding AddGameCommand}"
-                  ToolTip="Добавить .exe игры, которой нет в списке известных. Анти-чит у своей игры неизвестен." />
+                  ToolTip="Добавить игру, которой нет в списке известных: подойдёт .exe, ярлык с рабочего стола или ссылка — программа найдёт по ним файл игры. Анти-чит у своей игры неизвестен." />
         </StackPanel>
       </Grid>
     </Border>
@@ -74,8 +74,9 @@
               <StackPanel Grid.Column="1" VerticalAlignment="Center" MinWidth="150">
                 <Button Style="{StaticResource PrimaryButton}" Content="{Binding OpenButtonRu}"
                         Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" />
-                <Button Style="{StaticResource GhostButton}" Content="Указать .exe" Margin="0,8,0,0"
-                        Command="{Binding ChoosePathCommand}" HorizontalAlignment="Stretch" />
+                <Button Style="{StaticResource GhostButton}" Content="Указать файл" Margin="0,8,0,0"
+                        Command="{Binding ChoosePathCommand}" HorizontalAlignment="Stretch"
+                        ToolTip="Подойдёт .exe, ярлык с рабочего стола или ссылка на игру." />
                 <Button Style="{StaticResource GhostButton}" Content="Переименовать" Margin="0,8,0,0"
                         Visibility="{Binding IsCustom, Converter={StaticResource BoolToVisibility}}"
                         Click="RenameCustomClick" HorizontalAlignment="Stretch" />

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
 using PingForge.App.ViewModels;
+using PingForge.Network;
 using Microsoft.Win32;
 
 namespace PingForge.App;
@@ -209,7 +210,14 @@ public sealed class ProcessGameStarter : IGameStarter
     }
 }
 
-/// <summary>Выбор .exe руками: обычное окно Windows. Отдельный порт — чтобы модель не зависела от окон.</summary>
+/// <summary>
+/// Выбор файла игры руками: обычное окно Windows. Отдельный порт — чтобы модель не зависела от окон.
+/// </summary>
+/// <remarks>
+/// В окне видны не только .exe: с рабочего стола люди берут ярлык, а иногда — файл ссылки. Разбор
+/// таких файлов делает <see cref="GameExecutableResolver"/>: диалог лишь не мешает их выбрать.
+/// Открывается папка рабочего стола: там чаще всего и лежит то, что человек хочет указать.
+/// </remarks>
 public sealed class OpenFileExecutablePicker : IExecutablePicker
 {
     public string? Pick(string titleRu)
@@ -217,9 +225,16 @@ public sealed class OpenFileExecutablePicker : IExecutablePicker
         var dialog = new OpenFileDialog
         {
             Title = $"Custom Tweak By Doxaiz — выберите файл игры: {titleRu}",
-            Filter = "Программы (*.exe)|*.exe",
+            Filter = "Программы и ярлыки (*.exe;*.lnk;*.url)|*.exe;*.lnk;*.url|Программы (*.exe)|*.exe|Все файлы (*.*)|*.*",
+            FilterIndex = 1,
             CheckFileExists = true,
         };
+
+        string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        if (!string.IsNullOrWhiteSpace(desktop) && Directory.Exists(desktop))
+        {
+            dialog.InitialDirectory = desktop;
+        }
 
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }

@@ -57,7 +57,7 @@ public sealed class GameCardViewModel : ObservableObject
         ChoosePathCommand = new AsyncRelayCommand(() => _choose(this), () => !IsBusy);
 
         _statusRu = executablePath is null
-            ? "Не найдена на диске — укажите .exe, и программа запомнит путь."
+            ? "Не найдена на диске — укажите файл игры или ярлык с рабочего стола, и программа запомнит путь."
             : $"Найдена: {executablePath}";
     }
 
@@ -295,7 +295,7 @@ public sealed class GameLauncherViewModel : ObservableObject
             await ChoosePathAsync(card).ConfigureAwait(true);
             if (!card.HasPath)
             {
-                card.StatusRu = "Без пути запускать нечего: нажмите «Указать .exe» и выберите файл игры.";
+                card.StatusRu = "Без пути запускать нечего: нажмите «Указать файл» и выберите .exe игры или её ярлык.";
                 return;
             }
         }
@@ -326,34 +326,67 @@ public sealed class GameLauncherViewModel : ObservableObject
         }
     }
 
-    /// <summary>Указать .exe вручную и запомнить путь — при следующем запуске искать не придётся.</summary>
+    /// <summary>
+    /// Указать файл игры вручную и запомнить путь — при следующем запуске искать не придётся.
+    /// Ярлык с рабочего стола и ссылка тоже подходят: программа найдёт по ним .exe.
+    /// </summary>
     public async Task ChoosePathAsync(GameCardViewModel card)
     {
-        string? path = _picker.Pick(card.TitleRu);
-        if (string.IsNullOrWhiteSpace(path))
+        string? picked = _picker.Pick(card.TitleRu);
+        if (string.IsNullOrWhiteSpace(picked))
         {
             card.StatusRu = "Путь не выбран — игра осталась ненайденной.";
             return;
         }
 
-        card.SetPath(path);
-        StatusRu = SavePath(card) ?? card.StatusRu;
+        if (!GameExecutableResolver.TryResolve(picked, File.Exists, out string executable, out string note, out string errorRu))
+        {
+            card.StatusRu = $"Файл не подошёл: {errorRu}";
+            return;
+        }
+
+        card.SetPath(executable);
+        StatusRu = SavePath(card) ?? (note.Length == 0 ? card.StatusRu : $"{note} {card.StatusRu}");
         OnPropertyChanged(nameof(SummaryRu));
         await Task.CompletedTask.ConfigureAwait(true);
     }
 
-    /// <summary>Выбрать .exe через диалог и добавить своей игрой; название — по имени файла, переименовать можно в карточке.</summary>
+    /// <summary>
+    /// Выбрать файл через диалог и добавить своей игрой. Файл не обязан быть .exe: ярлык с рабочего
+    /// стола и файл ссылки тоже подходят — программа найдёт по ним исполняемый файл игры и скажет,
+    /// на что именно указывает выбор. Название берётся из имени файла, переименовать можно в карточке.
+    /// </summary>
     public async Task AddGameFromPickerAsync()
     {
-        string? path = _picker.Pick("Выберите .exe своей игры");
-        if (string.IsNullOrWhiteSpace(path))
+        string? picked = _picker.Pick("Выберите файл игры, её ярлык с рабочего стола или ссылку");
+        if (string.IsNullOrWhiteSpace(picked))
         {
             StatusRu = "Игра не добавлена: файл не выбран.";
             return;
         }
 
-        string title = Path.GetFileNameWithoutExtension(path.Trim());
-        await AddCustomGameAsync(path, title).ConfigureAwait(true);
+        if (!GameExecutableResolver.TryResolve(picked, File.Exists, out string executable, out string note, out string errorRu))
+        {
+            StatusRu = $"Игра не добавлена: {errorRu}";
+            return;
+        }
+
+        string pickedTitle = Path.GetFileNameWithoutExtension(picked.Trim());
+        await AddCustomGameAsync(executable, pickedTitle).ConfigureAwait(true);
+
+        if (!StatusRu.StartsWith("Своя игра", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // Что именно нашлось по выбранному файлу и когда служба увидит процесс: уже запущенную игру —
+        // сразу, не запущенную — когда человек её откроет. Обещать «вижу игру» до запуска нельзя.
+        string processName = GameProcessCatalog.Normalize(executable);
+        string visibility = _starter.IsRunning(processName)
+            ? $"Процесс «{processName}» уже запущен — служба видит его в списке процессов."
+            : $"Процесс «{processName}» появится в списке, когда игра запустится.";
+
+        StatusRu = note.Length > 0 ? $"{note} {StatusRu} {visibility}" : $"{StatusRu} {visibility}";
     }
 
     /// <summary>
