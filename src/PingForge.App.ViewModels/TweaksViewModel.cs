@@ -66,7 +66,7 @@ public sealed class TweaksViewModel : ObservableObject
         {
             row.PropertyChanged += (_, _) =>
             {
-                OnPropertyChanged(nameof(CheckedCount), nameof(SelectionLineRu));
+                OnPropertyChanged(nameof(CheckedCount), nameof(SelectionLineRu), nameof(SelectionBreakdownRu));
                 ApplySelectedCommand.RaiseCanExecuteChanged();
 
                 // Подписи групп считаются по ползункам: переключили твик — «включено 5» в заголовке
@@ -273,7 +273,7 @@ public sealed class TweaksViewModel : ObservableObject
 
     /// <summary>Подпись фильтра: сколько строк показано из скольких — числа считаются, а не пишутся.</summary>
     public string FilterLineRu => IsFiltered
-        ? $"Показаны {VisibleRows.Count} из {_rows.Count} твиков — связанных с последней проверкой."
+        ? $"Показаны {VisibleRows.Count} из {_rows.Count} {TweakOrdering.Plural(_rows.Count, "твик", "твика", "твиков")} — связанных с последней проверкой."
         : string.Empty;
 
     public RelayCommand ClearFilterCommand { get; }
@@ -361,7 +361,7 @@ public sealed class TweaksViewModel : ObservableObject
 
         StatusRu = matched == 0
             ? "Проверка сети передала коды, которых нет в каталоге, — отметки сняты, применять нечего."
-            : $"Отмечено по проверке сети: {matched} твик(ов). Дальше — обычная кнопка применения с подтверждением.";
+            : $"Отмечено по проверке сети: {matched} {TweakOrdering.Plural(matched, "твик", "твика", "твиков")}. Дальше — обычная кнопка применения с подтверждением.";
 
         return matched;
     }
@@ -436,8 +436,8 @@ public sealed class TweaksViewModel : ObservableObject
         int matched = preset.CodesOrEmpty.Count(code => _rows.Any(row =>
             string.Equals(row.Code, code, StringComparison.OrdinalIgnoreCase)));
         StatusRu = matched == VisibleRows.Count
-            ? $"Показан состав пресета «{preset.TitleRu}»: {matched} твиков. Отметки и ползунки не менялись."
-            : $"Состав пресета «{preset.TitleRu}»: {matched} твиков в каталоге, сейчас видно {VisibleRows.Count} — " +
+            ? $"Показан состав пресета «{preset.TitleRu}»: {matched} {TweakOrdering.Plural(matched, "твик", "твика", "твиков")}. Отметки и ползунки не менялись."
+            : $"Состав пресета «{preset.TitleRu}»: {matched} {TweakOrdering.Plural(matched, "твик", "твика", "твиков")} в каталоге, сейчас видно {VisibleRows.Count} — " +
               "поиск или фильтры сузили список. Отметки не менялись.";
     }
 
@@ -452,6 +452,44 @@ public sealed class TweaksViewModel : ObservableObject
     /// <summary>Число включённых нельзя выдумывать: показываем ровно то, что стоит в ползунках.</summary>
     public string SelectionLineRu => $"Отмечено {CheckedCount} из {_rows.Count}";
 
+    /// <summary>
+    /// Разбивка отмеченного по назначению: «Пинг и сеть — 5 · Кадры — 4». Числа считаются по строкам,
+    /// поэтому человек видит, чего в его выборе много, а чего нет, — и в окне, и в подтверждении.
+    /// </summary>
+    public string SelectionBreakdownRu
+    {
+        get
+        {
+            List<TweakRowViewModel> chosen = _rows.Where(row => row.IsOn).ToList();
+            if (chosen.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var order = TweakRowFactory.FocusGroupsRu;
+            IEnumerable<string> parts = chosen
+                .GroupBy(row => row.FocusRu, StringComparer.Ordinal)
+                .OrderBy(group => IndexOfFocus(order, group.Key))
+                .ThenBy(group => group.Key, StringComparer.Ordinal)
+                .Select(group => $"{group.Key} — {group.Count()}");
+            return string.Join(" · ", parts);
+        }
+    }
+
+    private static int IndexOfFocus(IReadOnlyList<string> order, string focus)
+    {
+        for (int i = 0; i < order.Count; i++)
+        {
+            if (string.Equals(order[i], focus, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        // Подкатегория, которой нет в каноническом списке, идёт последней — как и в группах карточек.
+        return order.Count;
+    }
+
     /// <summary>Сколько рекомендованных — считается по каталогу, а не берётся из константы.</summary>
     public int RecommendedCount => _rows.Count(row => row.IsRecommended);
 
@@ -463,7 +501,7 @@ public sealed class TweaksViewModel : ObservableObject
             row.IsOn = row.IsRecommended;
         }
 
-        StatusRu = $"Оставлено только рекомендуемое: {CheckedCount} твиков из {_rows.Count}. " +
+        StatusRu = $"Оставлено только рекомендуемое: {CheckedCount} {TweakOrdering.Plural(CheckedCount, "твик", "твика", "твиков")} из {_rows.Count}. " +
             "Остальные («по желанию», «осторожно», «не советуем») выключены.";
     }
 
@@ -484,9 +522,9 @@ public sealed class TweaksViewModel : ObservableObject
         }
 
         StatusRu = skipped == 0
-            ? $"Включено всё: {CheckedCount} твиков."
-            : $"Включено {CheckedCount} твиков. Не включены {skipped} штуки с вердиктом «не советуем»: " +
-              "их можно поставить только вручную и с пониманием, что они ломают.";
+            ? $"Включено всё: {CheckedCount} {TweakOrdering.Plural(CheckedCount, "твик", "твика", "твиков")}."
+            : $"Включено {CheckedCount} {TweakOrdering.Plural(CheckedCount, "твик", "твика", "твиков")}. Не включено твиков с вердиктом «не советуем»: {skipped}. Их " +
+              "ставить только вручную и с пониманием, что они ломают.";
     }
 
     /// <summary>«Отключить всё».</summary>
@@ -567,10 +605,14 @@ public sealed class TweaksViewModel : ObservableObject
             : $"\n\nСреди них {dangerous} с вердиктом «не советуем» — они помечены в списке. " +
               "Их включают только осознанно: они ломают устойчивость соединения или загрузки.";
 
+        string breakdown = SelectionBreakdownRu.Length == 0
+            ? string.Empty
+            : $" Что именно: {SelectionBreakdownRu}.";
+
         bool confirmed = await _dialogs.ConfirmAsync(
-            $"Применить {checkedRows.Count} твиков?",
+            $"Применить {checkedRows.Count} {TweakOrdering.Plural(checkedRows.Count, "твик", "твика", "твиков")}?",
             "Перед изменениями программа запомнит прежние значения и предложит точку восстановления Windows." +
-            warning,
+            breakdown + warning,
             "Применить",
             "Отмена").ConfigureAwait(true);
 
@@ -585,7 +627,7 @@ public sealed class TweaksViewModel : ObservableObject
             .ConfigureAwait(true);
 
         IsApplying = true;
-        StatusRu = $"Применяю {checkedRows.Count} твиков…";
+        StatusRu = $"Применяю {checkedRows.Count} {TweakOrdering.Plural(checkedRows.Count, "твик", "твика", "твиков")}…";
         try
         {
             EngineResponse response = await _engine.SendAsync(

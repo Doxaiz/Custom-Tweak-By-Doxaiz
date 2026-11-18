@@ -132,6 +132,9 @@
           <Button Style="{StaticResource PrimaryButton}" Padding="16,9" Content="Применить отмеченное" Command="{Binding ApplySelectedCommand}" Margin="0,0,8,8" />
         </WrapPanel>
         <TextBlock Style="{StaticResource Caption}" Text="{Binding SelectionLineRu}" Margin="0,4,0,0" />
+        <TextBlock Style="{StaticResource Caption}" Text="{Binding SelectionBreakdownRu}" Margin="0,2,0,0"
+                   TextWrapping="Wrap"
+                   Visibility="{Binding SelectionBreakdownRu, Converter={StaticResource StringToVisibility}}" />
         <TextBlock Style="{StaticResource Caption}" Text="{Binding StatusRu}" Margin="0,6,0,0" />
       </StackPanel>
     </Border>

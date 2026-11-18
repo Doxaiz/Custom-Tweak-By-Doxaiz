@@ -317,6 +317,10 @@ setTimeout(async () => {
     filterTitles.every(title => filterChips.some(chip => chip === title)),
     `найдено: ${filterChips.filter(chip => filterTitles.includes(chip)).join(' | ') || 'ничего'}`);
 
+  check('подтверждение применения называет состав выбора по назначению',
+    /Пинг и сеть — \d+ · Кадры — \d+/.test(html),
+    'в макете нет подписи состава выбора');
+
   check('у пресетов описан показ состава без применения',
     /«Показать состав»/.test(html),
     'в макете нет кнопки состава пресета');

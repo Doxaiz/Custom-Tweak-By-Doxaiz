@@ -131,7 +131,7 @@ public sealed class TweakSortingTests
         string[] titles = rows.Select(row => row.TitleRu).ToArray();
 
         Assert.Equal(titles.OrderBy(title => title, StringComparer.OrdinalIgnoreCase).ToArray(), titles);
-        Assert.Equal(1, tweaks.Groups.Count);
+        Assert.Single(tweaks.Groups);
     }
 
     [Fact]

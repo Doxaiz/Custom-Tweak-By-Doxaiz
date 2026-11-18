@@ -442,7 +442,7 @@ public sealed class AnalysisIntegrationTests
 
         Assert.True(check.DataCollected);
         Assert.Contains("Помех не найдено", check.SummaryRu, StringComparison.Ordinal);
-        Assert.Contains("1 твиков уже в рекомендованном состоянии", check.SummaryRu, StringComparison.Ordinal);
+        Assert.Contains("1 твик уже в рекомендованном состоянии", check.SummaryRu, StringComparison.Ordinal);
         Assert.Empty(check.Recommended);
     }
 
