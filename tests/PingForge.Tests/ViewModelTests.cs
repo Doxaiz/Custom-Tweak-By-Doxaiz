@@ -390,7 +390,8 @@ public class ViewModelTests
         Assert.Equal(44, tweaks.CheckedCount);
         Assert.All(tweaks.Rows.Where(row => row.IsDangerous), row => Assert.False(row.IsOn));
         Assert.Contains("не советуем", tweaks.StatusRu);
-        Assert.Contains("3 штуки", tweaks.StatusRu);
+        // Число опасных названо числом, а не «3 штуки»: форма одна на все числа.
+        Assert.Contains("«не советуем»: 3", tweaks.StatusRu);
     }
 
     [Fact]
@@ -461,7 +462,7 @@ public class ViewModelTests
 
         await tweaks.ApplySelectedCommand.ExecuteAsync();
 
-        Assert.Contains("3 твиков", dialogs.Confirmations[0].Title);
+        Assert.Contains("3 твика", dialogs.Confirmations[0].Title);
         Assert.Contains("1 с вердиктом «не советуем»", dialogs.Confirmations[0].Message);
 
         EngineRequest request = channel.Requests.Single(r => r.Command == EngineCommandKind.ApplyTweaks);
