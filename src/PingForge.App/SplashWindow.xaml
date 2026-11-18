@@ -46,7 +46,7 @@
           <Border x:Name="Bar" CornerRadius="3" Background="{StaticResource AccentGradient}" HorizontalAlignment="Stretch" />
         </Border>
 
-        <TextBlock Text="Ничего не меняется, пока вы не нажмёте кнопку" Foreground="#61748F" FontSize="10.5" Margin="0,10,0,0" />
+        <TextBlock Text="Ничего не меняется, пока вы не нажмёте кнопку" Foreground="{StaticResource Dim}" FontSize="10.5" Margin="0,10,0,0" />
       </StackPanel>
     </Border>
   </Border>

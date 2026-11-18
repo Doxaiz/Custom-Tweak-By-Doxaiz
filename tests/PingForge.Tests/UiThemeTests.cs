@@ -203,6 +203,28 @@ public sealed class UiThemeTests
     }
 
     [Fact]
+    public void Текст_оформлен_цветами_темы()
+    {
+        // Заставка — исключение для РИСУНКА: там градиент и его оттенки живут по месту. Но текст
+        // исключением не был: подсказка внизу карточки красилась литералом #61748F и давала
+        // 3,8:1 на своей подложке — ниже требования AA (4,5:1). Поэтому цвета текста проверяются
+        // во всех файлах без исключений: либо кисть темы, либо именованный цвет в App.xaml.
+        var inline = new List<string>();
+        foreach (string file in XamlFiles.Where(name => name != "checked-App.xaml"))
+        {
+            string xaml = Regex.Replace(ReadChecked(file), "<!--.*?-->", string.Empty, RegexOptions.Singleline);
+            foreach (Match match in Regex.Matches(xaml, "Foreground=\"(#[0-9A-Fa-f]{6,8})\""))
+            {
+                inline.Add($"{file}: {match.Groups[1].Value}");
+            }
+        }
+
+        Assert.True(
+            inline.Count == 0,
+            "цвет текста по месту (возьмите кисть из App.xaml): " + string.Join(", ", inline.Distinct()));
+    }
+
+    [Fact]
     public void Главное_действие_выделено_на_экране_оптимизации()
     {
         string optimize = ReadChecked("checked-OptimizeView.xaml");
