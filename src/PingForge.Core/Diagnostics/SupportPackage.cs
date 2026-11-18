@@ -178,6 +178,9 @@ public static class SupportPackageBuilder
 {
     public const long MaxBytes = SupportPackagePlan.MaxBytes;
 
+    /// <summary>Хвост временного архива: он лежит рядом с пакетом и не остаётся после сбоя.</summary>
+    public const string TempSuffix = ".tmp";
+
     /// <summary>
     /// Составить план: прочитать все источники и решить, что войдёт. Ничего не пишет на диск.
     /// </summary>
@@ -327,24 +330,38 @@ public static class SupportPackageBuilder
                 Directory.CreateDirectory(folder);
             }
 
-            // Если архив уже есть — заменяем: второй пакет под тем же именем не должен дописываться.
-            if (File.Exists(plan.TargetPathRu))
+            // Собираем во временный файл рядом и подменяем прежний архив одним движением.
+            // Раньше прежний пакет удалялся до сборки: сбой посреди работы (нет места, нет прав)
+            // оставлял человека без старого пакета и с обрезанным новым.
+            string temp = plan.TargetPathRu + TempSuffix;
+            if (File.Exists(temp))
             {
-                File.Delete(plan.TargetPathRu);
+                File.Delete(temp);
             }
 
-            using (var archive = ZipFile.Open(plan.TargetPathRu, ZipArchiveMode.Create))
+            try
             {
-                for (int index = 0; index < plan.IncludedEntries.Count; index++)
+                using (var archive = ZipFile.Open(temp, ZipArchiveMode.Create))
                 {
-                    SupportPackageEntry entry = plan.IncludedEntries[index];
-                    SupportPackageContent content = plan.IncludedContents[index];
+                    for (int index = 0; index < plan.IncludedEntries.Count; index++)
+                    {
+                        SupportPackageEntry entry = plan.IncludedEntries[index];
+                        SupportPackageContent content = plan.IncludedContents[index];
 
-                    ZipArchiveEntry zipEntry = archive.CreateEntry(entry.EntryName, CompressionLevel.Optimal);
-                    using var stream = zipEntry.Open();
-                    using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-                    writer.Write(content.Text);
+                        ZipArchiveEntry zipEntry = archive.CreateEntry(entry.EntryName, CompressionLevel.Optimal);
+                        using var stream = zipEntry.Open();
+                        using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                        writer.Write(content.Text);
+                    }
                 }
+
+                // overwrite: true — второй пакет под тем же именем заменяет первый, но только целиком.
+                File.Move(temp, plan.TargetPathRu, overwrite: true);
+            }
+            catch
+            {
+                TryDeleteTemp(temp);
+                throw;
             }
 
             return SupportPackageBuildResult.Ok(plan.TargetPathRu, plan.IncludedEntries.Count);
@@ -352,6 +369,22 @@ public static class SupportPackageBuilder
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         {
             return SupportPackageBuildResult.Failed($"{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Убрать недописанный архив. Молча: он никому не нужен, а прежний пакет цел.</summary>
+    private static void TryDeleteTemp(string temp)
+    {
+        try
+        {
+            if (File.Exists(temp))
+            {
+                File.Delete(temp);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Не убралось — беды нет: имя с хвостом .tmp ни на что не влияет.
         }
     }
 }
