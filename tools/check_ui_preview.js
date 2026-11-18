@@ -335,6 +335,16 @@ setTimeout(async () => {
       /когда игра запустится/.test(html),
     'в макете нет абзаца про выбор ярлыка вместо .exe');
 
+  check('таблица «Что будет, если выбрать…» показывает не меньше 12 разных случаев',
+    (() => {
+      const table = d.getElementById('routes-pick-examples');
+      return !!table && table.querySelectorAll('tbody tr').length >= 12;
+    })(),
+    (() => {
+      const table = d.getElementById('routes-pick-examples');
+      return 'строк: ' + (table ? table.querySelectorAll('tbody tr').length : 0);
+    })());
+
   check('у своих игр в макете есть дословные примеры ответов — удача и отказы',
     /Примеры того, что человек увидит/.test(html) &&
       (html.match(/Игра не добавлена:/g) || []).length >= 3 &&
