@@ -233,7 +233,6 @@ public sealed class JournalViewModel : ObservableObject
     /// <summary>Экспорт CSV в файл: по умолчанию — в папку документов; путь возвращает в статусе.</summary>
     public async Task ExportCsvAsync()
     {
-        string csv = BuildCsv();
         string fileName = $"journal-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
         string dir = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         if (string.IsNullOrWhiteSpace(dir))
@@ -241,12 +240,25 @@ public sealed class JournalViewModel : ObservableObject
             dir = Path.GetTempPath();
         }
 
-        string path = Path.Combine(dir, fileName);
+        await ExportCsvToAsync(Path.Combine(dir, fileName)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Экспорт в названный файл — тот же путь, что у кнопки, только имя задано заранее: так его
+    /// проверяют тесты. Файл пишется целиком во временный рядом и подменяет целевой одним движением
+    /// (<see cref="AtomicFileWrite"/>), а существующий не затирается молча: два экспорта с одним
+    /// именем не должны съедать друг друга.
+    /// </summary>
+    public async Task ExportCsvToAsync(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        string csv = BuildCsv();
         try
         {
-            await File.WriteAllTextAsync(path, csv, Encoding.UTF8).ConfigureAwait(true);
-            StatusRu = $"CSV сохранён: {path} ({FilteredRows.Count} строк). Значения, которые таблица " +
-                "приняла бы за формулу, помечены апострофом — это текст, а не вычисление.";
+            await AtomicFileWrite.WriteAllTextAsync(path, csv, Encoding.UTF8, overwrite: false).ConfigureAwait(true);
+            StatusRu = $"CSV сохранён: {path} ({TweakOrdering.Plural(FilteredRows.Count, "строка", "строки", "строк")}). " +
+                "Значения, которые таблица приняла бы за формулу, помечены апострофом — это текст, а не вычисление.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
