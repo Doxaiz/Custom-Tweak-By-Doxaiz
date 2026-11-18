@@ -37,8 +37,11 @@ public sealed class JournalExportTests
         byte[] bytes = await File.ReadAllBytesAsync(path);
         Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF }, bytes[..3]);
 
-        Assert.Contains("CSV сохранён", journal.StatusRu, StringComparison.Ordinal);
-        Assert.Contains("2 строки", journal.StatusRu, StringComparison.Ordinal);
+        // В подписи — ровно то, что ушло в файл: число строк берётся из тех же строк журнала.
+        Assert.Equal(2, journal.FilteredRows.Count);
+        Assert.True(
+            journal.StatusRu.Contains("(2 строки)", StringComparison.Ordinal),
+            $"в статусе нет числа строк: «{journal.StatusRu}»");
     }
 
     [Fact]
@@ -77,8 +80,10 @@ public sealed class JournalExportTests
 
         await journal.ExportCsvToAsync(path);
 
-        Assert.Contains("1 строка", journal.StatusRu, StringComparison.Ordinal);
-        Assert.DoesNotContain("1 строк ", journal.StatusRu, StringComparison.Ordinal);
+        Assert.Equal(1, journal.FilteredRows.Count);
+        Assert.True(
+            journal.StatusRu.Contains("(1 строка)", StringComparison.Ordinal),
+            $"одна строка должна называться «1 строка», а статус: «{journal.StatusRu}»");
     }
 
     private static async Task<(JournalViewModel Journal, FakeEngineChannel Channel)> LoadedJournalAsync()
