@@ -317,6 +317,10 @@ setTimeout(async () => {
     filterTitles.every(title => filterChips.some(chip => chip === title)),
     `найдено: ${filterChips.filter(chip => filterTitles.includes(chip)).join(' | ') || 'ничего'}`);
 
+  check('у пресетов описан показ состава без применения',
+    /«Показать состав»/.test(html),
+    'в макете нет кнопки состава пресета');
+
   const groupHeaders = html.match(/твиков:\s*\d+\s*·\s*включено\s*\d+/g) || [];
   check('в заголовках групп стоит и число твиков, и число включённых',
     groupHeaders.length >= 5,
