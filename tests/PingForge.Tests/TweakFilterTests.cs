@@ -106,7 +106,7 @@ public sealed class TweakFilterTests
         tweaks.SearchRu = "троттлинг";
         // «Не советуем» скрыт фильтром — значит и поиск по нему ничего не найдёт.
         Assert.Empty(tweaks.VisibleRows);
-        Assert.Contains("Снимите фильтр", tweaks.EmptyLineRu, StringComparison.Ordinal);
+        Assert.Contains("снимите фильтр", tweaks.EmptyLineRu, StringComparison.Ordinal);
     }
 
     [Fact]
