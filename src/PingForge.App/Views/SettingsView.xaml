@@ -105,10 +105,14 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-          <Button Style="{StaticResource GhostButton}" Content="Показать в твиках" Command="{Binding ShowRecommendedTweaksCommand}" Margin="0,0,12,0" />
-          <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" Text="{Binding CountsRu}" />
-        </StackPanel>
+        <Grid Margin="0,10,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Button Grid.Column="0" Style="{StaticResource GhostButton}" Content="Показать в твиках" Command="{Binding ShowRecommendedTweaksCommand}" Margin="0,0,12,0" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Style="{StaticResource Caption}" VerticalAlignment="Center" Text="{Binding CountsRu}" />
+        </Grid>
       </StackPanel>
     </Border>
 
