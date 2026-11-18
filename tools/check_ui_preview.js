@@ -311,6 +311,12 @@ setTimeout(async () => {
     tweaksSection !== null && tweaksSection.querySelector('.chiprow span.on') !== null,
     'ни одна пилюля порядка не помечена выбранной');
 
+  const filterTitles = ['Только рекомендуемое', 'Скрыть «не советуем»', 'Только из пресетов'];
+  const filterChips = tweaksSection ? [...tweaksSection.querySelectorAll('.chiprow span')].map(n => n.textContent.trim()) : [];
+  check('в разделе «Твики» есть три быстрых фильтра, как в программе',
+    filterTitles.every(title => filterChips.some(chip => chip === title)),
+    `найдено: ${filterChips.filter(chip => filterTitles.includes(chip)).join(' | ') || 'ничего'}`);
+
   const groupHeaders = html.match(/твиков:\s*\d+\s*·\s*включено\s*\d+/g) || [];
   check('в заголовках групп стоит и число твиков, и число включённых',
     groupHeaders.length >= 5,

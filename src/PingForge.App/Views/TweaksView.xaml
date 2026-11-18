@@ -206,6 +206,26 @@
         <TextBlock Style="{StaticResource Caption}" Margin="0,2,0,10" TextWrapping="Wrap"
                    Text="{Binding OrderLineRu}" />
 
+        <TextBlock Style="{StaticResource StatLabel}" Text="ФИЛЬТРЫ" Margin="0,2,0,9" />
+        <ItemsControl ItemsSource="{Binding Filters}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <CheckBox Style="{StaticResource ChipToggle}" Margin="0,0,8,8"
+                        Content="{Binding TitleRu}"
+                        ToolTip="{Binding HintRu}"
+                        IsChecked="{Binding IsOn, Mode=TwoWay}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,10" TextWrapping="Wrap"
+                   Text="{Binding FiltersLineRu}"
+                   Visibility="{Binding FiltersLineRu, Converter={StaticResource StringToVisibility}}" />
+
         <TextBlock Style="{StaticResource StatLabel}" Text="ПОИСК" Margin="0,0,0,6" />
         <StackPanel Orientation="Horizontal">
           <TextBox Width="300" VerticalContentAlignment="Center"

@@ -148,6 +148,40 @@ public sealed class TweakOrderOptionViewModel : ObservableObject
 }
 
 /// <summary>
+/// Пилюля быстрого фильтра: нажатие переключает условие отбора, а не выбирает одно из многих.
+/// Поэтому это не «радиокнопка»: фильтров можно включить сразу несколько.
+/// </summary>
+public sealed class TweakFilterOptionViewModel : ObservableObject
+{
+    private readonly Action _onToggled;
+    private bool _isOn;
+
+    public TweakFilterOptionViewModel(TweakQuickFilter filter, Action onToggled)
+    {
+        Filter = filter;
+        _onToggled = onToggled ?? throw new ArgumentNullException(nameof(onToggled));
+    }
+
+    public TweakQuickFilter Filter { get; }
+
+    public string TitleRu => TweakQuickFilters.TitleRu(Filter);
+
+    public string HintRu => TweakQuickFilters.HintRu(Filter);
+
+    public bool IsOn
+    {
+        get => _isOn;
+        set
+        {
+            if (Set(ref _isOn, value))
+            {
+                _onToggled();
+            }
+        }
+    }
+}
+
+/// <summary>
 /// Группа карточек в разделе «Твики»: заголовок, пояснение и сами строки. Число карточек и число
 /// отмеченных считаются по строкам — подпись не может разойтись с ползунками.
 /// </summary>

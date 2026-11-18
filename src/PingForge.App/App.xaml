@@ -410,6 +410,39 @@
         </Setter>
       </Style>
 
+      <!-- Пилюля-переключатель: вид как у «Chip», но состояние независимое — быстрых фильтров
+           можно включить несколько сразу, поэтому это CheckBox, а не радиокнопка. Включённый
+           фильтр видно по акцентной рамке и жирной подписи, а не только по галочке. -->
+      <Style x:Key="ChipToggle" TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{StaticResource Muted}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="CheckBox">
+              <Border x:Name="Chrome" Background="{StaticResource ChipBg}" BorderBrush="{StaticResource Line}"
+                      BorderThickness="1" CornerRadius="999" Padding="13,7">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent}" />
+                  <Setter Property="Foreground" Value="{StaticResource Text}" />
+                  <Setter Property="FontWeight" Value="SemiBold" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource LineStrong}" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent2}" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
       <!-- Переключатель твика: то самое «красивое» вкл/выкл из требований. -->
       <Style x:Key="ToggleSwitch" TargetType="CheckBox">
         <Setter Property="Cursor" Value="Hand" />
