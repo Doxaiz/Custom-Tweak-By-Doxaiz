@@ -62,7 +62,7 @@ public sealed class JournalCsvTests
     [InlineData("+7", "'+7")]
     [InlineData("@SUM(A1)", "'@SUM(A1)")]
     [InlineData("-1+1", "'-1+1")]
-    [InlineData("=HYPERLINK(\"http://пример\",\"клик\")", "'\"=HYPERLINK(\"\"http://пример\"\",\"\"клик\"\")\"")]
+    [InlineData("=HYPERLINK(\"http://пример\",\"клик\")", "\"'=HYPERLINK(\"\"http://пример\"\",\"\"клик\"\")\"")]
     public void Формула_становится_текстом(string value, string expected)
     {
         Assert.Equal(expected, JournalCsv.EscapeField(value));
