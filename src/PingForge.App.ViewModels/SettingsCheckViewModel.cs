@@ -267,7 +267,7 @@ public sealed class SettingsCheckViewModel : ObservableObject
 
         if (Interference.Count == 0 && Recommended.Count == 0 && skipped == 0)
         {
-            return $"Помех не найдено, менять нечего: {alreadyOptimal} твиков уже в рекомендованном состоянии, {doNotTouch} не трогаем по вердикту каталога.";
+            return $"Помех не найдено, менять нечего: {alreadyOptimal} {TweakOrdering.Plural(alreadyOptimal, "твик", "твика", "твиков")} уже в рекомендованном состоянии, {doNotTouch} не трогаем по вердикту каталога.";
         }
 
         var parts = new List<string>();
