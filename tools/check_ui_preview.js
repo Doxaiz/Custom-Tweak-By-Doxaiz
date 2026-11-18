@@ -300,6 +300,22 @@ setTimeout(async () => {
   check('в карточках есть блок «Зачем для игры и чего это стоит» с пометкой стоит ли включать',
     cards.every(c => /Зачем для игры/.test(c.textContent)));
 
+  // ── порядок и поиск в разделе «Твики» ───────────────────────────────────────────────────────────
+  const tweaksSection = d.getElementById('tweaks');
+  const orderTitles = ['По назначению', 'Сначала полезное', 'По алфавиту'];
+  const orderChips = tweaksSection ? [...tweaksSection.querySelectorAll('.chiprow span')].map(node => node.textContent.trim()) : [];
+  check('в разделе «Твики» есть три режима порядка, как в программе',
+    orderTitles.every(title => orderChips.some(chip => chip.startsWith(title))),
+    `найдено: ${orderChips.join(' | ') || 'ничего'}`);
+  check('выбранный порядок видно на экране',
+    tweaksSection !== null && tweaksSection.querySelector('.chiprow span.on') !== null,
+    'ни одна пилюля порядка не помечена выбранной');
+
+  const groupHeaders = html.match(/твиков:\s*\d+\s*·\s*включено\s*\d+/g) || [];
+  check('в заголовках групп стоит и число твиков, и число включённых',
+    groupHeaders.length >= 5,
+    `таких заголовков: ${groupHeaders.length}`);
+
   // ── тема: палитра макета совпадает с программой, и текст на ней читается ─────────────────────
   const rootBlock = (html.match(/:root\{([\s\S]*?)\}/) || [])[1] || '';
   const vars = {};

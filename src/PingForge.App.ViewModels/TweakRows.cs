@@ -71,6 +71,13 @@ public sealed class TweakRowViewModel : ObservableObject
         set => Set(ref _isOn, value);
     }
 
+    /// <summary>
+    /// Вес вердикта для сортировки: 0 — «включать: да», 3 — «не советуем». Считается по тексту вердикта,
+    /// а текст приходит из <see cref="PingForge.Tweaks.TweakVerdict"/>, поэтому окно не может завести
+    /// свою шкалу полезности.
+    /// </summary>
+    public int VerdictRank => PingForge.Tweaks.TweakVerdict.Rank(VerdictRu);
+
     /// <summary>Названия пресетов, в которые входит твик: их видно прямо в карточке.</summary>
     public string PresetsLineRu
     {
@@ -95,6 +102,75 @@ public sealed class TweakRowViewModel : ObservableObject
             return names.Count == 0 ? "в авто-пресеты не входит" : "пресет: " + string.Join(", ", names);
         }
     }
+}
+
+/// <summary>
+/// Кнопка-пилюля выбора порядка: подпись и пояснение берутся из <see cref="TweakOrdering"/>,
+/// а нажатие уходит в модель представления через обратный вызов — выбранный режим видно на экране.
+/// </summary>
+public sealed class TweakOrderOptionViewModel : ObservableObject
+{
+    private readonly Action<TweakOrder> _onSelected;
+    private bool _isSelected;
+
+    public TweakOrderOptionViewModel(TweakOrder order, Action<TweakOrder> onSelected)
+    {
+        Order = order;
+        _onSelected = onSelected ?? throw new ArgumentNullException(nameof(onSelected));
+    }
+
+    public TweakOrder Order { get; }
+
+    public string TitleRu => TweakOrdering.TitleRu(Order);
+
+    public string HintRu => TweakOrdering.HintRu(Order);
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (Set(ref _isSelected, value) && value)
+            {
+                _onSelected(Order);
+            }
+        }
+    }
+
+    /// <summary>Отметить режим выбранным без нажатия: так модель приводит пилюли в согласие с порядком.</summary>
+    internal void MarkSelected(bool selected)
+    {
+        if (_isSelected != selected)
+        {
+            Set(ref _isSelected, selected, nameof(IsSelected));
+        }
+    }
+}
+
+/// <summary>
+/// Группа карточек в разделе «Твики»: заголовок, пояснение и сами строки. Число карточек и число
+/// отмеченных считаются по строкам — подпись не может разойтись с ползунками.
+/// </summary>
+public sealed class TweakGroupViewModel : ObservableObject
+{
+    public TweakGroupViewModel(string titleRu, IReadOnlyList<TweakRowViewModel> rows, string hintRu = "")
+    {
+        TitleRu = titleRu;
+        HintRu = hintRu;
+        Rows = rows ?? throw new ArgumentNullException(nameof(rows));
+    }
+
+    public string TitleRu { get; }
+
+    /// <summary>Что означает порядок внутри группы — одной строкой под заголовком.</summary>
+    public string HintRu { get; }
+
+    public IReadOnlyList<TweakRowViewModel> Rows { get; }
+
+    public string CountRu => TweakOrdering.CountRu(Rows.Count, Rows.Count(row => row.IsOn));
+
+    /// <summary>Пересчитать подпись, когда человек переключил ползунок в этой группе.</summary>
+    public void RefreshCounts() => OnPropertyChanged(nameof(CountRu));
 }
 
 /// <summary>Строка журнала: что меняли, что было, что стало и подтвердила ли система.</summary>

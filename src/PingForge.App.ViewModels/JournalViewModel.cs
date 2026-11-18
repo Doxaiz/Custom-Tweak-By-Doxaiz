@@ -223,39 +223,12 @@ public sealed class JournalViewModel : ObservableObject
 
     // ---- CSV ----
 
-    /// <summary>Собрать CSV из отфильтрованных строк (задача K): заголовок + экранирование кавычек/запятых/переносов.</summary>
-    public string BuildCsv()
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine("Дата,Твик,Код,Предыдущее,Применено,Проверено,Статус");
-        foreach (JournalRowViewModel row in FilteredRows)
-        {
-            string date = row.LoggedUtc == DateTime.MinValue ? string.Empty : row.LoggedUtc.ToString("yyyy-MM-dd HH:mm:ss");
-            builder.AppendLine(string.Join(",",
-                EscapeCsv(date),
-                EscapeCsv(row.TweakTitleRu),
-                EscapeCsv(row.TweakCode),
-                EscapeCsv(row.PreviousValueText),
-                EscapeCsv(row.AppliedValueText),
-                EscapeCsv(row.VerifiedActualText),
-                EscapeCsv(row.StatusRu)));
-        }
-
-        return builder.ToString();
-    }
-
-    private static string EscapeCsv(string value)
-    {
-        if (value is null) return string.Empty;
-        bool needsQuotes = value.Contains('"') || value.Contains(',') || value.Contains('\n') || value.Contains('\r');
-        if (value.Contains('"'))
-        {
-            value = value.Replace("\"", "\"\"");
-            needsQuotes = true;
-        }
-
-        return needsQuotes ? $"\"{value}\"" : value;
-    }
+    /// <summary>
+    /// Собрать CSV из отфильтрованных строк. Экранирование и защита от формул — в
+    /// <see cref="JournalCsv"/>: там это проверяется тестами, включая поля из реестра, которые
+    /// начинаются с «=» и в таблице стали бы формулой.
+    /// </summary>
+    public string BuildCsv() => JournalCsv.Build(FilteredRows);
 
     /// <summary>Экспорт CSV в файл: по умолчанию — в папку документов; путь возвращает в статусе.</summary>
     public async Task ExportCsvAsync()
@@ -272,7 +245,8 @@ public sealed class JournalViewModel : ObservableObject
         try
         {
             await File.WriteAllTextAsync(path, csv, Encoding.UTF8).ConfigureAwait(true);
-            StatusRu = $"CSV сохранён: {path} ({FilteredRows.Count} строк).";
+            StatusRu = $"CSV сохранён: {path} ({FilteredRows.Count} строк). Значения, которые таблица " +
+                "приняла бы за формулу, помечены апострофом — это текст, а не вычисление.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

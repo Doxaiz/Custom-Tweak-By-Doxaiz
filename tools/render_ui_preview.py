@@ -365,6 +365,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .scaleopts label:has(input:checked){color:var(--text);border-color:var(--accent);background:#18243c;font-weight:600}
 .chiprow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chiprow span{background:#0b1220;border:1px solid var(--line);border-radius:8px;padding:2px 7px;font-size:11.5px;color:var(--muted)}
+.chiprow span.on{background:#16223a;border-color:var(--line2);color:var(--text);font-weight:650}
 .overflow-safe{overflow-wrap:anywhere;word-break:break-word}
 """
 
@@ -1312,11 +1313,15 @@ def up_link() -> str:
     return '<a class="up" href="#top">\u2191 к списку разделов</a>'
 
 
-def category_group_heading(ru: str, count: int, note: str, anchor: str = "") -> str:
-    """Заголовок группы карточек: сколько твиков и зачем эта подкатегория нужна."""
+def category_group_heading(ru: str, count: int, note: str, anchor: str = "", on: int = 0) -> str:
+    """Заголовок группы карточек: сколько твиков, сколько из них включено и зачем группа нужна.
+
+    Число включённых считается по бейджам каталога ровно так же, как в программе: по умолчанию
+    включено рекомендованное. Поэтому подпись не может разойтись с карточками.
+    """
     id_attr = f' id="{esc(anchor)}"' if anchor else ""
     return (f'<div class="grouphd"{id_attr}><h2>{esc(ru)}</h2>'
-            f'<span class="cnt">твиков: {count}</span></div>\n'
+            f'<span class="cnt">твиков: {count} · включено {on}</span></div>\n'
             f'<p class="groupnote">{esc(note)}</p>')
 
 
@@ -1450,13 +1455,16 @@ def build(data: dict, progress: dict) -> str:
         items = cards_by_focus.get(code)
         if not items:
             continue
-        grouped.append(category_group_heading(ru, len(items), note, anchor=f"focus-{code}"))
+        grouped.append(category_group_heading(
+            ru, len(items), note, anchor=f"focus-{code}",
+            on=sum(1 for t in items if t.get("badge") == "Recommended")))
         grouped.extend(tweak_card(t, i) for i, t in enumerate(items))
     for code, items in cards_by_focus.items():
         if code in {c for c, _, _ in focus_order}:
             continue
-        grouped.append(category_group_heading(items[0].get("focusRu", "Прочее"), len(items),
-                                               "Подкатегория из каталога."))
+        grouped.append(category_group_heading(
+            items[0].get("focusRu", "Прочее"), len(items), "Подкатегория из каталога.",
+            on=sum(1 for t in items if t.get("badge") == "Recommended")))
         grouped.extend(tweak_card(t, i) for i, t in enumerate(items))
 
     cards_grouped = "\n".join(grouped)
@@ -1808,6 +1816,20 @@ def build(data: dict, progress: dict) -> str:
   <p class="small dim">Подкатегории — это ответ на вопрос «что станет лучше»: пинг, скорость, ФПС,
   ввод или общее состояние системы. Категория из каталога (стек TCP/IP, драйвер карты, планировщик)
   показана на карточке отдельной меткой.</p>
+
+  <div class="card tight">
+    <h4>Порядок и поиск</h4>
+    <p class="small muted" style="margin:6px 0 0">Порядок меняет только последовательность карточек,
+    поиск — видимую часть списка. Отметки и пресеты при этом не трогаются: поиск не применяет и не
+    сбрасывает ничего. В заголовке группы стоит «твиков: N · включено M» — M считается по ползункам.</p>
+    <div class="chiprow" style="margin-top:10px">
+      <span class="on">По назначению — выбрано</span>
+      <span>Сначала полезное</span>
+      <span>По алфавиту</span>
+    </div>
+    <p class="small dim" style="margin:8px 0 0">Поиск идёт по названию, описанию, коду и назначению —
+    например, «DNS» или «TCP_ACK». Ничего не нашлось — так и написано, а не «показан весь каталог».</p>
+  </div>
 
   <div class="card tight">
     <h4>Остальные метки на карточке</h4>
