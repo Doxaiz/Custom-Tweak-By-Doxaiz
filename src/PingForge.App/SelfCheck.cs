@@ -1374,11 +1374,27 @@ internal static class SelfCheck
         }
     }
 
-    /// <summary>Имя элемента для отчёта: <c>x:Name</c> важнее типа — по нему ищут в разметке.</summary>
+    /// <summary>
+    /// Имя элемента для отчёта. <c>x:Name</c> важнее типа — по нему ищут в разметке, — а если имени нет,
+    /// называются первые слова текста: «TextBlock «Готово: пакет…»» ищется в разметке мгновенно, а
+    /// «TextBlock» без ничего не ищется никак.
+    /// </summary>
     private static string DescribeLayoutElement(FrameworkElement element)
     {
         string type = element.GetType().Name;
-        return string.IsNullOrEmpty(element.Name) ? type : $"{type} «{element.Name}»";
+        string own = string.IsNullOrEmpty(element.Name) ? type : $"{type} «{element.Name}»";
+        if (element is not TextBlock text || string.IsNullOrWhiteSpace(text.Text))
+        {
+            return own;
+        }
+
+        string snippet = text.Text.Trim().Replace("\r", " ").Replace("\n", " ");
+        if (snippet.Length > 28)
+        {
+            snippet = snippet[..28] + "…";
+        }
+
+        return $"{own} «{snippet}»";
     }
 
     /// <summary>
