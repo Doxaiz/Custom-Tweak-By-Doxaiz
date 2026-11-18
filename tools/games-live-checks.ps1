@@ -129,17 +129,21 @@ function Read-Field([string]$json, [string]$name) {
     return ''
 }
 
-function Invoke-RealtimeCheck([string]$title) {
-    Write-Host "── $title"
+function Invoke-RealtimeCheck([string]$title, [switch]$Quiet) {
+    # -Quiet: повторный опрос, пока служба ещё не назвала игру. Вывод и аннотация — только
+    # у последней, итоговой попытки, иначе журнал прогона превращается в десять одинаковых строк.
+    if (-not $Quiet) { Write-Host "── $title" }
     $out = & $SmokePath '--realtime' 2>&1 | Out-String
     $code = $LASTEXITCODE
-    Write-Host $out
+    if (-not $Quiet) { Write-Host $out }
 
     # В аннотацию кладём и ответ службы: «exit 2» без причины читается как загадка,
     # а причина важна — здесь проверяется НАЗЫВАНИЕ игры, а не замер пинга.
-    $startLine = (($out -split "`r?`n" | Where-Object { $_.StartsWith('Старт:') }) -join ' ').Trim()
-    if ($startLine.Length -gt 300) { $startLine = $startLine.Substring(0, 300) }
-    Ann 'notice' "G $title — exit $code; $startLine"
+    if (-not $Quiet) {
+        $startLine = (($out -split "`r?`n" | Where-Object { $_.StartsWith('Старт:') }) -join ' ').Trim()
+        if ($startLine.Length -gt 300) { $startLine = $startLine.Substring(0, 300) }
+        Ann 'notice' "G $title — exit $code; $startLine"
+    }
 
     # Служба отдаёт два ответа: в снимке старта есть игра и адрес с портом, в отчёте остановки — адрес
     # без порта. Берём игру и адрес из старта, остановку используем как запасной источник и как признак,
@@ -219,9 +223,25 @@ $fortnite = Start-Process -FilePath $fortniteExe -PassThru -WindowStyle Hidden -
     '-Target', $UdpTarget, '-Port', $UdpPort, '-Seconds', $HoldSeconds)
 
 Write-Host "UDP-поток Fortnite: $UdpTarget`:$UdpPort"
-Start-Sleep -Seconds 6
 
-$fortniteResult = Invoke-RealtimeCheck "Fortnite, UDP на $UdpTarget`:$UdpPort"
+# Служба узнаёт UDP-собеседника из событий сетевого стека, и на загруженной машине это занимает
+# больше одной попытки: прогон 44235325818 увидел живой поток, но игра ещё не была названа —
+# и проверка падала там, где всё работало. Спрашиваем до ~24 секунд; если игра так и не названа,
+# ниже по-прежнему расхождение, а не «пропущено».
+$fortniteResult = $null
+$tried = 0
+for ($attempt = 1; $attempt -le 8; $attempt++) {
+    Start-Sleep -Seconds 3
+    $fortniteResult = Invoke-RealtimeCheck "Fortnite, UDP на $UdpTarget`:$UdpPort" -Quiet
+    $tried = $attempt
+    if ($fortniteResult.Game -eq 'Fortnite' -and $fortniteResult.Endpoint -match (':' + $UdpPort + '$')) {
+        Write-Host "Fortnite назван на попытке $attempt (ждут до 8)"
+        break
+    }
+}
+
+Write-Host "── Fortnite, UDP на $UdpTarget`:$UdpPort"
+Ann 'notice' "G Fortnite — игра «$($fortniteResult.Game)», адрес «$($fortniteResult.Endpoint)», попыток: $tried"
 if ($fortniteResult.Game -ne 'Fortnite') {
     $failures += "Fortnite не назван: игра «$($fortniteResult.Game)», адрес «$($fortniteResult.Endpoint)»"
 } elseif ($fortniteResult.Endpoint -notmatch ":$UdpPort$") {
