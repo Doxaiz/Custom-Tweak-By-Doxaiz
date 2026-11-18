@@ -89,14 +89,14 @@ public static class CustomGameValidation
 
         if (string.IsNullOrWhiteSpace(executablePath))
         {
-            errorRu = "Файл игры не выбран. Нажмите «Добавить игру» и укажите .exe файл игры.";
+            errorRu = "Файл игры не выбран. Нажмите «Добавить игру» и укажите .exe игры, её ярлык с рабочего стола или ссылку.";
             return false;
         }
 
         string path = executablePath.Trim();
         if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
         {
-            errorRu = $"«{path}» — не .exe файл. Своей игрой можно добавить только исполняемый файл игры.";
+            errorRu = $"«{path}» — не .exe файл. Своей игрой можно добавить только исполняемый файл игры; ярлык на рабочем столе подойдёт — программа найдёт .exe по нему.";
             return false;
         }
 
