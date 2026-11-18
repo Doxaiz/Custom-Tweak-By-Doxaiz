@@ -47,6 +47,13 @@ public sealed class TweaksViewModel : ObservableObject
         ClearFilterCommand = new RelayCommand(ClearFilter, () => IsFiltered);
         ClearSearchCommand = new RelayCommand(ClearSearch, () => _searchRu.Length > 0);
 
+        Filters =
+        [
+            new TweakFilterOptionViewModel(TweakQuickFilter.OnlyRecommended, OnFilterToggled),
+            new TweakFilterOptionViewModel(TweakQuickFilter.HideNotRecommended, OnFilterToggled),
+            new TweakFilterOptionViewModel(TweakQuickFilter.OnlyInPresets, OnFilterToggled),
+        ];
+
         Orders =
         [
             new TweakOrderOptionViewModel(TweakOrder.ByPurpose, SelectOrder),
@@ -111,6 +118,51 @@ public sealed class TweaksViewModel : ObservableObject
     /// <summary>Режимы порядка для кнопок-пилюль. Подписи и пояснения — из <see cref="TweakOrdering"/>.</summary>
     public IReadOnlyList<TweakOrderOptionViewModel> Orders { get; }
 
+    /// <summary>Быстрые фильтры каталога: «только рекомендуемое», «скрыть не советуем», «только из пресетов».</summary>
+    public IReadOnlyList<TweakFilterOptionViewModel> Filters { get; }
+
+    /// <summary>Включённые сейчас фильтры — по ним и отбирается список.</summary>
+    public IReadOnlyList<TweakQuickFilter> ActiveFilters =>
+        Filters.Where(option => option.IsOn).Select(option => option.Filter).ToList();
+
+    /// <summary>Строка о фильтрах: что включено и сколько карточек осталось. Пусто, когда фильтров нет.</summary>
+    public string FiltersLineRu
+    {
+        get
+        {
+            IReadOnlyList<TweakQuickFilter> active = ActiveFilters;
+            if (active.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            string names = string.Join(" · ", active.Select(TweakQuickFilters.TitleRu));
+            return $"Фильтры: {names}. Показано {_visibleRows.Count} из {_rows.Count} — " +
+                "отметки и пресеты не менялись.";
+        }
+    }
+
+    public bool HasActiveFilters => Filters.Any(option => option.IsOn);
+
+    /// <summary>Нажатие на пилюлю фильтра: отметка уже переключена, остаётся пересобрать список.</summary>
+    private void OnFilterToggled()
+    {
+        OnPropertyChanged(nameof(ActiveFilters), nameof(HasActiveFilters), nameof(FiltersLineRu));
+        Rebuild();
+    }
+
+    /// <summary>Снять все быстрые фильтры: список возвращается к тому, что не урезано поиском и кодами.</summary>
+    public void ClearQuickFilters()
+    {
+        foreach (TweakFilterOptionViewModel option in Filters)
+        {
+            if (option.IsOn)
+            {
+                option.IsOn = false;
+            }
+        }
+    }
+
     /// <summary>Текущий порядок карточек.</summary>
     public TweakOrder Order => _order;
 
@@ -153,11 +205,27 @@ public sealed class TweaksViewModel : ObservableObject
     }
 
     /// <summary>Строка для пустого экрана: показывается только когда показывать нечего.</summary>
-    public string EmptyLineRu => _visibleRows.Count > 0
-        ? string.Empty
-        : _searchRu.Trim().Length == 0
-            ? "Список пуст: в каталоге нет ни одного твика."
-            : "По этому запросу в каталоге ничего нет. Очистите поиск или измените запрос.";
+    public string EmptyLineRu
+    {
+        get
+        {
+            if (_visibleRows.Count > 0)
+            {
+                return string.Empty;
+            }
+
+            if (_searchRu.Trim().Length > 0)
+            {
+                return HasActiveFilters
+                    ? "По этому запросу с включёнными фильтрами ничего нет. Очистите поиск или снимите фильтр — отметки при этом не менялись."
+                    : "По этому запросу в каталоге ничего нет. Очистите поиск или измените запрос.";
+            }
+
+            return HasActiveFilters
+                ? "Под включённые фильтры не подошёл ни один твик. Снимите фильтр — карточки вернутся, отметки при этом не менялись."
+                : "Список пуст: в каталоге нет ни одного твика.";
+        }
+    }
 
     public bool HasVisibleRows => _visibleRows.Count > 0;
 
@@ -249,6 +317,11 @@ public sealed class TweaksViewModel : ObservableObject
     {
         IEnumerable<TweakRowViewModel> source = _visibleFilter ?? _rows;
 
+        foreach (TweakQuickFilter filter in ActiveFilters)
+        {
+            source = source.Where(row => TweakQuickFilters.Matches(row, filter));
+        }
+
         IEnumerable<TweakRowViewModel> filtered = string.IsNullOrWhiteSpace(_searchRu)
             ? source
             : source.Where(row => TweakOrdering.MatchesSearch(row, _searchRu));
@@ -258,7 +331,7 @@ public sealed class TweaksViewModel : ObservableObject
 
         OnPropertyChanged(
             nameof(Groups), nameof(VisibleRows), nameof(SearchLineRu), nameof(EmptyLineRu),
-            nameof(HasVisibleRows), nameof(OrderLineRu));
+            nameof(HasVisibleRows), nameof(OrderLineRu), nameof(FiltersLineRu));
     }
 
     /// <summary>
