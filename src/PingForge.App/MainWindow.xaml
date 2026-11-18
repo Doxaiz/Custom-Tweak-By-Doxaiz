@@ -39,8 +39,6 @@
               <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <Border Grid.Column="0" Width="38" Height="38" CornerRadius="12" Background="{StaticResource Badge}"
@@ -55,19 +53,27 @@
                          Text="оптимизация соединения для игр" />
             </StackPanel>
 
-            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,10,0">
+            <!-- Состояние и кнопка поддержки — одна группа у правого края. Группа переносится на
+                 вторую строку, если не влезает: раньше это были две колонки Auto, и в узком окне
+                 длинная фраза о правах выталкивала кнопку за край окна — её просто обрезало.
+                 Проверка «ничего не выходит за правый край» поймала это на ширине 860. -->
+            <WrapPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                       VerticalAlignment="Center" Margin="12,0,0,0">
               <TextBlock Text="{Binding GameLineRu}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                          MaxWidth="300" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,12,0" />
-              <Border Style="{StaticResource Pill}">
+              <Border Style="{StaticResource Pill}" VerticalAlignment="Center" Margin="0,0,10,0"
+                      ToolTip="{Binding RightsNoteRu}">
                 <StackPanel Orientation="Horizontal">
                   <Ellipse Width="7" Height="7" Fill="{StaticResource Accent}" VerticalAlignment="Center" Margin="0,0,7,0" />
-                  <TextBlock Text="{Binding RightsNoteRu}" FontSize="11.5" Foreground="{StaticResource Muted}" />
+                  <!-- Фраза о правах — одна строка с многоточием и полным текстом в подсказке:
+                       без предела она растягивала шапку шире окна. -->
+                  <TextBlock Text="{Binding RightsNoteRu}" FontSize="11.5" Foreground="{StaticResource Muted}"
+                             TextTrimming="CharacterEllipsis" MaxWidth="320" />
                 </StackPanel>
               </Border>
-            </StackPanel>
-
-            <Button Grid.Column="4" Style="{StaticResource GhostButton}" Padding="13,7"
-                    Content="Поддержать автора ↗" Click="SupportClick" ToolTip="Откроет страницу поддержки автора" />
+              <Button Style="{StaticResource GhostButton}" Padding="13,7" VerticalAlignment="Center"
+                      Content="Поддержать автора ↗" Click="SupportClick" ToolTip="Откроет страницу поддержки автора" />
+            </WrapPanel>
           </Grid>
         </Border>
 

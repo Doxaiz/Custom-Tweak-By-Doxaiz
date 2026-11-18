@@ -1300,9 +1300,14 @@ internal static class SelfCheck
         }
 
         var boxes = new List<LayoutBox>();
-        CollectLayoutBoxes(root, root, boxes, depth: 0);
+        CollectLayoutBoxes(root, root, boxes, depth: 0, parentName: string.Empty);
 
-        IReadOnlyList<LayoutBox> outside = LayoutOverflow.Find(boxes, limit);
+        // Худшее — первым: в журнал и аннотацию попадает начало списка, и там должен стоять тот
+        // элемент, который вылез дальше всех, а не тот, что случайно обошли раньше.
+        IReadOnlyList<LayoutBox> outside = LayoutOverflow
+            .Find(boxes, limit)
+            .OrderByDescending(box => box.Right)
+            .ToList();
         if (outside.Count == 0)
         {
             StartupLog.Note($"Раскладка: на ширине {Math.Round(limit)} точек за правый край ничего не выходит — просмотрено {boxes.Count} элементов");
@@ -1319,7 +1324,12 @@ internal static class SelfCheck
     /// (места не занимает), декор со свечением — тоже: он выходит за край нарочно, под обрезкой.
     /// Блок с прокруткой вбок пропускается целиком: его содержимое можно докрутить — это не обрез.
     /// </summary>
-    private static void CollectLayoutBoxes(FrameworkElement root, DependencyObject node, List<LayoutBox> boxes, int depth)
+    private static void CollectLayoutBoxes(
+        FrameworkElement root,
+        DependencyObject node,
+        List<LayoutBox> boxes,
+        int depth,
+        string parentName)
     {
         if (depth > 64)
         {
@@ -1349,14 +1359,18 @@ internal static class SelfCheck
             {
                 Rect bounds = element.TransformToAncestor(root)
                     .TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
-                boxes.Add(new LayoutBox(DescribeLayoutElement(element), bounds.Left, bounds.Width));
+                string name = DescribeLayoutElement(element);
+                boxes.Add(new LayoutBox(
+                    parentName.Length == 0 ? name : $"{name} в {parentName}",
+                    bounds.Left,
+                    bounds.Width));
             }
             catch (InvalidOperationException)
             {
                 continue;   // элемент не из этого дерева — сравнивать нечего
             }
 
-            CollectLayoutBoxes(root, element, boxes, depth + 1);
+            CollectLayoutBoxes(root, element, boxes, depth + 1, DescribeLayoutElement(element));
         }
     }
 
