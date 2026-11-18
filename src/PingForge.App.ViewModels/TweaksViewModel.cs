@@ -430,7 +430,11 @@ public sealed class TweaksViewModel : ObservableObject
             return;
         }
 
-        int matched = ShowOnlyCodes(preset.CodesOrEmpty);
+        ShowOnlyCodes(preset.CodesOrEmpty);
+
+        // Сколько кодов из состава реально есть в каталоге: считаем до сужения поиском и фильтрами.
+        int matched = preset.CodesOrEmpty.Count(code => _rows.Any(row =>
+            string.Equals(row.Code, code, StringComparison.OrdinalIgnoreCase)));
         StatusRu = matched == VisibleRows.Count
             ? $"Показан состав пресета «{preset.TitleRu}»: {matched} твиков. Отметки и ползунки не менялись."
             : $"Состав пресета «{preset.TitleRu}»: {matched} твиков в каталоге, сейчас видно {VisibleRows.Count} — " +
