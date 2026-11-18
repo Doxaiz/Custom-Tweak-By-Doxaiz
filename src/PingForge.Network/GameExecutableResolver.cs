@@ -17,6 +17,23 @@ public static class GameExecutableResolver
     /// <summary>Хвост, по которому узнаётся исполняемый файл.</summary>
     private const string ExeSuffix = ".exe";
 
+    /// <summary>Сколько ярлыков подряд разбираем: ярлык на ярлык встречается, круг — тоже.</summary>
+    private const int MaxShortcutDepth = 3;
+
+    /// <summary>
+    /// Что вообще может стоять целью ярлыка. Список нужен не для «принять всё», а чтобы отказ был
+    /// точным: скрипт, установщик и архив получают каждый своё объяснение, а не общее «не подошло».
+    /// </summary>
+    private static readonly string[] TargetExtensions =
+    [
+        ".exe", ".com", ".scr", ".lnk", ".url", ".bat", ".cmd", ".ps1", ".vbs", ".js",
+        ".msi", ".msix", ".msixbundle", ".appx", ".appref-ms", ".zip", ".7z", ".rar", ".iso", ".img"
+    ];
+
+    private static readonly string[] ScriptExtensions = [".bat", ".cmd", ".ps1", ".vbs", ".js"];
+    private static readonly string[] InstallerExtensions = [".msi", ".msix", ".msixbundle", ".appx", ".appxbundle", ".appref-ms"];
+    private static readonly string[] ArchiveExtensions = [".zip", ".7z", ".rar", ".iso", ".img"];
+
     /// <summary>
     /// Привести выбранный файл к .exe игры. <paramref name="fileExists"/> — проверка диска:
     /// тесты подставляют свою, программа — настоящую.
@@ -51,12 +68,12 @@ public static class GameExecutableResolver
 
         if (extension == ".lnk")
         {
-            return ResolveShortcut(path, fileExists, out executablePath, out noteRu, out errorRu);
+            return ResolveShortcut(path, fileExists, MaxShortcutDepth, out executablePath, out noteRu, out errorRu);
         }
 
         if (extension == ".url")
         {
-            return ResolveInternetShortcut(path, out executablePath, out noteRu, out errorRu);
+            return ResolveInternetShortcut(path, fileExists, out executablePath, out noteRu, out errorRu);
         }
 
         return Refuse(path, extension, out executablePath, out noteRu, out errorRu);
@@ -91,7 +108,7 @@ public static class GameExecutableResolver
             // целью не считаем: такой строкой ярлык не запускает программу.
             int drive = text.IndexOf(":\\", StringComparison.Ordinal);
             string path = drive >= 1 ? text[(drive - 1)..] : text;
-            if (!LooksLikeExePath(path) || (!path.Contains('\\') && !path.Contains('/')))
+            if (!LooksLikeTargetPath(path) || (!path.Contains('\\') && !path.Contains('/')))
             {
                 return;
             }
@@ -157,6 +174,7 @@ public static class GameExecutableResolver
     private static bool ResolveShortcut(
         string path,
         Func<string, bool> fileExists,
+        int depth,
         out string executablePath,
         out string noteRu,
         out string errorRu)
@@ -164,6 +182,15 @@ public static class GameExecutableResolver
         executablePath = string.Empty;
         noteRu = string.Empty;
         errorRu = string.Empty;
+
+        // Ярлык на ярлык — обычное дело на рабочем столе (перенесли, положили рядом ещё один).
+        // Круг из ярлыков останавливаем с объяснением, а не уходим в бесконечность.
+        if (depth <= 0)
+        {
+            errorRu = $"Цепочка ярлыков начинается с «{Path.GetFileName(path)}» и не доходит до файла игры. " +
+                      "Укажите сам .exe игры: правый щелчок по ярлыку → «Расположение файла».";
+            return false;
+        }
 
         byte[] bytes;
         try
@@ -177,11 +204,52 @@ public static class GameExecutableResolver
         }
 
         IReadOnlyList<string> candidates = ShortcutCandidates(bytes);
-        return ChooseExisting(candidates, path, fileExists, out executablePath, out noteRu, out errorRu);
+        if (!ChooseExisting(candidates, path, fileExists, out string target, out string chosenNote, out errorRu))
+        {
+            return false;
+        }
+
+        string extension = Path.GetExtension(target).ToLowerInvariant();
+        if (extension == ".lnk")
+        {
+            if (!ResolveShortcut(target, fileExists, depth - 1, out executablePath, out string chainNote, out errorRu))
+            {
+                errorRu = $"Ярлык «{Path.GetFileName(path)}» ведёт на другой ярлык. {errorRu}";
+                return false;
+            }
+
+            noteRu = $"{chosenNote} {chainNote}".Trim();
+            return true;
+        }
+
+        if (extension == ".url")
+        {
+            if (!ResolveInternetShortcut(target, fileExists, out executablePath, out string urlNote, out errorRu))
+            {
+                errorRu = $"Ярлык «{Path.GetFileName(path)}» ведёт на файл ссылки. {errorRu}";
+                return false;
+            }
+
+            noteRu = $"{chosenNote} {urlNote}".Trim();
+            return true;
+        }
+
+        if (extension != ExeSuffix)
+        {
+            errorRu = chosenNote.Length > 0
+                ? $"Ярлык ведёт на {Describe(target)}"
+                : Describe(target);
+            return false;
+        }
+
+        executablePath = target;
+        noteRu = chosenNote;
+        return true;
     }
 
     private static bool ResolveInternetShortcut(
         string path,
+        Func<string, bool> fileExists,
         out string executablePath,
         out string noteRu,
         out string errorRu)
@@ -222,13 +290,48 @@ public static class GameExecutableResolver
 
         if (!LooksLikeExePath(local))
         {
-            errorRu = $"Ссылка ведёт не на файл игры, а на «{target}». Укажите сам .exe игры или её ярлык с рабочего стола.";
+            string localExtension = Path.GetExtension(local).ToLowerInvariant();
+            if (localExtension == ".lnk")
+            {
+                return ResolveShortcut(local, fileExists, MaxShortcutDepth, out executablePath, out noteRu, out errorRu);
+            }
+
+            errorRu = LooksLikeTargetPath(local)
+                ? $"Ссылка ведёт на {Describe(local)}"
+                : $"Ссылка ведёт не на файл игры, а на «{target}». Укажите сам .exe игры или её ярлык с рабочего стола.";
             return false;
         }
 
         executablePath = local;
         noteRu = $"Ссылка ведёт на «{Path.GetFileName(local)}».";
         return true;
+    }
+
+    /// <summary>
+    /// Что это за файл — словами, с указанием, что выбрать вместо него. Одна фраза на группу:
+    /// человеку важно понять, почему его файл не подошёл, а не получить «неверный путь».
+    /// </summary>
+    private static string Describe(string path)
+    {
+        string name = Path.GetFileName(path);
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+
+        if (Array.IndexOf(ScriptExtensions, extension) >= 0)
+        {
+            return $"«{name}» — это скрипт, а не игра: скрипт запускает что-то другое, и процесс игры называется иначе. Укажите сам .exe игры.";
+        }
+
+        if (Array.IndexOf(InstallerExtensions, extension) >= 0)
+        {
+            return $"«{name}» — установщик, а не игра. Сначала установите игру, потом укажите её .exe.";
+        }
+
+        if (Array.IndexOf(ArchiveExtensions, extension) >= 0)
+        {
+            return $"«{name}» — архив с игрой, а не игра. Распакуйте его и укажите .exe внутри.";
+        }
+
+        return $"«{name}» — не исполняемый файл игры. Укажите .exe игры или её ярлык с рабочего стола.";
     }
 
     private static bool Refuse(
@@ -240,6 +343,14 @@ public static class GameExecutableResolver
     {
         executablePath = string.Empty;
         noteRu = string.Empty;
+
+        if (LooksLikeTargetPath(path))
+        {
+            // Файл знакомого вида (скрипт, установщик, архив) — объяснение по существу.
+            errorRu = Describe(path);
+            return false;
+        }
+
         string name = Path.GetFileName(path);
         errorRu = extension.Length == 0
             ? $"«{name}» — не программа и не ярлык. Игра запускается .exe; ярлык с рабочего стола подойдёт — программа найдёт .exe по нему."
@@ -252,6 +363,18 @@ public static class GameExecutableResolver
         !text.Contains('\n') &&
         !text.Contains('\r') &&
         text.Length > ExeSuffix.Length;
+
+    private static bool LooksLikeTargetPath(string text)
+    {
+        if (text.Contains('\n') || text.Contains('\r') || text.Contains('"'))
+        {
+            return false;
+        }
+
+        string extension = Path.GetExtension(text).ToLowerInvariant();
+        return Array.IndexOf(TargetExtensions, extension) >= 0 &&
+               text.Length > extension.Length + 1;
+    }
 
     private static bool IsUninstaller(string path)
     {

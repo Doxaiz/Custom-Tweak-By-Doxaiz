@@ -110,6 +110,89 @@ public sealed class GameFilePickerTests
     }
 
     [Fact]
+    public void Ярлык_на_скрипт_объясняет_что_это_скрипт()
+    {
+        using var dir = new TempFolder();
+        string script = dir.CreateFile("start.bat");
+        string shortcut = dir.CreateShortcut("Моя игра", script);
+
+        Assert.False(GameExecutableResolver.TryResolve(shortcut, File.Exists, out _, out _, out string error));
+        Assert.Contains("это скрипт, а не игра", error, StringComparison.Ordinal);
+        Assert.Contains("start.bat", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ярлык_на_ярлык_доходит_до_игры()
+    {
+        using var dir = new TempFolder();
+        string exe = dir.CreateFile("MyGame.exe");
+        string inner = dir.CreateShortcut("MyGame", exe);
+        string outer = dir.CreateShortcut("Игра на рабочем столе", inner);
+
+        Assert.True(GameExecutableResolver.TryResolve(outer, File.Exists, out string resolved, out string note, out string error), error);
+        Assert.Equal(Path.GetFileName(exe), Path.GetFileName(resolved));
+        Assert.Contains("Ярлык ведёт на", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Круг_ярлыков_останавливается_с_объяснением()
+    {
+        using var dir = new TempFolder();
+        string first = Path.Combine(dir.Path, "Первый.lnk");
+        string second = Path.Combine(dir.Path, "Второй.lnk");
+        dir.WriteShortcutAt(first, second);
+        dir.WriteShortcutAt(second, first);
+
+        Assert.False(GameExecutableResolver.TryResolve(first, File.Exists, out _, out _, out string error));
+        Assert.Contains("Цепочка ярлыков", error, StringComparison.Ordinal);
+        Assert.Contains("Расположение файла", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Установщик_объясняет_что_он_установщик()
+    {
+        using var dir = new TempFolder();
+        string installer = dir.CreateFile("MyGame-Setup.msi");
+
+        Assert.False(GameExecutableResolver.TryResolve(installer, File.Exists, out _, out _, out string error));
+        Assert.Contains("установщик, а не игра", error, StringComparison.Ordinal);
+        Assert.Contains("потом укажите её .exe", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Архив_объясняет_что_его_надо_распаковать()
+    {
+        using var dir = new TempFolder();
+        string archive = dir.CreateFile("MyGame-portable.zip");
+
+        Assert.False(GameExecutableResolver.TryResolve(archive, File.Exists, out _, out _, out string error));
+        Assert.Contains("архив с игрой", error, StringComparison.Ordinal);
+        Assert.Contains("Распакуйте", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Скрипт_выбранный_напрямую_отказывает()
+    {
+        using var dir = new TempFolder();
+        string script = dir.CreateFile("run.cmd");
+
+        Assert.False(GameExecutableResolver.TryResolve(script, File.Exists, out _, out _, out string error));
+        Assert.Contains("это скрипт, а не игра", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ссылка_на_скрипт_отказывает_по_той_же_причине()
+    {
+        using var dir = new TempFolder();
+        string script = dir.CreateFile(Path.Combine("launcher", "start.bat"));
+        string url = Path.Combine(dir.Path, "Запуск.url");
+        File.WriteAllText(url, "[InternetShortcut]\r\nURL=file:///" + script.Replace('\\', '/') + "\r\n");
+
+        Assert.False(GameExecutableResolver.TryResolve(url, File.Exists, out _, out _, out string error));
+        Assert.Contains("это скрипт, а не игра", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Добавление_ярлыка_добавляет_игру_по_настоящему_exe()
     {
         using var dir = new TempFolder();
@@ -207,9 +290,12 @@ public sealed class GameFilePickerTests
         /// Ярлык по форме Windows: путь цели лежит и байтами, и в UTF-16 — как в настоящем .lnk.
         /// Содержимое нарочно не минимально: парсер обязан читать файл, а не угадывать по имени.
         /// </summary>
-        public string CreateShortcut(string name, string target)
+        public string CreateShortcut(string name, string target) =>
+            WriteShortcutAt(System.IO.Path.Combine(Path, name + ".lnk"), target);
+
+        /// <summary>Ярлык по заранее названному пути — так проверяется цепочка ярлыков и круг.</summary>
+        public string WriteShortcutAt(string shortcut, string target)
         {
-            string shortcut = System.IO.Path.Combine(Path, name + ".lnk");
             var bytes = new List<byte>();
             bytes.AddRange(Encoding.ASCII.GetBytes("L\0\0\0"));
             bytes.AddRange(new byte[] { 0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00 });
