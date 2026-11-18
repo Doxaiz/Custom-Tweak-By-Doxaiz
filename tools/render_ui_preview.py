@@ -27,7 +27,7 @@ CSS = """
   /* Палитра — ровно та же, что в App.xaml: макет показывает программу, а не «похожий на неё»
      сайт. Совпадение проверяет tools/check_ui_preview.js, сверяя эти значения с темой. */
   --bg:#070b14; --bg2:#0d1930; --card:#111a2a; --line:#1e2a42; --line2:#24405c;
-  --text:#e9effb; --muted:#8fa1bd; --dim:#74869f;
+  --text:#e9effb; --muted:#8fa1bd; --dim:#7b8fa8;
   --accent:#4ade80; --accent2:#38bdf8; --ok:#4ade80; --warn:#f2c94c; --bad:#f2545b; --info:#38bdf8;
   --radius:14px;
 }
@@ -313,7 +313,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .chart{background:#0c1420;border:1px solid var(--line);border-radius:12px;padding:10px 12px 6px}
 .chart h4{margin:2px 0 6px;font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .chart svg{display:block;width:100%;height:auto}
-.chart .axis{fill:#74869f;font-size:9px}
+.chart .axis{fill:#7b8fa8;font-size:9px}
 .chart .grid{stroke:#1c2534;stroke-width:.6}
 .legend{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0 0;font-size:11.5px;color:var(--muted)}
 .legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
@@ -1028,11 +1028,11 @@ def network_chart(data: dict) -> str:
         for i in indicators)
 
     panels = "".join([
-        _chart("Скорость приёма", "Мбит/с", 120, [("было", "#74869f", "down_before"),
+        _chart("Скорость приёма", "Мбит/с", 120, [("было", "#7b8fa8", "down_before"),
                                                    ("стало", "#4ade80", "down_after")]),
-        _chart("Задержка: средняя", "мс", 60, [("было", "#74869f", "ping_before"),
+        _chart("Задержка: средняя", "мс", 60, [("было", "#7b8fa8", "ping_before"),
                                                                 ("стало", "#38bdf8", "ping_after")]),
-        _chart("Джиттер (MAD) — разброс задержки", "мс", 12, [("было", "#74869f", "jitter_before"),
+        _chart("Джиттер (MAD) — разброс задержки", "мс", 12, [("было", "#7b8fa8", "jitter_before"),
                                                         ("стало", "#a78bfa", "jitter_after")]),
         _chart("Потери пакетов", "%", 4, [("было", "#f87171", "loss_before"),
                                           ("стало", "#4ade80", "loss_after")], bars=True),

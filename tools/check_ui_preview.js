@@ -399,6 +399,8 @@ setTimeout(async () => {
     ['основной текст на панели', vars.text, vars.card],
     ['подписи на панели', vars.muted, vars.card],
     ['третий уровень текста на панели', vars.dim, vars.card],
+    // Карточка — градиент: верхняя кромка светлее панели, и именно на ней текст слабее всего.
+    ['третий уровень текста на верхней кромке карточки', vars.dim, appColor('PanelTopColor')],
     ['ссылка (accent) на панели', vars.accent, vars.card],
     ['accent2 на панели', vars.accent2, vars.card]
   ];
