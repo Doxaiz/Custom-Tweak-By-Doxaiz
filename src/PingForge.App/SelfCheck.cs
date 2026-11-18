@@ -1245,22 +1245,57 @@ internal static class SelfCheck
     /// человек видит половину карточки и доскроллить до неё не может. Этот дефект уже был —
     /// его заметили на снимке окна, но тогда ширину сравнивали глазами.
     ///
+    /// Проверяются две ширины: та, на которой окно построилось, и минимальная из разметки (860).
+    /// На минимальной карточки теснее всего, и именно туда человек попадает, потянув за край окна.
+    /// После проверки раскладка возвращается к прежней: следующие проверки ждут штатное окно.
+    ///
     /// Сравниваются границы элементов, отсчитанные от корня окна, а не <c>ActualWidth</c> по
     /// отдельности: у элемента есть поле, рамка и масштаб интерфейса, и левый край не всегда ноль.
     /// </summary>
     private static void CheckNothingIsCutOff(App app, List<string> problems)
     {
-        if (app.Shell?.Content is not FrameworkElement root)
+        if (app.Shell?.Content is not FrameworkElement root || app.Shell is null)
         {
             return;
         }
 
-        root.UpdateLayout();
+        var usual = new Size(root.ActualWidth, root.ActualHeight);
+        if (usual.Width <= 0 || usual.Height <= 0)
+        {
+            problems.Add("ширина окна не измерилась — проверить правый край не на чем");
+            return;
+        }
 
+        try
+        {
+            foreach (double width in LayoutOverflow.CheckWidths(usual.Width, app.Shell.MinWidth))
+            {
+                LayOutAt(root, width, usual.Height);
+                CheckCutOffAt(root, width, problems);
+            }
+        }
+        finally
+        {
+            LayOutAt(root, usual.Width, usual.Height);
+        }
+    }
+
+    /// <summary>Пересобрать раскладку окна под заданную ширину — теми же вызовами, что при старте окна.</summary>
+    private static void LayOutAt(FrameworkElement root, double width, double height)
+    {
+        var size = new Size(width, height);
+        root.Measure(size);
+        root.Arrange(new Rect(size));
+        root.UpdateLayout();
+    }
+
+    /// <summary>Один замер: что вышло за правый край на этой ширине.</summary>
+    private static void CheckCutOffAt(FrameworkElement root, double width, List<string> problems)
+    {
         double limit = root.ActualWidth;
         if (limit <= 0)
         {
-            problems.Add("ширина окна не измерилась — проверить правый край не на чем");
+            problems.Add($"ширина {Math.Round(width)} не измерилась — проверить правый край не на чем");
             return;
         }
 
@@ -1270,13 +1305,13 @@ internal static class SelfCheck
         IReadOnlyList<LayoutBox> outside = LayoutOverflow.Find(boxes, limit);
         if (outside.Count == 0)
         {
-            StartupLog.Note($"Раскладка: за правый край окна ({Math.Round(limit)} точек) ничего не выходит — просмотрено {boxes.Count} элементов");
+            StartupLog.Note($"Раскладка: на ширине {Math.Round(limit)} точек за правый край ничего не выходит — просмотрено {boxes.Count} элементов");
             return;
         }
 
         string report = LayoutOverflow.DescribeRu(outside, limit);
-        problems.Add($"элементы выходят за край окна: {report}");
-        StartupLog.Warn($"Раскладка: {outside.Count} элементов шире окна ({Math.Round(limit)} точек) и обрезаны справа: {report}");
+        problems.Add($"элементы выходят за край окна на ширине {Math.Round(limit)}: {report}");
+        StartupLog.Warn($"Раскладка: на ширине {Math.Round(limit)} точек {outside.Count} элементов обрезаны справа: {report}");
     }
 
     /// <summary>
