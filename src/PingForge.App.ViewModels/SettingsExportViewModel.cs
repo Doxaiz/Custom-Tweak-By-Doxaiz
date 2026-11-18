@@ -30,7 +30,7 @@ public sealed class SettingsExportViewModel : ObservableObject
     public sealed record ExportEnvelope(int SchemaVersion, DateTime ExportedUtc, string NoteRu, AppSettings Settings);
 
     /// <summary>Хвост временного файла: он лежит рядом с целевым и никогда не остаётся после сбоя.</summary>
-    public const string TempSuffix = ".tmp";
+    public const string TempSuffix = AtomicFileWrite.TempSuffix;
 
     public Task ExportToFileAsync(string path, CancellationToken ct = default) => ExportCoreAsync(path, ct);
     public Task ImportFromFileAsync(string path, CancellationToken ct = default) => ImportCoreAsync(path, ct);
@@ -43,17 +43,13 @@ public sealed class SettingsExportViewModel : ObservableObject
             var env = new ExportEnvelope(SchemaVersion, DateTime.UtcNow, "Пути к играм проверьте на новом компьютере.", _store.Load());
             string json = JsonSerializer.Serialize(env, new JsonSerializerOptions { WriteIndented = true });
 
-            // Сначала целиком пишем во временный файл рядом, потом одним движением подменяем.
-            // Сбой посреди записи (диск заполнился, флешка вынута) оставит прежнюю копию целой,
-            // а не половину новой: старое имя не открывается в середине записи.
-            string temp = path + TempSuffix;
-            await File.WriteAllTextAsync(temp, json, ct).ConfigureAwait(true);
-            File.Move(temp, path, overwrite: true);
+            // Целиком во временный файл рядом, потом подмена одним движением — см. AtomicFileWrite.
+            await AtomicFileWrite.WriteAllTextAsync(path, json, ct: ct).ConfigureAwait(true);
             StatusRu = $"Настройки сохранены в {path} — снапшоты и журнал не трогались.";
         }
         catch (Exception ex)
         {
-            TryDeleteTemp(path);
+            AtomicFileWrite.TryDeleteTemp(path);
             StatusRu = $"Не удалось сохранить: {ex.Message}";
         }
     }
@@ -75,22 +71,6 @@ public sealed class SettingsExportViewModel : ObservableObject
             StatusRu = replace ? "Настройки заменены — твики не применялись, только файл." : "Настройки добавлены — существующее не тронуто, твики не применялись.";
         }
         catch (Exception ex) { StatusRu = $"Не удалось прочитать: {ex.Message}"; }
-    }
-
-    /// <summary>Убрать недописанный временный файл. Молча: он не нужен человеку, а мешать уборке нечем.</summary>
-    private static void TryDeleteTemp(string path)
-    {
-        try
-        {
-            if (File.Exists(path + TempSuffix))
-            {
-                File.Delete(path + TempSuffix);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Не убралось — беды нет: имя с хвостом .tmp ни на что не влияет, а файл настроек цел.
-        }
     }
 
     private async Task ResetAsync()

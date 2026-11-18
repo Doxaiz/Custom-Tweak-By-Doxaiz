@@ -96,7 +96,8 @@ internal static class SelfCheck
         {
             int tweaks = app.Catalog.GetAllTweaks().Count;
             int presets = app.Catalog.GetByPreset(Core.Models.TweakProfilePreset.LowLatencyGaming).Count;
-            StartupLog.Note($"Каталог твиков: {tweaks} штук, в пресете «низкий пинг» {presets}");
+            StartupLog.Note($"Каталог твиков: {tweaks} {TweakOrdering.Plural(tweaks, "твик", "твика", "твиков")}, " +
+                $"в пресете «низкий пинг» — {presets}");
 
             if (tweaks < 47)
             {
