@@ -37,7 +37,7 @@ public interface ILiveFlowRttProvider
     /// Возвращает метрики уже открытого соединения игры: для TCP — статистика соединения,
     /// для UDP — пассивные метки на ответах сервера. Если поток недоступен — false, числа не выдумываются.
     /// <para>Внимание: реализаций этого интерфейса в приложении нет, поэтому цепочка проб до него
-    /// не доходит — замеры идут ICMP и TCP-рукопожатием. Это записанный долг (docs/STATE.md).</para>
+    /// не доходит — замеры идут ICMP и TCP-рукопожатием. Это записанный долг, а не забытая ветка.</para>
     /// </summary>
     bool TryGetLiveFlowRtt(int processId, string gameServerEndpoint, out LiveFlowRttSample sample);
 }
