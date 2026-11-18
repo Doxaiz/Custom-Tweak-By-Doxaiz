@@ -140,6 +140,9 @@ public static class CrashReportWriter
 {
     public const string FolderName = "crash";
 
+    /// <summary>Хвост временного файла: он лежит рядом с отчётом и не остаётся после сбоя.</summary>
+    public const string TempSuffix = ".tmp";
+
     /// <summary>Записать отчёт. Возвращает путь либо причину отказа — исключений не бросает.</summary>
     public static CrashReportWriteResult Write(
         string crashDirectory,
@@ -165,12 +168,43 @@ public static class CrashReportWriter
             string text = CrashReportText.Build(whatRu, exception, context, logLines, maxLogLines, moment);
 
             // Метка UTF-8: отчёт открывают в Блокноте и PowerShell, и русский текст должен читаться.
-            File.WriteAllText(path, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            // Пишется он во временный файл рядом и подменяет целевой одним движением: если места на
+            // диске не хватило, человек не получит половину отчёта, выглядящую как целый.
+            string temp = path + TempSuffix;
+            try
+            {
+                File.WriteAllText(temp, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+                // overwrite: false — два падения в одну миллисекунду не съедают отчёты друг друга.
+                File.Move(temp, path, overwrite: false);
+            }
+            catch
+            {
+                TryDeleteTemp(path);
+                throw;
+            }
+
             return CrashReportWriteResult.Ok(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         {
             return CrashReportWriteResult.Failed($"{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Убрать недописанный временный файл. Молча: его никто не ждёт, а мешать уборке нечем.</summary>
+    private static void TryDeleteTemp(string path)
+    {
+        try
+        {
+            if (File.Exists(path + TempSuffix))
+            {
+                File.Delete(path + TempSuffix);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Не убралось — беды нет: имя с хвостом .tmp ни на что не влияет, а отчёт либо целый, либо его нет.
         }
     }
 }
