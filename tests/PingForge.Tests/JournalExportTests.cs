@@ -38,7 +38,6 @@ public sealed class JournalExportTests
         Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF }, bytes[..3]);
 
         // В подписи — ровно то, что ушло в файл: число строк берётся из тех же строк журнала.
-        Assert.Equal(2, journal.FilteredRows.Count);
         Assert.True(
             journal.StatusRu.Contains("(2 строки)", StringComparison.Ordinal),
             $"в статусе нет числа строк: «{journal.StatusRu}»");
@@ -80,7 +79,7 @@ public sealed class JournalExportTests
 
         await journal.ExportCsvToAsync(path);
 
-        Assert.Equal(1, journal.FilteredRows.Count);
+        Assert.Single(journal.FilteredRows);
         Assert.True(
             journal.StatusRu.Contains("(1 строка)", StringComparison.Ordinal),
             $"одна строка должна называться «1 строка», а статус: «{journal.StatusRu}»");

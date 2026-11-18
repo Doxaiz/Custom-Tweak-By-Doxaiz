@@ -257,7 +257,10 @@ public sealed class JournalViewModel : ObservableObject
         try
         {
             await AtomicFileWrite.WriteAllTextAsync(path, csv, Encoding.UTF8, overwrite: false).ConfigureAwait(true);
-            StatusRu = $"CSV сохранён: {path} ({TweakOrdering.Plural(FilteredRows.Count, "строка", "строки", "строк")}). " +
+
+            // Число читается один раз: цифра и слово не могут разойтись.
+            int rows = FilteredRows.Count;
+            StatusRu = $"CSV сохранён: {path} ({rows} {TweakOrdering.Plural(rows, "строка", "строки", "строк")}). " +
                 "Значения, которые таблица приняла бы за формулу, помечены апострофом — это текст, а не вычисление.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
