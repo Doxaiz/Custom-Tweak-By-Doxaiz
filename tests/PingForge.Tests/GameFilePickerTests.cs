@@ -58,7 +58,7 @@ public sealed class GameFilePickerTests
 
         Assert.False(GameExecutableResolver.TryResolve(shortcut, File.Exists, out string resolved, out _, out string error));
         Assert.Equal(string.Empty, resolved);
-        Assert.Contains("нет на диске", error, StringComparison.Ordinal);
+        Assert.Contains("на диске нет", error, StringComparison.Ordinal);
         Assert.Contains("GoneGame.exe", error, StringComparison.Ordinal);
     }
 

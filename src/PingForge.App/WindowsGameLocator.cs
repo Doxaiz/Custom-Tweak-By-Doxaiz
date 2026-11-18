@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
 using PingForge.App.ViewModels;
+using PingForge.Network;
 using Microsoft.Win32;
 
 namespace PingForge.App;
