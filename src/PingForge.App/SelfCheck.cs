@@ -1245,38 +1245,78 @@ internal static class SelfCheck
     /// человек видит половину карточки и доскроллить до неё не может. Этот дефект уже был —
     /// его заметили на снимке окна, но тогда ширину сравнивали глазами.
     ///
+    /// Проверяются две ширины: та, на которой окно построилось, и минимальная из разметки (860).
+    /// На минимальной карточки теснее всего, и именно туда человек попадает, потянув за край окна.
+    /// После проверки раскладка возвращается к прежней: следующие проверки ждут штатное окно.
+    ///
     /// Сравниваются границы элементов, отсчитанные от корня окна, а не <c>ActualWidth</c> по
     /// отдельности: у элемента есть поле, рамка и масштаб интерфейса, и левый край не всегда ноль.
     /// </summary>
     private static void CheckNothingIsCutOff(App app, List<string> problems)
     {
-        if (app.Shell?.Content is not FrameworkElement root)
+        if (app.Shell?.Content is not FrameworkElement root || app.Shell is null)
         {
             return;
         }
 
-        root.UpdateLayout();
-
-        double limit = root.ActualWidth;
-        if (limit <= 0)
+        var usual = new Size(root.ActualWidth, root.ActualHeight);
+        if (usual.Width <= 0 || usual.Height <= 0)
         {
             problems.Add("ширина окна не измерилась — проверить правый край не на чем");
             return;
         }
 
-        var boxes = new List<LayoutBox>();
-        CollectLayoutBoxes(root, root, boxes, depth: 0);
+        try
+        {
+            foreach (double width in LayoutOverflow.CheckWidths(usual.Width, app.Shell.MinWidth))
+            {
+                LayOutAt(root, width, usual.Height);
+                CheckCutOffAt(root, width, problems);
+            }
+        }
+        finally
+        {
+            LayOutAt(root, usual.Width, usual.Height);
+        }
+    }
 
-        IReadOnlyList<LayoutBox> outside = LayoutOverflow.Find(boxes, limit);
+    /// <summary>Пересобрать раскладку окна под заданную ширину — теми же вызовами, что при старте окна.</summary>
+    private static void LayOutAt(FrameworkElement root, double width, double height)
+    {
+        var size = new Size(width, height);
+        root.Measure(size);
+        root.Arrange(new Rect(size));
+        root.UpdateLayout();
+    }
+
+    /// <summary>Один замер: что вышло за правый край на этой ширине.</summary>
+    private static void CheckCutOffAt(FrameworkElement root, double width, List<string> problems)
+    {
+        double limit = root.ActualWidth;
+        if (limit <= 0)
+        {
+            problems.Add($"ширина {Math.Round(width)} не измерилась — проверить правый край не на чем");
+            return;
+        }
+
+        var boxes = new List<LayoutBox>();
+        CollectLayoutBoxes(root, root, boxes, depth: 0, parentName: string.Empty);
+
+        // Худшее — первым: в журнал и аннотацию попадает начало списка, и там должен стоять тот
+        // элемент, который вылез дальше всех, а не тот, что случайно обошли раньше.
+        IReadOnlyList<LayoutBox> outside = LayoutOverflow
+            .Find(boxes, limit)
+            .OrderByDescending(box => box.Right)
+            .ToList();
         if (outside.Count == 0)
         {
-            StartupLog.Note($"Раскладка: за правый край окна ({Math.Round(limit)} точек) ничего не выходит — просмотрено {boxes.Count} элементов");
+            StartupLog.Note($"Раскладка: на ширине {Math.Round(limit)} точек за правый край ничего не выходит — просмотрено {boxes.Count} элементов");
             return;
         }
 
         string report = LayoutOverflow.DescribeRu(outside, limit);
-        problems.Add($"элементы выходят за край окна: {report}");
-        StartupLog.Warn($"Раскладка: {outside.Count} элементов шире окна ({Math.Round(limit)} точек) и обрезаны справа: {report}");
+        problems.Add($"элементы выходят за край окна на ширине {Math.Round(limit)}: {report}");
+        StartupLog.Warn($"Раскладка: на ширине {Math.Round(limit)} точек {outside.Count} элементов обрезаны справа: {report}");
     }
 
     /// <summary>
@@ -1284,7 +1324,12 @@ internal static class SelfCheck
     /// (места не занимает), декор со свечением — тоже: он выходит за край нарочно, под обрезкой.
     /// Блок с прокруткой вбок пропускается целиком: его содержимое можно докрутить — это не обрез.
     /// </summary>
-    private static void CollectLayoutBoxes(FrameworkElement root, DependencyObject node, List<LayoutBox> boxes, int depth)
+    private static void CollectLayoutBoxes(
+        FrameworkElement root,
+        DependencyObject node,
+        List<LayoutBox> boxes,
+        int depth,
+        string parentName)
     {
         if (depth > 64)
         {
@@ -1314,22 +1359,42 @@ internal static class SelfCheck
             {
                 Rect bounds = element.TransformToAncestor(root)
                     .TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
-                boxes.Add(new LayoutBox(DescribeLayoutElement(element), bounds.Left, bounds.Width));
+                string name = DescribeLayoutElement(element);
+                boxes.Add(new LayoutBox(
+                    parentName.Length == 0 ? name : $"{name} в {parentName}",
+                    bounds.Left,
+                    bounds.Width));
             }
             catch (InvalidOperationException)
             {
                 continue;   // элемент не из этого дерева — сравнивать нечего
             }
 
-            CollectLayoutBoxes(root, element, boxes, depth + 1);
+            CollectLayoutBoxes(root, element, boxes, depth + 1, DescribeLayoutElement(element));
         }
     }
 
-    /// <summary>Имя элемента для отчёта: <c>x:Name</c> важнее типа — по нему ищут в разметке.</summary>
+    /// <summary>
+    /// Имя элемента для отчёта. <c>x:Name</c> важнее типа — по нему ищут в разметке, — а если имени нет,
+    /// называются первые слова текста: «TextBlock «Готово: пакет…»» ищется в разметке мгновенно, а
+    /// «TextBlock» без ничего не ищется никак.
+    /// </summary>
     private static string DescribeLayoutElement(FrameworkElement element)
     {
         string type = element.GetType().Name;
-        return string.IsNullOrEmpty(element.Name) ? type : $"{type} «{element.Name}»";
+        string own = string.IsNullOrEmpty(element.Name) ? type : $"{type} «{element.Name}»";
+        if (element is not TextBlock text || string.IsNullOrWhiteSpace(text.Text))
+        {
+            return own;
+        }
+
+        string snippet = text.Text.Trim().Replace("\r", " ").Replace("\n", " ");
+        if (snippet.Length > 28)
+        {
+            snippet = snippet[..28] + "…";
+        }
+
+        return $"{own} «{snippet}»";
     }
 
     /// <summary>

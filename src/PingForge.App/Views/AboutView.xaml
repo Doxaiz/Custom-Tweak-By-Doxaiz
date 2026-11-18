@@ -106,12 +106,19 @@
         <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
                    Text="Проверка — только по кнопке ниже: в фоне программа в интернет не ходит. Новая версия не скачивается автоматически: файл берётся вручную со страницы релиза на GitHub, а контрольная сумма для сверки показывается здесь." />
 
-        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-          <Button x:Name="CheckUpdatesButton" Style="{StaticResource GhostButton}" Content="Проверить обновления"
-                  Command="{Binding CheckUpdatesCommand}" Margin="0,0,12,0" />
-          <TextBlock x:Name="UpdateStatusText" Style="{StaticResource Caption}" VerticalAlignment="Center" MaxWidth="520"
+        <!-- Кнопка и статус в Grid, а не в горизонтальном StackPanel: у StackPanel ширина не ограничена,
+             поэтому длинный статус растягивал строку шире страницы и обрезался справа. Колонка «*»
+             даёт тексту предел, и он переносится. -->
+        <Grid Margin="0,10,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Button x:Name="CheckUpdatesButton" Grid.Column="0" Style="{StaticResource GhostButton}" Content="Проверить обновления"
+                  Command="{Binding CheckUpdatesCommand}" Margin="0,0,12,0" VerticalAlignment="Center" />
+          <TextBlock x:Name="UpdateStatusText" Grid.Column="1" Style="{StaticResource Caption}" VerticalAlignment="Center"
                      Text="{Binding StatusRu}" />
-        </StackPanel>
+        </Grid>
 
         <Button x:Name="OpenReleaseButton" Style="{StaticResource GhostButton}" Content="Открыть страницу релиза"
                 HorizontalAlignment="Left" Margin="0,10,0,0" Click="OpenReleaseClick"

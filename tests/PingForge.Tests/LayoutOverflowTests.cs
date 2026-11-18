@@ -121,6 +121,41 @@ public sealed class LayoutOverflowTests
     }
 
     [Fact]
+    public void Штатная_и_минимальная_ширины_проверяются_обе()
+    {
+        // На минимальной ширине карточки теснее всего: туда человек попадает, потянув за край окна.
+        Assert.Equal(new[] { 1180.0, 860.0 }, LayoutOverflow.CheckWidths(1180, 860));
+    }
+
+    [Fact]
+    public void Окно_уже_минимального_проверяется_один_раз()
+    {
+        // Раннер с рабочим столом 1024×768 сам ужимает окно: проверять ту же ширину дважды незачем.
+        Assert.Equal(new[] { 860.0 }, LayoutOverflow.CheckWidths(860, 860));
+        Assert.Equal(new[] { 800.0 }, LayoutOverflow.CheckWidths(800, 860));
+    }
+
+    [Fact]
+    public void Разница_в_одну_точку_не_повод_мерить_ещё_раз()
+    {
+        Assert.Equal(new[] { 861.0 }, LayoutOverflow.CheckWidths(861, 860));
+    }
+
+    [Fact]
+    public void Без_минимальной_ширины_остаётся_одна_проверка()
+    {
+        Assert.Equal(new[] { 1180.0 }, LayoutOverflow.CheckWidths(1180, 0));
+        Assert.Equal(new[] { 1180.0 }, LayoutOverflow.CheckWidths(1180, double.NaN));
+    }
+
+    [Fact]
+    public void Неизмеренное_окно_не_проверяется_вовсе()
+    {
+        Assert.Empty(LayoutOverflow.CheckWidths(0, 860));
+        Assert.Empty(LayoutOverflow.CheckWidths(double.NaN, 860));
+    }
+
+    [Fact]
     public void Пустой_отчёт_когда_всё_на_месте()
     {
         Assert.Equal(string.Empty, LayoutOverflow.DescribeRu(Array.Empty<LayoutBox>(), 1024));

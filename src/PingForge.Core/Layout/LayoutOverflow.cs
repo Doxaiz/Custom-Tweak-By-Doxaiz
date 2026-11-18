@@ -75,6 +75,35 @@ public static class LayoutOverflow
     }
 
     /// <summary>
+    /// Ширины, на которых проверяется правый край: штатная и, если окно шире, минимальная.
+    /// </summary>
+    /// <remarks>
+    /// Карточки теснее всего именно на минимальной ширине: там колонка разделов и таблицы делят
+    /// одни и те же точки. Проверять только штатное окно — значит не проверять тот случай, в который
+    /// человек попадает, потянув за край окна.
+    /// </remarks>
+    /// <param name="currentWidth">Ширина, с которой начали.</param>
+    /// <param name="minimumWidth">Минимальная ширина окна из разметки; ноль или NaN — не задана.</param>
+    public static IReadOnlyList<double> CheckWidths(double currentWidth, double minimumWidth)
+    {
+        var widths = new List<double>(2);
+        if (double.IsNaN(currentWidth) || double.IsInfinity(currentWidth) || currentWidth <= 0)
+        {
+            return widths;   // окно ещё не измерилось
+        }
+
+        widths.Add(currentWidth);
+
+        bool minIsKnown = !double.IsNaN(minimumWidth) && !double.IsInfinity(minimumWidth) && minimumWidth > 0;
+        if (minIsKnown && currentWidth - minimumWidth > Tolerance)
+        {
+            widths.Add(minimumWidth);
+        }
+
+        return widths;
+    }
+
+    /// <summary>
     /// Отчёт по-русски: «панель «Твики» — правый край 1042 при окне 1024» и, если виноватых много,
     /// «и ещё 3». Имена важнее чисел: человек ищет в разметке имя, а не точку.
     /// </summary>
