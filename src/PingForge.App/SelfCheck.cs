@@ -5,6 +5,7 @@ using System.Windows.Media;
 using PingForge.App.ViewModels;
 using PingForge.App.Views;
 using PingForge.Core.Models;
+using PingForge.Core.Layout;
 using PingForge.Probing;
 using PingForge.Routing;
 
@@ -68,6 +69,7 @@ internal static class SelfCheck
         CheckGameRegionsAndDns(app, problems);
         CheckSupportPackage(app, problems);
         CheckLayout(app, problems);
+        CheckNothingIsCutOff(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
         CheckService(problems);
@@ -79,6 +81,7 @@ internal static class SelfCheck
             || problem.Contains("потеряла данные", StringComparison.Ordinal)
             || problem.Contains("нет надписей", StringComparison.Ordinal)
             || problem.Contains("нет карточки ответа", StringComparison.Ordinal)
+            || problem.Contains("выходят за край окна", StringComparison.Ordinal)
             || problem.Contains("не переносятся", StringComparison.Ordinal)
             || problem.Contains("история сессий", StringComparison.Ordinal)
             || problem.Contains("пакет для поддержки", StringComparison.Ordinal)))
@@ -1234,6 +1237,99 @@ internal static class SelfCheck
         }
 
         StartupLog.Note($"Раскладка: карточка графика сети не сжата ({Math.Round(chart.ActualWidth)} точек)");
+    }
+
+    /// <summary>
+    /// Ничего не выходит за правый край окна. Полоса содержимого прокручивается только вниз
+    /// (<c>HorizontalScrollBarVisibility="Disabled"</c>), поэтому всё, что шире окна, обрезано справа:
+    /// человек видит половину карточки и доскроллить до неё не может. Этот дефект уже был —
+    /// его заметили на снимке окна, но тогда ширину сравнивали глазами.
+    ///
+    /// Сравниваются границы элементов, отсчитанные от корня окна, а не <c>ActualWidth</c> по
+    /// отдельности: у элемента есть поле, рамка и масштаб интерфейса, и левый край не всегда ноль.
+    /// </summary>
+    private static void CheckNothingIsCutOff(App app, List<string> problems)
+    {
+        if (app.Shell?.Content is not FrameworkElement root)
+        {
+            return;
+        }
+
+        root.UpdateLayout();
+
+        double limit = root.ActualWidth;
+        if (limit <= 0)
+        {
+            problems.Add("ширина окна не измерилась — проверить правый край не на чем");
+            return;
+        }
+
+        var boxes = new List<LayoutBox>();
+        CollectLayoutBoxes(root, root, boxes, depth: 0);
+
+        IReadOnlyList<LayoutBox> outside = LayoutOverflow.Find(boxes, limit);
+        if (outside.Count == 0)
+        {
+            StartupLog.Note($"Раскладка: за правый край окна ({Math.Round(limit)} точек) ничего не выходит — просмотрено {boxes.Count} элементов");
+            return;
+        }
+
+        string report = LayoutOverflow.DescribeRu(outside, limit);
+        problems.Add($"элементы выходят за край окна: {report}");
+        StartupLog.Warn($"Раскладка: {outside.Count} элементов шире окна ({Math.Round(limit)} точек) и обрезаны справа: {report}");
+    }
+
+    /// <summary>
+    /// Обойти видимое дерево и собрать границы элементов от корня окна. Свёрнутое пропускается
+    /// (места не занимает), декор со свечением — тоже: он выходит за край нарочно, под обрезкой.
+    /// Блок с прокруткой вбок пропускается целиком: его содержимое можно докрутить — это не обрез.
+    /// </summary>
+    private static void CollectLayoutBoxes(FrameworkElement root, DependencyObject node, List<LayoutBox> boxes, int depth)
+    {
+        if (depth > 64)
+        {
+            return;
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            if (VisualTreeHelper.GetChild(node, i) is not FrameworkElement element)
+            {
+                continue;
+            }
+
+            if (element.Visibility != Visibility.Visible || !element.IsHitTestVisible)
+            {
+                continue;
+            }
+
+            if (element is ScrollViewer scroller &&
+                scroller.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled)
+            {
+                continue;
+            }
+
+            try
+            {
+                Rect bounds = element.TransformToAncestor(root)
+                    .TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
+                boxes.Add(new LayoutBox(DescribeLayoutElement(element), bounds.Left, bounds.Width));
+            }
+            catch (InvalidOperationException)
+            {
+                continue;   // элемент не из этого дерева — сравнивать нечего
+            }
+
+            CollectLayoutBoxes(root, element, boxes, depth + 1);
+        }
+    }
+
+    /// <summary>Имя элемента для отчёта: <c>x:Name</c> важнее типа — по нему ищут в разметке.</summary>
+    private static string DescribeLayoutElement(FrameworkElement element)
+    {
+        string type = element.GetType().Name;
+        return string.IsNullOrEmpty(element.Name) ? type : $"{type} «{element.Name}»";
     }
 
     /// <summary>
