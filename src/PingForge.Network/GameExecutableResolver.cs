@@ -69,12 +69,13 @@ public static class GameExecutableResolver
 
         // В ярлыке путь лежит дважды: как ANSI-строка и как UTF-16. Читаем оба вида — так ярлык
         // на игру в папке с русским названием тоже разбирается.
-        foreach (string candidate in SplitAnsiStrings(shortcutBytes))
-        {
-            Add(candidate);
-        }
+        // Вспомогательные методы собирают строки в список, а не отдают их по одной: у метода-итератора
+        // не может быть параметра-span, а байты ярлыка читаются как раз без копий.
+        var raw = new List<string>();
+        CollectAnsiStrings(shortcutBytes, raw);
+        CollectUnicodeStrings(shortcutBytes, raw);
 
-        foreach (string candidate in SplitUnicodeStrings(shortcutBytes))
+        foreach (string candidate in raw)
         {
             Add(candidate);
         }
@@ -261,19 +262,14 @@ public static class GameExecutableResolver
     }
 
     /// <summary>Строки с завершающим нулём в однобайтовой части ярлыка.</summary>
-    private static IEnumerable<string> SplitAnsiStrings(ReadOnlySpan<byte> bytes)
+    private static void CollectAnsiStrings(ReadOnlySpan<byte> bytes, List<string> into)
     {
         var builder = new StringBuilder();
         foreach (byte value in bytes)
         {
             if (value == 0)
             {
-                if (builder.Length > 0)
-                {
-                    yield return builder.ToString();
-                    builder.Clear();
-                }
-
+                Flush(builder, into);
                 continue;
             }
 
@@ -286,14 +282,11 @@ public static class GameExecutableResolver
             builder.Append((char)value);
         }
 
-        if (builder.Length > 0)
-        {
-            yield return builder.ToString();
-        }
+        Flush(builder, into);
     }
 
     /// <summary>Строки UTF-16LE: так Windows хранит путь, если в нём есть кириллица.</summary>
-    private static IEnumerable<string> SplitUnicodeStrings(ReadOnlySpan<byte> bytes)
+    private static void CollectUnicodeStrings(ReadOnlySpan<byte> bytes, List<string> into)
     {
         for (int shift = 0; shift < 2; shift++)
         {
@@ -303,12 +296,7 @@ public static class GameExecutableResolver
                 char symbol = (char)(bytes[index] | (bytes[index + 1] << 8));
                 if (symbol == '\0')
                 {
-                    if (builder.Length > 0)
-                    {
-                        yield return builder.ToString();
-                        builder.Clear();
-                    }
-
+                    Flush(builder, into);
                     continue;
                 }
 
@@ -321,13 +309,19 @@ public static class GameExecutableResolver
                 builder.Append(symbol);
             }
 
-            if (builder.Length > 0)
-            {
-                yield return builder.ToString();
-            }
+            Flush(builder, into);
         }
-
-        static bool IsPrintable(char symbol) =>
-            char.IsLetterOrDigit(symbol) || symbol is ':' or '\\' or '/' or '.' or '_' or '-' or ' ' or '(' or ')' or '~' or '\'' or '&';
     }
+
+    private static void Flush(StringBuilder builder, List<string> into)
+    {
+        if (builder.Length > 0)
+        {
+            into.Add(builder.ToString());
+            builder.Clear();
+        }
+    }
+
+    private static bool IsPrintable(char symbol) =>
+        char.IsLetterOrDigit(symbol) || symbol is ':' or '\\' or '/' or '.' or '_' or '-' or ' ' or '(' or ')' or '~' or '\'' or '&';
 }
