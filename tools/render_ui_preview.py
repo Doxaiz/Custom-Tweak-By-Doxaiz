@@ -24,9 +24,11 @@ if hasattr(sys.stdout, "reconfigure"):
 
 CSS = """
 :root{
-  --bg:#0b0f16; --bg2:#111826; --card:#141c2b; --line:#1f2b3f; --line2:#2a3852;
-  --text:#e8eef8; --muted:#93a3bd; --dim:#6b7c99;
-  --accent:#3ea6ff; --accent2:#7c5cff; --ok:#31c48d; --warn:#f0b429; --bad:#f2545b; --info:#38bdf8;
+  /* Палитра — ровно та же, что в App.xaml: макет показывает программу, а не «похожий на неё»
+     сайт. Совпадение проверяет tools/check_ui_preview.js, сверяя эти значения с темой. */
+  --bg:#070b14; --bg2:#0d1930; --card:#111a2a; --line:#1e2a42; --line2:#24405c;
+  --text:#e9effb; --muted:#8fa1bd; --dim:#74869f;
+  --accent:#4ade80; --accent2:#38bdf8; --ok:#4ade80; --warn:#f2c94c; --bad:#f2545b; --info:#38bdf8;
   --radius:14px;
 }
 *{box-sizing:border-box}
@@ -69,15 +71,15 @@ p{margin:8px 0}
 .g4{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .between{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12.5px;background:#0e1622;border:1px solid var(--line);
+code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12.5px;background:#0b1220;border:1px solid var(--line);
   border-radius:6px;padding:1.5px 6px;color:#bcd3f7;word-break:break-all}
 .metric{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:14px}
 .metric .label{font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
 .metric .value{font-size:23px;font-weight:700;margin-top:6px}
 .metric .value.na{color:var(--dim);font-size:18px;font-weight:600}
-.btn{border:1px solid var(--line2);background:#182234;color:var(--text);font:inherit;font-weight:600;
+.btn{border:1px solid var(--line2);background:#16203a;color:var(--text);font:inherit;font-weight:600;
   padding:11px 18px;border-radius:11px;cursor:pointer;display:inline-block}
-.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#04101f}
+.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#04121d}
 .btn.big{font-size:16px;padding:15px 26px;border-radius:13px}
 .btn.small{padding:7px 12px;font-size:13.5px;border-radius:9px}
 .btn[disabled]{opacity:.55;cursor:not-allowed}
@@ -102,7 +104,7 @@ tr:hover>td{background:#121a29}
 td.num,th.num{text-align:right;font-family:"Cascadia Mono",Consolas,monospace}
 .scroll{overflow-x:auto}
 
-input[type=text],select{font:inherit;color:var(--text);background:#0e1622;border:1px solid var(--line2);
+input[type=text],select{font:inherit;color:var(--text);background:#0b1220;border:1px solid var(--line2);
   border-radius:9px;padding:9px 11px;min-width:180px}
 label.check{display:flex;gap:9px;align-items:flex-start;cursor:pointer}
 input[type=checkbox]{margin-top:3px;width:17px;height:17px;accent-color:var(--accent)}
@@ -111,16 +113,16 @@ input[type=checkbox]{margin-top:3px;width:17px;height:17px;accent-color:var(--ac
 .callout.warn{border-left-color:var(--warn)}
 .callout.ok{border-left-color:var(--ok)}
 .callout.bad{border-left-color:var(--bad)}
-.callout b{color:#fff}
+.callout b{color:var(--text)}
 
 .window{background:var(--bg2);border:1px solid var(--line2);border-radius:16px;overflow:hidden;margin:14px 0;
   box-shadow:0 18px 50px rgba(0,0,0,.45)}
-.window .titlebar{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#0e1622;border-bottom:1px solid var(--line)}
+.window .titlebar{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#0b1220;border-bottom:1px solid var(--line)}
 .window .dots{display:flex;gap:6px}
 .window .dots i{width:11px;height:11px;border-radius:50%;display:block;background:#31405c}
 .window .body{padding:18px}
 
-.bar{height:9px;border-radius:999px;background:#0e1622;border:1px solid var(--line);overflow:hidden;min-width:110px}
+.bar{height:9px;border-radius:999px;background:#0b1220;border:1px solid var(--line);overflow:hidden;min-width:110px}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
 .bar i.done{background:linear-gradient(90deg,#2f9e6f,var(--ok))}
 .bar i.none{background:#26334a}
@@ -145,7 +147,7 @@ details.tweak[hidden]{display:none}
 
 .calc{display:grid;gap:16px;grid-template-columns:1fr 1fr}
 @media(max-width:820px){.calc{grid-template-columns:1fr}}
-.calc .col{background:#0e1622;border:1px solid var(--line);border-radius:12px;padding:14px}
+.calc .col{background:#0b1220;border:1px solid var(--line);border-radius:12px;padding:14px}
 .calc label{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin:10px 0 2px}
 .calc input[type=range]{width:100%;padding:0}
 .score{font-size:26px;font-weight:700}
@@ -165,14 +167,14 @@ nav.side-nav{display:flex;flex-direction:column;gap:4px}
 nav.side-nav a.step{display:flex;gap:11px;align-items:flex-start;padding:9px 11px;border-radius:11px;
   border:1px solid transparent;color:var(--muted)}
 .stepnum{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;
-  border-radius:7px;background:#182234;border:1px solid var(--line2);font-size:11.5px;font-weight:700;color:var(--muted)}
+  border-radius:7px;background:#16203a;border:1px solid var(--line2);font-size:11.5px;font-weight:700;color:var(--muted)}
 nav.side-nav a.step .steptext{display:flex;flex-direction:column;line-height:1.25}
 nav.side-nav a.step .steptext b{color:var(--text);font-size:14.5px;font-weight:650}
 nav.side-nav a.step .steptext span{font-size:12px;color:var(--dim)}
 nav.side-nav a.step:hover{background:#121a29;border-color:var(--line)}
 nav.side-nav a.step[aria-current="true"]{background:#16223a;border-color:var(--line2)}
 nav.side-nav a.step[aria-current="true"] .stepnum{background:linear-gradient(135deg,var(--accent),var(--accent2));
-  border-color:transparent;color:#04101f}
+  border-color:transparent;color:#04121d}
 .side-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px;
   display:flex;flex-direction:column;gap:9px}
 .side-card .btn{width:100%;text-align:center}
@@ -207,12 +209,12 @@ a.up:hover{color:var(--text)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
 h2.parthead{font-size:20px;margin:22px 0 6px;padding-top:14px;border-top:1px solid var(--line)}
 .simple{border-left:3px solid var(--ok);background:#0f1a17;border-radius:0 12px 12px 0;padding:12px 15px;margin:14px 0}
-.simple b{color:#fff}
+.simple b{color:var(--text)}
 .three{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin:12px 0}
-.three .step{background:#0e1622;border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.three .step{background:#0b1220;border:1px solid var(--line);border-radius:12px;padding:13px 15px}
 .three .step b{display:block;color:var(--text);margin-bottom:4px}
 .three .step .n{display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;
-  border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04101f;
+  border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04121d;
   font-weight:700;font-size:12.5px;margin-bottom:7px}
 .glossary dt{font-weight:700;margin-top:10px}
 .glossary dd{margin:2px 0 0;color:var(--muted);font-size:13.5px}
@@ -243,13 +245,13 @@ nav.side-nav a.step[aria-current="true"]{background:#16223a;border-color:var(--l
 nav.side-nav a.step[aria-current="true"]::before{content:"";position:absolute;left:-9px;top:11px;bottom:11px;
   width:3px;border-radius:3px;background:linear-gradient(180deg,var(--accent),var(--accent2))}
 nav.side-nav a.step .stepnum{flex:0 0 24px;width:24px;height:24px;border-radius:9px;display:grid;place-items:center;
-  font-size:12.5px;font-weight:700;color:var(--muted);background:#0e1622;border:1px solid var(--line);margin-top:1px}
-nav.side-nav a.step[aria-current="true"] .stepnum{color:#04101f;border-color:transparent;
+  font-size:12.5px;font-weight:700;color:var(--muted);background:#0b1220;border:1px solid var(--line);margin-top:1px}
+nav.side-nav a.step[aria-current="true"] .stepnum{color:#04121d;border-color:transparent;
   background:linear-gradient(135deg,var(--accent),var(--accent2))}
 nav.side-nav a.step .steptext{flex:1}
 nav.side-nav a.step .steptext span{color:var(--dim);font-size:11.5px;margin-top:2px}
 nav.side-nav a.step .navbadge{flex:0 0 auto;align-self:flex-start;margin-top:2px;font-size:11px;font-weight:650;
-  color:var(--muted);background:#0e1622;border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+  color:var(--muted);background:#0b1220;border:1px solid var(--line);border-radius:999px;padding:1px 8px}
 nav.side-nav a.step[aria-current="true"] .navbadge{color:var(--text);border-color:var(--line2)}
 
 .side-tip{margin-top:14px;padding:11px 13px;border:1px dashed var(--line2);border-radius:12px;
@@ -266,7 +268,7 @@ a.toc-tile{display:flex;gap:12px;align-items:flex-start;text-decoration:none;col
   transition:border-color .15s,transform .15s,background .15s}
 a.toc-tile:hover{border-color:var(--line2);background:#131c2c;transform:translateY(-2px)}
 a.toc-tile .toc-num{flex:0 0 28px;width:28px;height:28px;border-radius:10px;display:grid;place-items:center;
-  font-weight:700;font-size:13.5px;color:#04101f;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+  font-weight:700;font-size:13.5px;color:#04121d;background:linear-gradient(135deg,var(--accent),var(--accent2))}
 a.toc-tile b{display:block;font-size:14.5px}
 a.toc-tile .toc-desc{display:block;color:var(--muted);font-size:13px;margin-top:3px}
 a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:6px}
@@ -275,7 +277,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .secnav{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:26px 0 8px;padding-top:14px;
   border-top:1px dashed var(--line);font-size:13px}
 .secnav a,.secnav span.end{border:1px solid var(--line);border-radius:10px;padding:7px 12px;color:var(--muted);
-  background:#0e1622}
+  background:#0b1220}
 .secnav a:hover{color:var(--text);border-color:var(--line2)}
 .secnav .secnav-mid{margin:0 auto}
 .secnav span.end{color:var(--dim)}
@@ -286,7 +288,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .toc-mini > summary{cursor:pointer;padding:10px 13px;font-size:13px;font-weight:640;color:var(--text)}
 .toc-mini[open] > summary{border-bottom:1px solid var(--line);background:#101a29}
 .toc-mini-links{display:flex;flex-wrap:wrap;gap:8px;padding:11px 13px}
-.toc-mini-links a{background:#0e1622;border:1px solid var(--line);border-radius:999px;padding:5px 11px;
+.toc-mini-links a{background:#0b1220;border:1px solid var(--line);border-radius:999px;padding:5px 11px;
   font-size:12.5px;color:var(--muted)}
 .toc-mini-links a:hover{border-color:var(--line2);color:var(--text)}
 .whatsnew{border-color:var(--line2)}
@@ -306,7 +308,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .chart{background:#0c1420;border:1px solid var(--line);border-radius:12px;padding:10px 12px 6px}
 .chart h4{margin:2px 0 6px;font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .chart svg{display:block;width:100%;height:auto}
-.chart .axis{fill:#7f8ea8;font-size:9px}
+.chart .axis{fill:#74869f;font-size:9px}
 .chart .grid{stroke:#1c2534;stroke-width:.6}
 .legend{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0 0;font-size:11.5px;color:var(--muted)}
 .legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
@@ -328,16 +330,16 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .switch .slider::before{content:"";position:absolute;width:19px;height:19px;left:4px;top:3px;border-radius:50%;
   background:#93a3bd;transition:.18s}
 .switch input:checked + .slider{background:linear-gradient(135deg,var(--ok),var(--accent));border-color:transparent}
-.switch input:checked + .slider::before{transform:translateX(21px);background:#04101f}
+.switch input:checked + .slider::before{transform:translateX(21px);background:#04121d}
 .switch input:focus-visible + .slider{outline:2px solid var(--accent);outline-offset:2px}
 .switch input:disabled + .slider{opacity:.6}
 .t-state{font-size:12px;color:var(--dim);margin-top:6px;text-align:center}
 .tweak.on .t-state{color:var(--ok)}
 .t-details{border-top:1px solid var(--line)}
-.t-details > summary{cursor:pointer;padding:9px 14px;font-size:13px;color:var(--muted);background:#0e1622}
+.t-details > summary{cursor:pointer;padding:9px 14px;font-size:13px;color:var(--muted);background:#0b1220}
 .t-details > summary:hover{color:var(--text)}
 .t-blocks{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));padding:12px 14px 16px}
-.t-block{background:#0e1622;border:1px solid var(--line);border-radius:12px;padding:12px 14px;max-width:100%;overflow-wrap:anywhere}
+.t-block{background:#0b1220;border:1px solid var(--line);border-radius:12px;padding:12px 14px;max-width:100%;overflow-wrap:anywhere}
 .t-block.wide{grid-column:1/-1}
 .t-block h4{margin:0 0 6px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .t-block p{margin:0;font-size:13.5px;overflow-wrap:anywhere}
@@ -362,7 +364,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .scaleopts input{margin:0;accent-color:var(--accent)}
 .scaleopts label:has(input:checked){color:var(--text);border-color:var(--accent);background:#18243c;font-weight:600}
 .chiprow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.chiprow span{background:#0e1622;border:1px solid var(--line);border-radius:8px;padding:2px 7px;font-size:11.5px;color:var(--muted)}
+.chiprow span{background:#0b1220;border:1px solid var(--line);border-radius:8px;padding:2px 7px;font-size:11.5px;color:var(--muted)}
 .overflow-safe{overflow-wrap:anywhere;word-break:break-word}
 """
 
@@ -1020,11 +1022,11 @@ def network_chart(data: dict) -> str:
         for i in indicators)
 
     panels = "".join([
-        _chart("Скорость приёма", "Мбит/с", 120, [("было", "#7f8ea8", "down_before"),
+        _chart("Скорость приёма", "Мбит/с", 120, [("было", "#74869f", "down_before"),
                                                    ("стало", "#4ade80", "down_after")]),
-        _chart("Задержка: средняя", "мс", 60, [("было", "#7f8ea8", "ping_before"),
+        _chart("Задержка: средняя", "мс", 60, [("было", "#74869f", "ping_before"),
                                                                 ("стало", "#38bdf8", "ping_after")]),
-        _chart("Джиттер (MAD) — разброс задержки", "мс", 12, [("было", "#7f8ea8", "jitter_before"),
+        _chart("Джиттер (MAD) — разброс задержки", "мс", 12, [("было", "#74869f", "jitter_before"),
                                                         ("стало", "#a78bfa", "jitter_after")]),
         _chart("Потери пакетов", "%", 4, [("было", "#f87171", "loss_before"),
                                           ("стало", "#4ade80", "loss_after")], bars=True),
@@ -1507,7 +1509,7 @@ def build(data: dict, progress: dict) -> str:
   <div class="appbar-inner">
     <div class="logo">
       <span class="mark">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#04101f" stroke-width="2.6" stroke-linecap="round">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#04121d" stroke-width="2.6" stroke-linecap="round">
           <path d="M3 17l5-7 4 4 4-8 5 6"/>
         </svg>
       </span>
@@ -2245,7 +2247,7 @@ def build(data: dict, progress: dict) -> str:
         <span class="btn small">Выбрать файл…</span>
         <span class="small dim">или вставьте текст профиля в поле ниже</span>
       </div>
-      <textarea rows="12" spellcheck="false" style="width:100%;font-family:'Cascadia Mono',Consolas,monospace;font-size:12.5px;background:#0e1622;color:var(--text);border:1px solid var(--line2);border-radius:9px;padding:10px">{cfg_example}</textarea>
+      <textarea rows="12" spellcheck="false" style="width:100%;font-family:'Cascadia Mono',Consolas,monospace;font-size:12.5px;background:#0b1220;color:var(--text);border:1px solid var(--line2);border-radius:9px;padding:10px">{cfg_example}</textarea>
       <div class="row" style="margin-top:10px">
         <span class="btn primary">Проверить и применить</span>
         <span class="btn">Отмена</span>

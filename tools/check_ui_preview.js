@@ -1,5 +1,6 @@
 /*
- Проверка макета интерфейса: переходы по меню, оглавление, переходы «назад/далее» и чтение без скриптов.
+ Проверка макета интерфейса: переходы по меню, оглавление, переходы «назад/далее», чтение без скриптов,
+ а также тема: палитра макета сверяется с App.xaml, а контраст текста — по WCAG 2.1.
  Запуск (нужен jsdom):
      npm install jsdom            # или NODE_PATH=/путь/к/node_modules
      node tools/check_ui_preview.js docs/pingforge-ui-preview.html
@@ -298,6 +299,62 @@ setTimeout(async () => {
     }));
   check('в карточках есть блок «Зачем для игры и чего это стоит» с пометкой стоит ли включать',
     cards.every(c => /Зачем для игры/.test(c.textContent)));
+
+  // ── тема: палитра макета совпадает с программой, и текст на ней читается ─────────────────────
+  const rootBlock = (html.match(/:root\{([\s\S]*?)\}/) || [])[1] || '';
+  const vars = {};
+  for (const m of rootBlock.matchAll(/--([a-z0-9]+)\s*:\s*(#[0-9a-fA-F]{6})/g)) vars[m[1]] = m[2].toLowerCase();
+
+  const appXamlPath = path.resolve(path.dirname(FILE), '..', 'src', 'PingForge.App', 'App.xaml');
+  let appXaml = '';
+  try { appXaml = fs.readFileSync(appXamlPath, 'utf8'); } catch { appXaml = ''; }
+  const appColor = key => {
+    const found = appXaml.match(new RegExp('<Color x:Key="' + key + '">(#[0-9A-Fa-f]{6})</Color>'));
+    return found ? found[1].toLowerCase() : '';
+  };
+
+  // Макет — это витрина программы, а не «похожий на неё» сайт: фон, панели, линии, текст и
+  // акценты обязаны совпадать с темой. Иначе по макету нельзя судить, как выглядит программа.
+  const themePairs = [
+    ['bg', 'BgColor'], ['card', 'PanelColor'], ['line', 'LineColor'], ['line2', 'LineStrongColor'],
+    ['text', 'TextColor'], ['muted', 'MutedColor'], ['dim', 'DimColor'],
+    ['accent', 'AccentColor'], ['accent2', 'Accent2Color'], ['warn', 'WarnColor'], ['bad', 'DangerColor']
+  ];
+  const misplaced = themePairs
+    .filter(([v, k]) => vars[v] !== appColor(k))
+    .map(([v, k]) => `--${v}=${vars[v] || '—'}, в теме ${appColor(k) || '—'}`);
+  check('палитра макета совпадает с темой программы (App.xaml)', appXaml.length > 0 && misplaced.length === 0,
+    misplaced.join('; '));
+
+  // Контраст по WCAG 2.1: (L1 + 0,05) / (L2 + 0,05). Требование AA для обычного текста — 4,5:1.
+  const channel = part => {
+    const value = parseInt(part, 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+  };
+  const luminance = hex => 0.2126 * channel(hex.slice(1, 3)) + 0.7152 * channel(hex.slice(3, 5)) + 0.0722 * channel(hex.slice(5, 7));
+  const contrast = (first, second) => {
+    const a = luminance(first);
+    const b = luminance(second);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  };
+
+  const contrastPairs = [
+    ['основной текст на фоне', vars.text, vars.bg],
+    ['основной текст на панели', vars.text, vars.card],
+    ['подписи на панели', vars.muted, vars.card],
+    ['третий уровень текста на панели', vars.dim, vars.card],
+    ['ссылка (accent) на панели', vars.accent, vars.card],
+    ['accent2 на панели', vars.accent2, vars.card]
+  ];
+  contrastPairs.forEach(([name, fg, bg]) => {
+    const ratio = fg && bg ? contrast(fg, bg) : 0;
+    check(`контраст: ${name} не ниже 4,5:1`, ratio >= 4.5, `${ratio.toFixed(2)}:1`);
+  });
+
+  const primaryText = '#04121d';
+  check('тёмный текст основной кнопки читается на обоих концах градиента',
+    contrast(primaryText, vars.accent) >= 4.5 && contrast(primaryText, vars.accent2) >= 4.5,
+    `${contrast(primaryText, vars.accent).toFixed(2)}:1 и ${contrast(primaryText, vars.accent2).toFixed(2)}:1`);
 
   console.log(`Файл: ${path.resolve(FILE)} (${(html.length / 1024).toFixed(0)} КБ)`);
   console.log('порядок разделов:', ids.join(' → '));
