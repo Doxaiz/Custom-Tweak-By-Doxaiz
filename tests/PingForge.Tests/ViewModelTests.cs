@@ -377,7 +377,7 @@ public class ViewModelTests
 
         Assert.Equal(21, tweaks.CheckedCount);
         Assert.All(tweaks.Rows.Where(row => !row.IsRecommended), row => Assert.False(row.IsOn));
-        Assert.Contains("21 твиков из 47", tweaks.StatusRu);
+        Assert.Contains("21 твик из 47", tweaks.StatusRu);
     }
 
     [Fact]
