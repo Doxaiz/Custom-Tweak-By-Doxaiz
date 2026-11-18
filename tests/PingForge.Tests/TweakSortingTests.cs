@@ -1,6 +1,7 @@
 using PingForge.App.ViewModels;
 using PingForge.Core.Models;
 using PingForge.Tweaks;
+using Xunit;
 
 namespace PingForge.Tests;
 
@@ -203,12 +204,12 @@ public sealed class TweakSortingTests
     {
         (TweaksViewModel tweaks, _) = ViewModel();
 
-        TweakGroupViewModel fps = tweaks.Groups.Single(group => group.TitleRu == Fps);
-        int onBefore = fps.Rows.Count(row => row.IsOn);
-        Assert.Equal(TweakOrdering.CountRu(fps.Rows.Count, onBefore), fps.CountRu);
+        TweakGroupViewModel input = tweaks.Groups.Single(group => group.TitleRu == Input);
+        int onBefore = input.Rows.Count(row => row.IsOn);
+        Assert.Equal(TweakOrdering.CountRu(input.Rows.Count, onBefore), input.CountRu);
 
         bool raised = false;
-        fps.PropertyChanged += (_, e) =>
+        input.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(TweakGroupViewModel.CountRu))
             {
@@ -216,12 +217,13 @@ public sealed class TweakSortingTests
             }
         };
 
-        TweakRowViewModel off = fps.Rows.First(row => !row.IsOn);
+        // В группе «Ввод» рекомендованное включено, «по желанию» — нет: есть что переключить.
+        TweakRowViewModel off = input.Rows.First(row => !row.IsOn);
         off.IsOn = true;
 
         Assert.True(raised, "заголовок группы не сообщил о новом числе включённых");
-        Assert.Equal(TweakOrdering.CountRu(fps.Rows.Count, onBefore + 1), fps.CountRu);
-        Assert.Contains("включено", fps.CountRu, StringComparison.Ordinal);
+        Assert.Equal(TweakOrdering.CountRu(input.Rows.Count, onBefore + 1), input.CountRu);
+        Assert.Contains("включено", input.CountRu, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -242,6 +244,7 @@ public sealed class TweakSortingTests
     public void Порядок_не_зависит_от_того_в_каком_порядке_пришли_строки()
     {
         (TweaksViewModel first, List<TweakRowViewModel> rows) = ViewModel(24);
+        first.SelectOrder(TweakOrder.RecommendedFirst);
 
         var shuffled = rows.OrderBy(row => row.Code.GetHashCode(StringComparison.Ordinal)).Reverse().ToList();
         var channel = new FakeEngineChannel();

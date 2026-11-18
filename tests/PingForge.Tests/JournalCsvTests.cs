@@ -1,4 +1,5 @@
 using PingForge.App.ViewModels;
+using Xunit;
 
 namespace PingForge.Tests;
 
