@@ -138,10 +138,16 @@
           <StackPanel>
             <TextBlock FontWeight="SemiBold" Text="Мультипуть на своих линиях — без чужой сети" />
             <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" Text="{Binding MultipathNoteRu}" />
-            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-              <CheckBox VerticalAlignment="Center" Content="включить мультипуть (нужны 2 шлюза)" IsChecked="{Binding MultipathEnabled}" AutomationProperties.Name="Включить мультипуть" />
-              <TextBlock Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="12,0,0,0" Text="резерв отмечается в списке, основной остаётся /32 на сервер игры" />
-            </StackPanel>
+            <!-- Флажок и пояснение в Grid, а не в горизонтальной панели: у панели ширина не ограничена,
+                 и на окне 860 пояснение уезжало за правый край. -->
+            <Grid Margin="0,8,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <CheckBox Grid.Column="0" VerticalAlignment="Center" Content="включить мультипуть (нужны 2 шлюза)" IsChecked="{Binding MultipathEnabled}" AutomationProperties.Name="Включить мультипуть" />
+              <TextBlock Grid.Column="1" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="12,0,0,0" Text="резерв отмечается в списке, основной остаётся /32 на сервер игры" />
+            </Grid>
             <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" Text="Честно: без своей сети пакеты не дублируются по интернету. Второй шлюз — горячий резерв: при просадке основного программа переключает маршрут за 1–2 с. Это не VPN и не VPS." />
           </StackPanel>
         </Border>
