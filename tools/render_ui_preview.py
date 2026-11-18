@@ -110,6 +110,11 @@ label.check{display:flex;gap:9px;align-items:flex-start;cursor:pointer}
 input[type=checkbox]{margin-top:3px;width:17px;height:17px;accent-color:var(--accent)}
 
 .callout{border-left:3px solid var(--accent);background:#101a2b;border-radius:0 12px 12px 0;padding:13px 16px;margin:14px 0}
+/* Примеры файлов: то, что программа реально пишет. Цвета — только из темы. */
+.snippet{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0 0;
+  font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.5;color:var(--text);
+  white-space:pre-wrap;word-break:break-word}
+.snippet .dim{color:var(--dim)}
 .callout.warn{border-left-color:var(--warn)}
 .callout.ok{border-left-color:var(--ok)}
 .callout.bad{border-left-color:var(--bad)}
@@ -2292,6 +2297,56 @@ def build(data: dict, progress: dict) -> str:
     с тем же именем честно скажет, что имя занято. Значения, которые таблица приняла бы за формулу («=», «+», «@»,
     табуляция, минус перед текстом), помечены апострофом: это текст, а не вычисление. Число строк подписано
     по-русски — «1 строка», «3 строки», «20 строк».</p>
+  </div>
+
+  <h3 id="journal-files" style="margin-top:16px">Примеры файлов, которые оставляет программа</h3>
+  <p class="small muted">Пять разных файлов. Ни один из них программа никуда не отправляет — все лежат на вашем диске.</p>
+  <div class="grid g2">
+    <div class="card tight">
+      <b>Журнал с поворотом</b>
+      <pre class="snippet">2026-11-18 12:24:51 Слушаю канал (права администратора: есть)
+2026-11-18 12:25:02 Команда «optimize»: готово — маршрут до 3.4.5.6
+2026-11-18 12:25:34 Клиент отключился
+<span class="dim">service.log      5 МБ — текущий
+service.log.1    5 МБ — предыдущий
+service.log.2    5 МБ — самый старый, следующий поворот его удалит</span></pre>
+      <p class="small muted">Строка не рвётся: поворот идёт до записи, а не посреди неё. Если повернуть не удалось (файл занят),
+      программа дописывает в текущий — лишняя строка лучше потерянной.</p>
+    </div>
+    <div class="card tight">
+      <b>Выгрузка журнала: journal-20261118-122451.csv</b>
+      <pre class="snippet">Дата,Твик,Код,Предыдущее,Применено,Проверено,Статус
+2026-10-16 12:10:00,Отключение алгоритма Нейгла,TCP_NO_DELAY,0,1,1,Применено
+2026-10-16 12:09:00,'=HYPERLINK("http://зло"),DNS_CACHE,0,1,1,Применено</pre>
+      <p class="small muted">Апостроф в начале — защита от формулы: таблица покажет текст, а не вычисление.</p>
+    </div>
+    <div class="card tight">
+      <b>Экспорт настроек: PingForge-настройки.json</b>
+      <pre class="snippet">{{{{
+  "SchemaVersion": 1,
+  "ExportedUtc": "2026-11-18T12:24:51.208Z",
+  "NoteRu": "Пути к играм проверьте на новом компьютере.",
+  "Settings": {{ "PerfProfile": "balanced", "CloseToTray": true }}
+}}}}</pre>
+      <p class="small muted">Пишется целиком во временный файл и подменяет прежний: половины копии не остаётся.</p>
+    </div>
+    <div class="card tight">
+      <b>Отчёт о падении: crash-20261118-123456-789.txt</b>
+      <pre class="snippet">Custom Tweak By Doxaiz — отчёт об ошибке
+Этот файл лежит на вашем диске. Программа никуда его не отправляет.
+
+Время: 2026-11-18 12:34:56
+Что случилось: проверка записи отчёта
+── Версии и окружение ──
+Окно: 1.0.0 · Служба: 1.0.0 · Windows 11</pre>
+      <p class="small muted">Два падения в одну миллисекунду не съедают отчёты друг друга: второй так и скажет, что имя занято.</p>
+    </div>
+    <div class="card tight">
+      <b>Резервная копия при сбросе: settings.json.bak-20261118-122451</b>
+      <pre class="snippet">settings.json                 ← текущие настройки
+settings.json.bak-20261118-122451  ← копия «до сброса»</pre>
+      <p class="small muted">Снапшоты и журнал при сбросе не удаляются — и это написано в вопросе до нажатия.</p>
+    </div>
   </div>
   {up_link()}
 </section>

@@ -412,6 +412,13 @@ setTimeout(async () => {
     contrast(primaryText, vars.accent) >= 4.5 && contrast(primaryText, vars.accent2) >= 4.5,
     `${contrast(primaryText, vars.accent).toFixed(2)}:1 и ${contrast(primaryText, vars.accent2).toFixed(2)}:1`);
 
+  const snippetNames = ['service.log.2', 'Дата,Твик,Код', '"SchemaVersion"', 'отчёт об ошибке', 'settings.json.bak-'];
+  const snippets = [...d.querySelectorAll('.snippet')];
+  check('в примерах файлов пять разных выгрузок программы',
+    !!d.getElementById('journal-files') && snippets.length >= 5 && snippetNames.every(name => html.includes(name)),
+    `блок: ${!!d.getElementById('journal-files')}, примеров: ${snippets.length}, не хватает: ` +
+      snippetNames.filter(name => !html.includes(name)).join(', '));
+
   console.log(`Файл: ${path.resolve(FILE)} (${(html.length / 1024).toFixed(0)} КБ)`);
   console.log('порядок разделов:', ids.join(' → '));
   console.log(`=== пройдено ${ok.length}, проблем ${problems.length} ===`);
