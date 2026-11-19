@@ -284,6 +284,114 @@ public sealed class SessionHistoryTests
     }
 
     [Fact]
+    public void Сравнение_отказывается_сравнивать_сессию_с_самой_собой()
+    {
+        // Две загрузки одной записи — два разных объекта с одним номером: номер важнее ссылки.
+        var first = Row("a", SameServer, baseline: 120, final: 95, completed: true);
+        var same = Row("a", SameServer, baseline: 120, final: 95, completed: true);
+
+        SessionComparisonResult result = SessionComparison.Compare(first, same);
+
+        Assert.False(result.Comparable);
+        Assert.Equal(SessionComparison.SameSessionReason, result.ReasonRu);
+        Assert.Contains(result.Lines, line => line.Contains("одна и та же", StringComparison.Ordinal));
+        // Ноль с самим собой — не измерение: строки про совпадение результата здесь быть не должно.
+        Assert.DoesNotContain(result.Lines, line => line.Contains("Результат совпал", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Lines, line => line.Contains("Результат разошёлся", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Сравнение_не_считает_неизвестный_адрес_одним_сервером()
+    {
+        // Обе сессии без адреса: раньше пустая строка равнялась пустой, и это выглядело
+        // как «сессии к одному серверу». Неизвестный адрес — не тот же самый.
+        var first = Row("a", string.Empty, baseline: 120, final: 95, completed: true);
+        var second = Row("b", string.Empty, baseline: 100, final: 90, completed: true);
+
+        SessionComparisonResult result = SessionComparison.Compare(first, second);
+
+        Assert.False(result.Comparable);
+        Assert.Equal(SessionComparison.UnknownEndpointReason, result.ReasonRu);
+        Assert.Contains(result.Lines, line => line.Contains("не определён", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Lines, line => line.Contains("разошёлся", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Сравнение_отказывается_если_адрес_неизвестен_у_одной_сессии()
+    {
+        var first = Row("a", SameServer, baseline: 120, final: 95, completed: true);
+        var second = Row("b", "   ", baseline: 100, final: 90, completed: true);
+
+        SessionComparisonResult result = SessionComparison.Compare(first, second);
+
+        Assert.False(result.Comparable);
+        Assert.Equal(SessionComparison.UnknownEndpointReason, result.ReasonRu);
+    }
+
+    [Fact]
+    public void Разные_серверы_называются_своей_причиной()
+    {
+        var first = Row("a", SameServer, baseline: 120, final: 95, completed: true);
+        var second = Row("b", OtherServer, baseline: 100, final: 90, completed: true);
+
+        Assert.Equal(SessionComparison.DifferentServersReason, SessionComparison.Compare(first, second).ReasonRu);
+    }
+
+    [Fact]
+    public void Сравнение_не_выводит_разницу_без_измеренного_до()
+    {
+        // Строка без «до», но с «после» и разницей: такие данные бывают в старой базе.
+        // Числа сравнивать нельзя — «до» не известно, значит, разница ничего не измеряет.
+        var first = Row("a", SameServer, baseline: 120, final: 95, completed: true) with
+        {
+            BaselineRttMs = null,
+            FinalRttMs = 90,
+            ImprovementMs = 5,
+        };
+        var second = Row("b", SameServer, baseline: 100, final: 90, completed: true);
+
+        SessionComparisonResult result = SessionComparison.Compare(first, second);
+
+        Assert.True(result.Comparable);
+        Assert.Contains(result.Lines, line => line.Contains("нет полного «до → после»", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Lines, line => line.Contains("разошёлся", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Сравнение_оговаривает_разные_игры_на_одном_сервере()
+    {
+        var first = Row("a", SameServer, baseline: 120, final: 95, completed: true);
+        var second = Row("b", SameServer, baseline: 100, final: 90, completed: true) with { GameTitleRu = "Dota 2" };
+
+        SessionComparisonResult result = SessionComparison.Compare(first, second);
+
+        Assert.True(result.Comparable);
+        Assert.Contains(result.Lines, line => line.Contains("разным играм", StringComparison.Ordinal));
+        Assert.Contains(result.Lines, line => line.Contains("Dota 2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Подпись_сравнения_называет_причину_отказа()
+    {
+        // Сквозная проверка через окно: выбрана одна и та же сессия, нажато «Сравнить».
+        var channel = new FakeEngineChannel(request => request.Command == EngineCommandKind.Sessions
+            ? EngineResponse.Success(request.Id, "Сессий: 2, завершено: 1, без итога: 1.", TwoSessionsJson)
+            : Fallback.DefaultAnswer(request));
+
+        var sessions = new SessionHistoryViewModel(new EngineClient(channel), new FakeDialogs());
+        await sessions.RefreshCommand.ExecuteAsync();
+
+        SessionHistoryRow row = sessions.Rows[0];
+        sessions.SelectedFirst = row;
+        sessions.SelectedSecond = sessions.Rows[0];
+        sessions.CompareCommand.Execute(null);
+
+        Assert.Contains("одна и та же сессия", sessions.ComparisonCaptionRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("разные серверы", sessions.ComparisonCaptionRu, StringComparison.Ordinal);
+        Assert.DoesNotContain(sessions.ComparisonRu, line => line.Contains("Результат совпал", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void График_по_дням_не_усредняет_разные_серверы()
     {
         DateTime day = new(2026, 10, 18, 12, 0, 0, DateTimeKind.Utc);

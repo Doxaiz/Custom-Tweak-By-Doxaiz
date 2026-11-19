@@ -1055,22 +1055,40 @@ internal static class SelfCheck
 
             SessionComparisonResult comparison = SessionComparison.Compare(unfinished, other);
             bool refusesDifferentServers = !comparison.Comparable
-                && comparison.Lines.Any(line => line.Contains("разным серверам", StringComparison.Ordinal));
+                && comparison.ReasonRu == SessionComparison.DifferentServersReason;
+
+            // Та же сессия дважды: разница с собой всегда ноль, и выдавать её за измерение нельзя.
+            SessionComparisonResult self = SessionComparison.Compare(unfinished, unfinished with { });
+            bool refusesSameSession = !self.Comparable
+                && self.ReasonRu == SessionComparison.SameSessionReason
+                && self.Lines.Any(line => line.Contains("одна и та же", StringComparison.Ordinal));
+
+            // Неизвестный адрес — не «тот же самый»: две сессии без адреса сравнивать вслепую нельзя.
+            SessionComparisonResult blind = SessionComparison.Compare(
+                unfinished with { SessionId = "self-check-no-address-1", Endpoint = string.Empty },
+                unfinished with { SessionId = "self-check-no-address-2", Endpoint = "   " });
+            bool refusesUnknownAddress = !blind.Comparable
+                && blind.ReasonRu == SessionComparison.UnknownEndpointReason;
 
             IReadOnlyList<DailyRttPoint> daily = DailyRttHistory.Build([unfinished, other], "203.0.113.9");
             bool singleServerDaily = daily.Count == 1 && Math.Abs(daily[0].AverageRttMs - 100) < 0.01;
 
-            if (!honestText || !noInventedNumber || !refusesDifferentServers || !singleServerDaily)
+            if (!honestText || !noInventedNumber || !refusesDifferentServers || !refusesSameSession
+                || !refusesUnknownAddress || !singleServerDaily)
             {
                 problems.Add("история сессий: разбор «до/после» или график по дням работает неверно " +
                     $"(незавершённая: {(honestText ? "да" : "нет")}, без выдуманных чисел: {(noInventedNumber ? "да" : "нет")}, " +
-                    $"разные серверы: {(refusesDifferentServers ? "отказ" : "сравнил")}, график: {(singleServerDaily ? "да" : "нет")})");
+                    $"разные серверы: {(refusesDifferentServers ? "отказ" : "сравнил")}, " +
+                    $"сессия с собой: {(refusesSameSession ? "отказ" : "сравнил")}, " +
+                    $"неизвестный адрес: {(refusesUnknownAddress ? "отказ" : "сравнил")}, " +
+                    $"график: {(singleServerDaily ? "да" : "нет")})");
                 StartupLog.Note("ИСТОРИЯ СЕССИЙ: НЕ работает — числа или сравнение сессий расходятся с правилом честности");
                 return;
             }
 
             StartupLog.Note("ИСТОРИЯ СЕССИЙ: вкладка «Сессии» на месте, до нажатия записей нет, " +
-                "незавершённая сессия называется незавершённой, разные серверы не сравниваются, график — по одному серверу");
+                "незавершённая сессия называется незавершённой, разные серверы, одна и та же сессия и " +
+                "неизвестный адрес не сравниваются, график — по одному серверу");
         }
         catch (Exception ex)
         {

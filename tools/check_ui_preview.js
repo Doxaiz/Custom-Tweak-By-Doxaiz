@@ -421,6 +421,11 @@ setTimeout(async () => {
     `блок: ${!!d.getElementById('journal-files')}, примеров: ${snippets.length}, не хватает: ` +
       snippetNames.filter(name => !html.includes(name)).join(', '));
 
+  // Сравнение сессий: макет называет случаи, в которых программа честно отказывается сравнивать.
+  const comparisonProse = 'отказывается сравнивать одну и ту же сессию';
+  check('в макете сказано, что одну и ту же сессию не сравнивают', html.includes(comparisonProse),
+    `нет фразы «${comparisonProse}»`);
+
   // Имена для экранного диктора — обещание программы, и макет обязан говорить о нём прямо.
   const accessibleProse = 'у каждого поля ввода и списка есть имя для экранного диктора';
   check('в макете сказано про имена для экранного диктора', html.includes(accessibleProse),
