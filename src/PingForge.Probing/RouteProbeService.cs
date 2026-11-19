@@ -152,7 +152,9 @@ public sealed class RouteProbeService : IRouteProbe
         // значило бы выдавать отсутствие механизма за отсутствие потерь.
         string tail = method == ProbeMethodUsed.LiveUdpPassiveFlow
             ? "Ретрансмиссий в UDP не бывает: протокол не подтверждает доставку."
-            : $"Ретрансмиссий за окно наблюдения: {sample.Retransmissions}.";
+            : $"Ретрансмиссий за окно наблюдения: {sample.Retransmissions}." +
+              " Джиттер — сглаженный разброс RTT из статистики соединения (RttVar), а не среднее" +
+              " отклонение по отдельным замерам: числа двух способов сравнимы по смыслу, но не по формуле.";
 
         if (method == ProbeMethodUsed.LiveUdpPassiveFlow && sample.UnansweredSends > 0)
         {

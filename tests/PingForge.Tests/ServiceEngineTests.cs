@@ -164,10 +164,10 @@ public sealed class ServiceEngineTests : IDisposable
                 Transport: "UDP",
                 AntiCheat: AntiCheatStatus.VerifiedSafe)),
             new QueuedMeasurements(
-                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (SIO_TCP_INFO)."),
-                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (SIO_TCP_INFO)."),
-                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (SIO_TCP_INFO)."),
-                new PathMeasurement(true, 80, 2, 0, 12, "Замер живого потока игры (SIO_TCP_INFO)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 80, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
                 PathMeasurement.Unmeasurable("поток игры пропал")),
             new NoopActionRunner());
 

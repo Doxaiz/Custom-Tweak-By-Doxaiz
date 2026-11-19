@@ -143,7 +143,7 @@ public sealed class RealtimeOptimizationTests
     }
 
     private static PathMeasurement Measurable(double rtt, double jitter = 2, double loss = 0) =>
-        new(true, rtt, jitter, loss, 12, "Замер живого потока игры (SIO_TCP_INFO).");
+        new(true, rtt, jitter, loss, 12, "Замер живого потока игры (статистика TCP-соединения).");
 
     private static PathMeasurement Unmeasurable() =>
         PathMeasurement.Unmeasurable("Ни одна проба не вернулась: узел скрыт за фильтрацией.");

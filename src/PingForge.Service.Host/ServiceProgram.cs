@@ -201,7 +201,8 @@ public static class ServiceProgram
             ? "UDP-собеседники: наблюдение идёт, служба увидит UDP-поток игры."
             : $"UDP-собеседники: наблюдение не идёт — {udpPeers.ProblemRu ?? "причина не названа"}. Остальное работает.");
         Log("Живой UDP-поток: задержка считается по парам «отправка → ответ» из этих событий; " +
-            "пока пар нет — замер идёт пробами, и способ замера называется рядом с числом.");
+            "живой TCP-поток — из статистики уже открытого соединения (ни одного лишнего пакета). " +
+            "Пока ни один живой способ не дал чисел — замер идёт пробами, и способ замера называется рядом с числом.");
 
         // IPv6 читаем: у Minecraft Bedrock и IPv6-only серверов поток иначе невидим вовсе. Маршрут по IPv6
         // продукт не ставит, поэтому такие потоки попадают в отчёт с пояснением, а не в оптимизацию.
@@ -211,6 +212,11 @@ public static class ServiceProgram
             peerTracker: udpPeers,
             includeIpv6: true);
 
+        // Статистика уже открытого TCP-соединения: второй живой способ, без единого лишнего пакета.
+        // Права администратора у службы есть; если система откажет — причина будет названа, а замер
+        // уйдёт к пробам, а не выдумает числа.
+        var tcpEstats = new WindowsTcpEstatsReader();
+
         // Настоящие транспорты: ICMP-эхо, время TCP-рукопожатия, системный DNS.
         var icmp = new SystemNetIcmpProbe();
         var probes = new RouteProbeService(
@@ -218,7 +224,9 @@ public static class ServiceProgram
             new SocketTcpHandshakeProbe(),
             new SystemHostResolver(),
             new HopTracerouteEngine(icmp),
-            liveFlowProvider: new UdpObservationsLiveFlowRttProvider(udpRtt));
+            liveFlowProvider: new ChainedLiveFlowRttProvider(
+                new UdpObservationsLiveFlowRttProvider(udpRtt),
+                new TcpEstatsLiveFlowRttProvider(tcpEstats)));
         var measurement = new RouteProbeMeasurementSource(probes, samplesPerWindow: 12);
 
         // ── Сервер маршрутизации (задача B) ──────────────────────────────────────────────────
