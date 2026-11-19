@@ -78,7 +78,8 @@ public sealed record PathMeasurement(
     string MethodRu,
     double? RttMinMs = null,
     double? RttAvgMs = null,
-    double? RttP95Ms = null)
+    double? RttP95Ms = null,
+    ProbeMethodUsed Method = ProbeMethodUsed.Unmeasurable)
 {
     public static PathMeasurement Unmeasurable(string reasonRu) => new(false, 0, 0, 0, 0, reasonRu);
 }
@@ -233,7 +234,9 @@ public sealed record RealtimeSnapshot(
     string QualityLabelRu,
     IReadOnlyList<OptimizationActionDescriptor> AppliedActions,
     IReadOnlyList<string> Warnings,
-    DateTime UpdatedUtc)
+    DateTime UpdatedUtc,
+    string BaselineMethodTag = "",
+    string FinalMethodTag = "")
 {
     public bool IsRunning => State is RealtimeOptimizationState.ActiveMonitoring
         or RealtimeOptimizationState.Degraded
@@ -257,4 +260,6 @@ public sealed record RealtimeStopReport(
     IReadOnlyList<string> AppliedActionTitles,
     IReadOnlyList<string> RevertMessagesRu,
     bool EverythingReverted,
-    string HonestSummaryRu);
+    string HonestSummaryRu,
+    string BaselineMethodTag = "",
+    string FinalMethodTag = "");

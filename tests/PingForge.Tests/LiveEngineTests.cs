@@ -71,6 +71,7 @@ public class LiveEngineTests
         Assert.Equal(0, window.LossPercent, 3);
         Assert.Equal(12, window.Samples);
         Assert.Contains("ICMP", window.MethodRu);
+        Assert.Equal(ProbeMethodUsed.ActiveIcmpEcho, window.Method);
         Assert.Equal("1.2.3.4", probes.LastEndpoint);
         Assert.Equal(7777, probes.LastPort);
         Assert.Equal(12, probes.LastSampleCount);

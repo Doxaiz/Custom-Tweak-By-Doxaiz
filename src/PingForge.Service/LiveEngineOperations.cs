@@ -553,7 +553,9 @@ public sealed class LiveEngineOperations : IEngineOperations
                 OptimizationSessionMapping.RollbackStateRu(record.RollbackState),
                 record.IsCompleted,
                 record.StatusNoteRu,
-                record.Outcome))
+                record.Outcome,
+                ProbeMethodTags.DescribePairRu(record.BaselineMethodTag, record.FinalMethodTag),
+                ProbeMethodTags.PairDiffers(record.BaselineMethodTag, record.FinalMethodTag)))
             .ToList();
 
         return await Task.FromResult(EngineOperationResult.Success(
@@ -1301,7 +1303,9 @@ public sealed class LiveEngineOperations : IEngineOperations
         string RollbackStateRu,
         bool IsCompleted,
         string StatusRu,
-        string Outcome);
+        string Outcome,
+        string MethodRu,
+        bool MethodsDiffer);
 
     private sealed record SessionsData(int Count, IReadOnlyList<SessionRowData> Records);
 

@@ -53,7 +53,8 @@ public sealed class RouteProbeMeasurementSource : IRealtimeMeasurementSource
             MethodRu: DescribeMethod(statistics),
             RttMinMs: statistics.RttMinMs,
             RttAvgMs: statistics.RttAvgMs,
-            RttP95Ms: statistics.RttP95Ms);
+            RttP95Ms: statistics.RttP95Ms,
+            Method: statistics.MethodUsed);
     }
 
     /// <summary>
