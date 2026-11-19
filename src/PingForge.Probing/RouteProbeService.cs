@@ -163,11 +163,12 @@ public sealed class RouteProbeService : IRouteProbe
         // Центральное значение нужно всему, что стоит дальше по цепочке: без медианы замер считался бы
         // неизмеренным, хотя числа есть. Медиана есть только там, где провайдер видел отдельные замеры;
         // иначе честно берём среднее и говорим об этом.
-        double? median = sample.RttMedianMs is { } known && known > 0
-            ? Math.Round(known, 2)
+        bool medianKnown = sample.RttMedianMs.HasValue && sample.RttMedianMs.Value > 0;
+        double? median = medianKnown
+            ? Math.Round(sample.RttMedianMs!.Value, 2)
             : Math.Round(sample.RttAverageMs, 2);
 
-        if (sample.RttMedianMs is not > 0)
+        if (!medianKnown)
         {
             tail += " Медиана по отдельным замерам недоступна: в отчёте средняя задержка за окно.";
         }

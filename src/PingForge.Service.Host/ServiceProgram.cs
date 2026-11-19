@@ -192,7 +192,10 @@ public static class ServiceProgram
         // Пассивная задержка живого UDP-потока: пары «отправка → ответ» из тех же событий.
         // Пока пар нет — замер идёт пробами, и программа говорит об этом прямо.
         var udpRtt = new PassiveUdpRttTracker();
-        using var udpPeers = new EtwUdpPeerListener(Log, onObservation: observation => udpRtt.Observe(observation));
+        using var udpPeers = new EtwUdpPeerListener(Log, onObservation: observation =>
+        {
+            udpRtt.Observe(observation);
+        });
         udpPeers.Start();
         Log(udpPeers.IsRunning
             ? "UDP-собеседники: наблюдение идёт, служба увидит UDP-поток игры."

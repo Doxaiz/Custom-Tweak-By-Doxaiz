@@ -109,7 +109,11 @@ public sealed class PassiveUdpRttTests
         Assert.True(tracker.TryGet(4242, Peer, Port, out PassiveUdpRttSummary summary));
         Assert.Equal(3, summary.Samples);
         Assert.Equal(40.0, summary.MedianMs, 3);
-        Assert.Equal(new[] { 30.0, 40.0, 50.0 }, summary.SamplesInOrder);
+        // Порядок важен: джиттер считается по соседним замерам, а не по отсортированным.
+        Assert.Equal(3, summary.SamplesInOrder.Count);
+        Assert.Equal(30.0, summary.SamplesInOrder[0], 3);
+        Assert.Equal(40.0, summary.SamplesInOrder[1], 3);
+        Assert.Equal(50.0, summary.SamplesInOrder[2], 3);
     }
 
     [Fact]
