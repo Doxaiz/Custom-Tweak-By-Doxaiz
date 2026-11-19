@@ -19,6 +19,9 @@ public static class Contrast
     /// <summary>Требование AA для крупного текста (24 px и больше, либо 18,66 px полужирным).</summary>
     public const double LargeText = 3.0;
 
+    /// <summary>Требование AAA для обычного текста: улучшенный контраст.</summary>
+    public const double EnhancedText = 7.0;
+
     /// <summary>Порог крупного текста в точках.</summary>
     public const double LargeFontSize = 24.0;
 
@@ -57,6 +60,15 @@ public static class Contrast
     /// <summary>Читается ли текст таких цветов и кегля.</summary>
     public static bool IsReadable(string foreground, string background, double fontSize, bool bold) =>
         Ratio(foreground, background) >= Required(fontSize, bold);
+
+    /// <summary>
+    /// Отношение контраста по-русски, одной цифрой после запятой: «17,1:1». Одна цифра, потому что
+    /// в подписи для человека вторая ничего не добавляет, а запятая — потому что текст русский.
+    /// </summary>
+    /// <param name="foreground">Цвет текста в виде <c>#RRGGBB</c>.</param>
+    /// <param name="background">Цвет поверхности в виде <c>#RRGGBB</c>.</param>
+    public static string RatioRu(string foreground, string background) =>
+        Ratio(foreground, background).ToString("0.0", CultureInfo.InvariantCulture).Replace('.', ',') + ":1";
 
     /// <summary>Подпись для отчёта: «4,92:1 (нужно 4,5)» — с запятой, как в русском тексте.</summary>
     public static string DescribeRu(string foreground, string background, double fontSize, bool bold)

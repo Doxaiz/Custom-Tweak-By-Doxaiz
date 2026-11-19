@@ -74,6 +74,7 @@ internal static class SelfCheck
         CheckNothingIsCutOff(app, problems);
         CheckTextIsWhole(app, problems);
         CheckAccessibleNames(app, problems);
+        CheckContrastNote(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
         CheckService(problems);
@@ -88,6 +89,7 @@ internal static class SelfCheck
             || problem.Contains("текст обрезан в рамке", StringComparison.Ordinal)
             || problem.Contains("без имени для диктора", StringComparison.Ordinal)
             || problem.Contains("многоточие без подсказки", StringComparison.Ordinal)
+            || problem.Contains("подпись о контрасте", StringComparison.Ordinal)
             || problem.Contains("выходят за край окна", StringComparison.Ordinal)
             || problem.Contains("не переносятся", StringComparison.Ordinal)
             || problem.Contains("история сессий", StringComparison.Ordinal)
@@ -1623,6 +1625,66 @@ internal static class SelfCheck
                 return string.Empty;
         }
     }
+
+    /// <summary>
+    /// Подпись о контрасте в «Настройках» обязана считаться по настоящей теме, а не по памяти.
+    /// Проверяется три вещи: подпись в модели представления совпадает с той, что получается из цветов
+    /// темы; эта подпись действительно есть в окне; и вывод в ней честный — при контрасте ниже AA
+    /// она говорит «нельзя», а не «читается без напряжения».
+    /// </summary>
+    private static void CheckContrastNote(App app, List<string> problems)
+    {
+        if (app.Shell is not { } shell)
+        {
+            return;
+        }
+
+        ShowAllSections(shell);
+        if (shell.Content is not FrameworkElement root)
+        {
+            return;
+        }
+
+        string? text = app.TryFindResource("TextColor") is Color textColor ? HexOf(textColor) : null;
+        string? muted = app.TryFindResource("MutedColor") is Color mutedColor ? HexOf(mutedColor) : null;
+        string? background = app.TryFindResource("BgColor") is Color bgColor ? HexOf(bgColor) : null;
+
+        if (text is null || muted is null || background is null)
+        {
+            problems.Add("подпись о контрасте: в теме нет цветов TextColor, MutedColor или BgColor");
+            return;
+        }
+
+        string expected = PaletteNote.SentenceRu(text, muted, background);
+        UiScaleViewModel scale = app.Settings.UiScale;
+        bool counts = string.Equals(scale.WcagNoteRu, expected, StringComparison.Ordinal);
+        bool onScreen = HasText(root, Contrast.RatioRu(text, background));
+        bool honestVerdict = PaletteNote.VerdictOf(text, muted, background) != PaletteVerdict.BelowAa;
+
+        if (!counts || !onScreen || !honestVerdict)
+        {
+            problems.Add("подпись о контрасте не совпадает с темой " +
+                $"(считает по теме: {(counts ? "да" : "нет")}, есть в окне: {(onScreen ? "да" : "нет")}, " +
+                $"вывод честный: {(honestVerdict ? "да" : "нет")})");
+            StartupLog.Warn($"КОНТРАСТ: подпись в «Настройках» расходится с темой — {expected}");
+            return;
+        }
+
+        StartupLog.Note($"КОНТРАСТ: подпись в «Настройках» считается по теме — " +
+            $"{Contrast.RatioRu(text, background)} и {Contrast.RatioRu(muted, background)}, вывод {VerdictRu(text, muted, background)}");
+    }
+
+    /// <summary>Вывод о контрасте по-русски — для журнала запуска.</summary>
+    private static string VerdictRu(string text, string muted, string background) =>
+        PaletteNote.VerdictOf(text, muted, background) switch
+        {
+            PaletteVerdict.AboveAaa => "выше AAA",
+            PaletteVerdict.AboveAa => "выше AA, но ниже AAA",
+            _ => "НИЖЕ AA",
+        };
+
+    /// <summary>Цвет темы в виде <c>#RRGGBB</c> — в этом виде его понимает расчёт контраста.</summary>
+    private static string HexOf(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
 
     /// <summary>
     /// Есть ли подсказка с полным текстом: у самой надписи или у рамки вокруг неё (до трёх уровней

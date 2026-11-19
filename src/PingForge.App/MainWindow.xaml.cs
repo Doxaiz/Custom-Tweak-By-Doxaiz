@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using PingForge.Core.Ui;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using PingForge.App.ViewModels;
 
 namespace PingForge.App;
@@ -26,6 +28,14 @@ public partial class MainWindow : Window
         // окна обязан расти вместе с ней — иначе при 150 % окно «не пускает» содержимое и правый
         // край обрезается. При 100 % это ровно 860×560, прежние значения.
         ApplyUiScale();
+
+        // Подпись о контрасте считает себя по настоящим цветам темы: цвета берутся из ресурсов окна,
+        // а не вписываются в модель представления. Сменится палитра — сменится и число в подписи.
+        if (DataContext is ShellViewModel settingsShell)
+        {
+            ApplyThemeColors(settingsShell.Settings.UiScale);
+        }
+
         if (DataContext is ShellViewModel shell)
         {
             shell.Settings.UiScale.PropertyChanged += (_, e) =>
@@ -57,6 +67,25 @@ public partial class MainWindow : Window
     /// в полтора раза больше, поэтому и минимум окна в полтора раза больше: иначе окно можно
     /// ужать так, что разделы и кнопки окажутся за краем.
     /// </summary>
+    /// <summary>
+    /// Передать модели представления цвета настоящей темы. Ключи — из <c>App.xaml</c>; если темы нет
+    /// (например, окно собрали без ресурсов), остаются значения по умолчанию из <see cref="PaletteNote"/>.
+    /// </summary>
+    private static void ApplyThemeColors(UiScaleViewModel scale)
+    {
+        string? text = HexOf("TextColor");
+        string? muted = HexOf("MutedColor");
+        string? background = HexOf("BgColor");
+        if (text is not null && muted is not null && background is not null)
+        {
+            scale.ApplyTheme(text, muted, background);
+        }
+    }
+
+    /// <summary>Цвет ресурса темы в виде <c>#RRGGBB</c>: в этом виде его понимает расчёт контраста.</summary>
+    private static string? HexOf(string key) =>
+        TryFindResource(key) is Color color ? $"#{color.R:X2}{color.G:X2}{color.B:X2}" : null;
+
     private void ApplyUiScale()
     {
         if (DataContext is not ShellViewModel shell)

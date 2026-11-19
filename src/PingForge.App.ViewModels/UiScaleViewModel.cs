@@ -1,3 +1,5 @@
+using PingForge.Core.Ui;
+
 namespace PingForge.App.ViewModels;
 
 /// <summary>
@@ -15,6 +17,10 @@ public sealed class UiScaleViewModel : ObservableObject
     public const double MinHeightAt100 = 560;
 
     private double _scale = 1.0; // 1.0 = 100 %
+
+    private string _themeTextColor = PaletteNote.TextColor;
+    private string _themeMutedColor = PaletteNote.MutedColor;
+    private string _themeBgColor = PaletteNote.BgColor;
 
     public double Scale
     {
@@ -40,13 +46,26 @@ public sealed class UiScaleViewModel : ObservableObject
         "Масштаб запоминается в настройках.";
 
     /// <summary>
-    /// Контраст палитры. Числа считаны по настоящим цветам темы (<c>App.xaml</c>): текст
-    /// <c>#E9EFFB</c> на фоне <c>#070B14</c> — 17,1:1, подписи <c>#8FA1BD</c> на том же фоне — 7,5:1.
-    /// Требование AA для обычного текста — 4,5:1, AAA — 7:1: оба цвета проходят AAA.
-    /// Раньше здесь были цвета прежней палитры (0.2), то есть подпись описывала не то, что на экране.
+    /// Контраст палитры: считается по цветам, которые передало окно (<see cref="ApplyTheme"/>),
+    /// а не печатается по памяти. Раньше здесь стояли готовые «17,1:1» и «7,5:1»; тест сверял их
+    /// с темой, но правка палитры означала ручную правку текста, а вывод об AA и AAA был отдельным
+    /// утверждением. Теперь текст собирается из чисел, и вывод следует из них.
     /// </summary>
-    public string WcagNoteRu =>
-        "Контраст основного текста #E9EFFB на фоне #070B14 — 17,1:1, подписей #8FA1BD — 7,5:1. " +
-        "Это выше требования AA (4,5:1) и выше AAA (7:1) для обычного текста: мелкие подписи " +
-        "читаются без напряжения, а не «угадываются».";
+    public string WcagNoteRu => PaletteNote.SentenceRu(_themeTextColor, _themeMutedColor, _themeBgColor);
+
+    /// <summary>
+    /// Цвета настоящей темы для подписи о контрасте. Их передаёт окно из ресурсов <c>App.xaml</c>:
+    /// модели представления палитру не читают, но и не выдумывают — до передачи действуют значения
+    /// по умолчанию из <see cref="PaletteNote"/>, и тест сверяет их с темой.
+    /// </summary>
+    /// <param name="textColor">Цвет основного текста.</param>
+    /// <param name="mutedColor">Цвет подписей.</param>
+    /// <param name="bgColor">Цвет фона.</param>
+    public void ApplyTheme(string textColor, string mutedColor, string bgColor)
+    {
+        _themeTextColor = textColor;
+        _themeMutedColor = mutedColor;
+        _themeBgColor = bgColor;
+        OnPropertyChanged(nameof(WcagNoteRu));
+    }
 }
