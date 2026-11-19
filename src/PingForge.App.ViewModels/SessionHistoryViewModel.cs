@@ -92,30 +92,70 @@ public sealed record SessionHistoryRow(
         : StatusRu;
 }
 
-/// <summary>Итог сравнения двух выбранных сессий: можно ли сравнивать и что именно совпало/разошлось.</summary>
-public sealed record SessionComparisonResult(bool Comparable, IReadOnlyList<string> Lines);
+/// <summary>
+/// Итог сравнения двух выбранных сессий: можно ли сравнивать, что именно совпало или разошлось
+/// и — если нельзя — по какой причине. Причина отдельным полем, потому что подпись под списком
+/// называет её одной строкой, а не общим «сравнение невозможно».
+/// </summary>
+public sealed record SessionComparisonResult(bool Comparable, IReadOnlyList<string> Lines, string ReasonRu = "");
 
 /// <summary>
 /// Сравнение двух сессий (задача J). Правило честности: сессии к разным серверам не сравниваются —
 /// разница в задержке тогда говорит о сервере, а не о действиях программы. Сессия без измеренного
 /// «после» не получает выдуманного результата: сравнение результата честно невозможно.
+///
+/// Ещё два случая, где честный ответ — отказ:
+///   • та же самая сессия дважды. Разница с собой всегда ноль, и «результат совпал в пределах 0,5 мс»
+///     выглядело бы измерением, хотя это совпадение записи с собой. Строки перечитываются из базы,
+///     поэтому сравниваются номера записей, а не ссылки на объекты;
+///   • адрес сервера не определён. «Неизвестен» и «тот же самый» — разные вещи: две сессии с пустым
+///     адресом раньше считались сессиями к одному серверу именно потому, что обе пустые.
 /// </summary>
 public static class SessionComparison
 {
+    /// <summary>Причина отказа: выбрана одна и та же сессия.</summary>
+    public const string SameSessionReason = "одна и та же сессия";
+
+    /// <summary>Причина отказа: у сессии нет адреса сервера.</summary>
+    public const string UnknownEndpointReason = "адрес сервера не определён";
+
+    /// <summary>Причина отказа: сессии к разным серверам.</summary>
+    public const string DifferentServersReason = "разные серверы";
+
     public static SessionComparisonResult Compare(SessionHistoryRow first, SessionHistoryRow second)
     {
         ArgumentNullException.ThrowIfNull(first);
         ArgumentNullException.ThrowIfNull(second);
+
+        if (SameSession(first, second))
+        {
+            return new SessionComparisonResult(false,
+            [
+                "Это одна и та же сессия: сравнивать её с собой нечего. Совпадёт всё, и «разница 0 мс» тут — это совпадение записи с собой, а не измерение.",
+                $"{first.WhenRu} — {(string.IsNullOrWhiteSpace(first.Endpoint) ? "адрес сервера не определён" : first.Endpoint)}.",
+                "Выберите две разные сессии к одному и тому же серверу."
+            ], SameSessionReason);
+        }
+
+        if (string.IsNullOrWhiteSpace(first.Endpoint) || string.IsNullOrWhiteSpace(second.Endpoint))
+        {
+            return new SessionComparisonResult(false,
+            [
+                "Адрес сервера не определён хотя бы у одной сессии — значит, неизвестно и то, к одному ли серверу они были. Сравнивать вслепую нельзя: разница в задержке может оказаться разницей серверов.",
+                $"Первая сессия: {(string.IsNullOrWhiteSpace(first.Endpoint) ? "адрес неизвестен" : first.Endpoint)}. " +
+                $"Вторая сессия: {(string.IsNullOrWhiteSpace(second.Endpoint) ? "адрес неизвестен" : second.Endpoint)}.",
+                "Выберите две сессии с известным адресом к одному и тому же серверу."
+            ], UnknownEndpointReason);
+        }
 
         if (!string.Equals(first.Endpoint, second.Endpoint, StringComparison.OrdinalIgnoreCase))
         {
             return new SessionComparisonResult(false,
             [
                 "Сравнивать сессии к разным серверам нельзя: задержка до разных серверов зависит от сервера, а не от действий программы.",
-                $"Первая сессия: {(string.IsNullOrWhiteSpace(first.Endpoint) ? "адрес неизвестен" : first.Endpoint)}. " +
-                $"Вторая сессия: {(string.IsNullOrWhiteSpace(second.Endpoint) ? "адрес неизвестен" : second.Endpoint)}.",
+                $"Первая сессия: {first.Endpoint}. Вторая сессия: {second.Endpoint}.",
                 "Выберите две сессии к одному и тому же серверу."
-            ]);
+            ], DifferentServersReason);
         }
 
         var lines = new List<string>();
@@ -141,10 +181,22 @@ public static class SessionComparison
             lines.Add("Только во второй сессии: " + string.Join(", ", onlySecond) + ".");
         }
 
-        if (first.FinalRttMs is null || second.FinalRttMs is null
+        // Разные игры при одном сервере сравнивать можно, но одинаковый сервер — ещё не одинаковые
+        // условия: об этом сказано прямо, чтобы разница не выглядела заслугой программы.
+        if (!string.Equals(first.GameTitleRu, second.GameTitleRu, StringComparison.OrdinalIgnoreCase))
+        {
+            lines.Add($"Сессии к разным играм ({(string.IsNullOrWhiteSpace(first.GameTitleRu) ? "игра не названа" : first.GameTitleRu)} " +
+                $"и {(string.IsNullOrWhiteSpace(second.GameTitleRu) ? "игра не названа" : second.GameTitleRu)}): " +
+                "одинаковый сервер — ещё не одинаковые условия, и разница может быть разницей игр.");
+        }
+
+        // Полного «до → после» нет хотя бы у одной сессии — числа не сравниваются. Проверяются все
+        // три числа, а не только «после»: строка без измеренного «до» не получает выдуманной разницы.
+        if (first.BaselineRttMs is null || second.BaselineRttMs is null
+            || first.FinalRttMs is null || second.FinalRttMs is null
             || first.ImprovementMs is null || second.ImprovementMs is null)
         {
-            lines.Add("У одной из сессий нет измеренного «после» — результат не сравнивается: «не измерено» не становится нулём.");
+            lines.Add("У одной из сессий нет полного «до → после» — результат не сравнивается: «не измерено» не становится нулём.");
             lines.Add($"Первая: {first.ResultRu}. Вторая: {second.ResultRu}.");
             return new SessionComparisonResult(true, lines);
         }
@@ -157,6 +209,20 @@ public static class SessionComparison
             : $"Результат разошёлся на {Math.Abs(delta):0.#} мс: {(delta > 0 ? "в первой сессии лучше" : "во второй сессии лучше")}.");
 
         return new SessionComparisonResult(true, lines);
+    }
+
+    /// <summary>
+    /// Одна и та же запись. Номер сессии важнее ссылки: строки перечитываются из базы, и две
+    /// загрузки одной сессии — это два разных объекта с одним номером.
+    /// </summary>
+    private static bool SameSession(SessionHistoryRow first, SessionHistoryRow second)
+    {
+        if (!string.IsNullOrWhiteSpace(first.SessionId) || !string.IsNullOrWhiteSpace(second.SessionId))
+        {
+            return string.Equals(first.SessionId, second.SessionId, StringComparison.Ordinal);
+        }
+
+        return ReferenceEquals(first, second);
     }
 }
 
@@ -450,7 +516,7 @@ public sealed class SessionHistoryViewModel : ObservableObject
         ComparisonRu = result.Lines;
         ComparisonCaptionRu = result.Comparable
             ? "Сравнение сессий"
-            : "Сравнение невозможно: разные серверы";
+            : $"Сравнение невозможно: {result.ReasonRu}";
     }
 
     /// <summary>
