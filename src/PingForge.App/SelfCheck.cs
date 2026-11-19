@@ -70,6 +70,7 @@ internal static class SelfCheck
         CheckSupportPackage(app, problems);
         CheckLayout(app, problems);
         CheckNothingIsCutOff(app, problems);
+        CheckTextIsWhole(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
         CheckService(problems);
@@ -81,6 +82,7 @@ internal static class SelfCheck
             || problem.Contains("потеряла данные", StringComparison.Ordinal)
             || problem.Contains("нет надписей", StringComparison.Ordinal)
             || problem.Contains("нет карточки ответа", StringComparison.Ordinal)
+            || problem.Contains("текст обрезан в рамке", StringComparison.Ordinal)
             || problem.Contains("выходят за край окна", StringComparison.Ordinal)
             || problem.Contains("не переносятся", StringComparison.Ordinal)
             || problem.Contains("история сессий", StringComparison.Ordinal)
@@ -1317,6 +1319,117 @@ internal static class SelfCheck
         string report = LayoutOverflow.DescribeRu(outside, limit);
         problems.Add($"элементы выходят за край окна на ширине {Math.Round(limit)}: {report}");
         StartupLog.Warn($"Раскладка: на ширине {Math.Round(limit)} точек {outside.Count} элементов обрезаны справа: {report}");
+    }
+
+    /// <summary>
+    /// Текст целиком: то, что не влезло в свою рамку и не сокращено многоточием, человек не прочитает.
+    /// Проверка края окна такое не видит — элемент не шире окна, он обрезан внутри себя, и никакая
+    /// полоса прокрутки до обрезанного хвоста не доведёт.
+    ///
+    /// Меряется не сам элемент, а проба: такой же <c>TextBlock</c> с теми же шрифтом, кеглем и текстом.
+    /// Ей дают бесконечную ширину — получают ширину одной строки; потом дают ширину элемента — получают
+    /// нужную высоту. Настоящий элемент не трогается: раскладку портить нельзя.
+    /// </summary>
+    private static void CheckTextIsWhole(App app, List<string> problems)
+    {
+        if (app.Shell?.Content is not FrameworkElement root)
+        {
+            return;
+        }
+
+        root.UpdateLayout();
+
+        var blocks = new List<TextBlock>();
+        CollectTextBlocks(root, blocks, depth: 0);
+
+        var cuts = new List<string>();
+        foreach (TextBlock block in blocks)
+        {
+            if (block.Visibility != Visibility.Visible || string.IsNullOrWhiteSpace(block.Text))
+            {
+                continue;
+            }
+
+            double width = block.ActualWidth - block.Padding.Left - block.Padding.Right;
+            double height = block.ActualHeight - block.Padding.Top - block.Padding.Bottom;
+            if (width <= 0 || height <= 0)
+            {
+                continue;   // свёрнуто или ещё не разложено
+            }
+
+            var probe = new TextBlock
+            {
+                FontFamily = block.FontFamily,
+                FontSize = block.FontSize,
+                FontStretch = block.FontStretch,
+                FontStyle = block.FontStyle,
+                FontWeight = block.FontWeight,
+                LineHeight = block.LineHeight,
+                LineStackingStrategy = block.LineStackingStrategy,
+                Text = block.Text,
+            };
+            TextOptions.SetTextFormattingMode(probe, TextOptions.GetTextFormattingMode(block));
+            TextOptions.SetTextRenderingMode(probe, TextOptions.GetTextRenderingMode(block));
+
+            probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double naturalWidth = probe.DesiredSize.Width;
+
+            probe.TextWrapping = TextWrapping.Wrap;
+            probe.InvalidateMeasure();
+            probe.Measure(new Size(width, double.PositiveInfinity));
+            double naturalHeight = probe.DesiredSize.Height;
+
+            var measured = new MeasuredText(
+                DescribeLayoutElement(block),
+                naturalWidth,
+                naturalHeight,
+                width,
+                height,
+                Wraps: block.TextWrapping != TextWrapping.NoWrap,
+                Trims: block.TextTrimming != TextTrimming.None);
+
+            TextCut cut = TextClipping.Find(measured);
+            if (cut != TextCut.None)
+            {
+                cuts.Add($"{measured.Name}: {TextClipping.DescribeRu(measured, cut)}");
+            }
+        }
+
+        if (cuts.Count == 0)
+        {
+            StartupLog.Note($"Текст: обрезанных нет — просмотрено {blocks.Count} надписей");
+            return;
+        }
+
+        string list = string.Join("; ", cuts.Take(5));
+        if (cuts.Count > 5)
+        {
+            list += $" и ещё {cuts.Count - 5}";
+        }
+
+        problems.Add($"текст обрезан в рамке у {cuts.Count} надписей: {list}");
+        StartupLog.Warn($"Текст: {cuts.Count} надписей не влезли целиком: {list}");
+    }
+
+    /// <summary>Собрать все надписи визуального дерева: проверяется каждая.</summary>
+    private static void CollectTextBlocks(DependencyObject node, List<TextBlock> blocks, int depth)
+    {
+        if (depth > 64)
+        {
+            return;
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(node, i);
+            if (child is TextBlock block)
+            {
+                blocks.Add(block);
+            }
+
+            CollectTextBlocks(child, blocks, depth + 1);
+        }
     }
 
     /// <summary>
