@@ -175,6 +175,8 @@ public sealed class RouteProbeService : IRouteProbe
             tail += " Медиана по отдельным замерам недоступна: в отчёте средняя задержка за окно.";
         }
 
+        tail += " Потери в этом способе не измеряются: в отчёте «нет данных», а не ноль.";
+
         string note = $"Измерение живого потока игры: {StatisticalMetricsCalculator.Describe(method)}. " + tail;
 
         // min/max/p95 по живому потоку недоступны: провайдер отдаёт одно число за окно наблюдения.
@@ -184,7 +186,9 @@ public sealed class RouteProbeService : IRouteProbe
             endpoint, routeLabel, true, method, ProbeFailureCause.None, note,
             sample.SamplesAvailable, sample.SamplesAvailable,
             null, Math.Round(sample.RttAverageMs, 2), null, median, null, null,
-            Math.Round(sample.JitterMs, 2), 0.0, 0, Math.Round(stability, 1), false,
+            // Потери живой поток не измеряет: отправки без ответа — это незакрытые пары наблюдения,
+            // а не потерянные пакеты. Ноль здесь был бы выдумкой, поэтому «нет данных».
+            Math.Round(sample.JitterMs, 2), null, 0, Math.Round(stability, 1), false,
             Array.Empty<RouteHopMetric>(), DateTime.UtcNow);
     }
 

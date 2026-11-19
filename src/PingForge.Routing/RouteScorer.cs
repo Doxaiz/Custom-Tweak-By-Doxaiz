@@ -42,8 +42,11 @@ public sealed class RouteScorer
         }
 
         double rtt = probe.RttAvgMs ?? double.NaN;
-        double jitter = probe.JitterMadMs ?? 0.0;
-        double loss = probe.PacketLossPercent ?? 0.0;
+
+        // Неизмеренное не становится нулём: ноль — это измеренное отсутствие разброса и потерь,
+        // и подставлять его значило бы дать маршруту балл за то, чего никто не мерил.
+        double? jitter = probe.JitterMadMs;
+        double? loss = probe.PacketLossPercent;
 
         if (double.IsNaN(rtt))
         {
@@ -53,22 +56,32 @@ public sealed class RouteScorer
                 penalties);
         }
 
-        if (loss > _thresholds.MaxLossPercent)
+        if (loss is { } measuredLoss && measuredLoss > _thresholds.MaxLossPercent)
         {
-            penalties.Add($"потери {loss:F1} % выше порога {_thresholds.MaxLossPercent:F1} %");
+            penalties.Add($"потери {measuredLoss:F1} % выше порога {_thresholds.MaxLossPercent:F1} %");
             return RouteScoreResult.NotEligible(
                 candidate.PathId,
-                $"Маршрут «{candidate.DisplayName}» исключён: потери {loss:F1} % превышают допустимые {_thresholds.MaxLossPercent:F1} %.",
+                $"Маршрут «{candidate.DisplayName}» исключён: потери {measuredLoss:F1} % превышают допустимые {_thresholds.MaxLossPercent:F1} %.",
                 penalties);
         }
 
-        if (jitter > _thresholds.MaxJitterMs)
+        if (loss is null)
         {
-            penalties.Add($"джиттер {jitter:F1} мс выше порога {_thresholds.MaxJitterMs:F1} мс");
+            penalties.Add("потери не измерены: в балл не вошли");
+        }
+
+        if (jitter is { } measuredJitter && measuredJitter > _thresholds.MaxJitterMs)
+        {
+            penalties.Add($"джиттер {measuredJitter:F1} мс выше порога {_thresholds.MaxJitterMs:F1} мс");
             return RouteScoreResult.NotEligible(
                 candidate.PathId,
-                $"Маршрут «{candidate.DisplayName}» исключён: джиттер {jitter:F1} мс выше допустимого {_thresholds.MaxJitterMs:F1} мс.",
+                $"Маршрут «{candidate.DisplayName}» исключён: джиттер {measuredJitter:F1} мс выше допустимого {_thresholds.MaxJitterMs:F1} мс.",
                 penalties);
+        }
+
+        if (jitter is null)
+        {
+            penalties.Add("джиттер не измерен: в балл не вошёл");
         }
 
         if (rtt > _thresholds.MaxRttMs)
@@ -82,7 +95,7 @@ public sealed class RouteScorer
 
         int hops = probe.Hops.Count(h => !h.IsTimedOut);
         double hopPenalty = Math.Max(0, hops - 1) * _weights.PerHop;
-        double lossPenalty = loss * loss * _weights.PerLossPercentSquared;
+        double lossPenalty = loss is { } scoredLoss ? scoredLoss * scoredLoss * _weights.PerLossPercentSquared : 0.0;
         double nodeLoadPenalty = 0.0;
 
         if (candidate.IsRelay && relayHealth is not null)
@@ -103,17 +116,23 @@ public sealed class RouteScorer
 
         double score =
             (rtt * _weights.PerRttMs)
-            + (jitter * _weights.PerJitterMs)
+            + ((jitter ?? 0.0) * _weights.PerJitterMs)
             + lossPenalty
             + hopPenalty
             + nodeLoadPenalty
             + trafficPenalty;
 
+        // В объяснении балла неизмеренное подписано словами, а не нулём: иначе человек прочитает
+        // «джиттер 0,0 мс» и решит, что разброс мерили.
         var parts = new List<string>
         {
             $"RTT {rtt:F1} мс × {_weights.PerRttMs:F2}",
-            $"джиттер {jitter:F1} мс × {_weights.PerJitterMs:F2}",
-            $"потери {loss:F1} %² × {_weights.PerLossPercentSquared:F2}"
+            jitter is { } shownJitter
+                ? $"джиттер {shownJitter:F1} мс × {_weights.PerJitterMs:F2}"
+                : "джиттер не измерен — в балл не вошёл",
+            loss is { } shownLoss
+                ? $"потери {shownLoss:F1} %² × {_weights.PerLossPercentSquared:F2}"
+                : "потери не измерены — в балл не вошли"
         };
 
         if (hops > 1)

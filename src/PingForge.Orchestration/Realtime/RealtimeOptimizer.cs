@@ -351,8 +351,10 @@ public sealed class RealtimeOptimizer
             }
         }
 
-        bool degraded = window.LossPercent > _options.DegradationLossPercent
-                        || window.JitterMs > _options.DegradationJitterMs
+        // Порог деградации сравнивается только с измеренным: «джиттер не измерен» — это не «джиттер ноль»,
+        // и тишина в этом поле не должна ни скрывать деградацию по RTT, ни выдумывать её.
+        bool degraded = (window.LossPercent is { } loss && loss > _options.DegradationLossPercent)
+                        || (window.JitterMs is { } jitter && jitter > _options.DegradationJitterMs)
                         || (_baselineRttMs is { } baseline && window.RttMedianMs > baseline + _options.DegradationRttMarginMs);
 
         if (degraded)
@@ -368,13 +370,13 @@ public sealed class RealtimeOptimizer
                 {
                     string why = _switchProblemRu ?? "альтернативного пути у этого сервера нет";
                     await DegradeAsync(
-                        $"Качество просело: {window.RttMedianMs:F0} мс, джиттер {window.JitterMs:F1} мс, потери {window.LossPercent:F1}%. " +
+                        $"Качество просело: {window.RttMedianMs:F0} мс, джиттер {window.JitterRu}, потери {window.LossRu}. " +
                         $"Переключиться не вышло: {why} — твиками такое не лечится.", ct).ConfigureAwait(false);
                 }
             }
             else
             {
-                SetStatus($"Внимание: окно хуже обычного ({window.RttMedianMs:F0} мс, джиттер {window.JitterMs:F1} мс). " +
+                SetStatus($"Внимание: окно хуже обычного ({window.RttMedianMs:F0} мс, джиттер {window.JitterRu}). " +
                           $"Ждём подтверждения ({_consecutiveBadWindows} из {_options.DegradedWindowsBeforeSwitch}).");
             }
 
@@ -1019,7 +1021,7 @@ public sealed class RealtimeOptimizer
             _ => "выигрыша нет — пинг как был"
         };
 
-        return $"Пинг {window.RttMedianMs:F0} мс (джиттер {window.JitterMs:F1} мс, потери {window.LossPercent:F1}%), {improvementText}. " +
+        return $"Пинг {window.RttMedianMs:F0} мс (джиттер {window.JitterRu}, потери {window.LossRu}), {improvementText}. " +
                $"Физический предел пути: {_floorRttMs:F0} мс.";
     }
 

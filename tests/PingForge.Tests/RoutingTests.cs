@@ -8,8 +8,8 @@ internal static class ProbeFactory
 {
     public static ProbeStatistics Measurable(
         double rttAvg,
-        double jitter = 0,
-        double loss = 0,
+        double? jitter = 0,
+        double? loss = 0,
         int hopCount = 1,
         ProbeMethodUsed method = ProbeMethodUsed.ActiveTcpHandshake)
     {
@@ -26,6 +26,24 @@ internal static class ProbeFactory
 
 public sealed class RouteScorerTests
 {
+    [Fact]
+    public void Неизмеренные_джиттер_и_потери_не_дают_балл_за_ноль()
+    {
+        // Живой замер видит задержку, но потерь и разброса не видит. Раньше подставлялись нули —
+        // и маршрут получал балл за то, чего никто не мерил.
+        var candidate = new RouteCandidate("live", "Живой поток", false, null,
+            ProbeFactory.Measurable(rttAvg: 20, jitter: null, loss: null));
+
+        RouteScoreResult result = new RouteScorer().Score(candidate);
+
+        Assert.True(result.IsEligible);
+        Assert.Equal(20.0, result.Score, 2);
+        Assert.Contains(result.Penalties, p => p.Contains("потери не измерены", StringComparison.Ordinal));
+        Assert.Contains(result.Penalties, p => p.Contains("джиттер не измерен", StringComparison.Ordinal));
+        Assert.Contains("джиттер не измерен", result.ExplanationRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("джиттер 0", result.ExplanationRu, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Score_IsSumOfWeightedComponents()
     {

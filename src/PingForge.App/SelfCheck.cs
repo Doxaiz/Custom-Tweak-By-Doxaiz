@@ -8,6 +8,7 @@ using PingForge.App.Views;
 using PingForge.Core.Models;
 using PingForge.Core.Layout;
 using PingForge.Core.Ui;
+using PingForge.Orchestration.Realtime;
 using PingForge.Probing;
 using PingForge.Routing;
 
@@ -78,6 +79,7 @@ internal static class SelfCheck
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
         CheckLiveTcpFlow(problems);
+        CheckUnmeasuredNumbers(problems);
         CheckService(problems);
 
         // Если окно построилось, но раскладка или привязки плохи — это тот же отказ, что и «окно не собралось»:
@@ -1123,6 +1125,43 @@ internal static class SelfCheck
         {
             problems.Add($"история сессий (задача J): проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ИСТОРИЯ СЕССИЙ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Правило «нет измерения — нет нуля»: окно живого замера без джиттера и без потерь не должно
+    /// превращаться в «0,0 мс» и «0,0 %» ни в числах, ни в текстах.
+    /// </summary>
+    private static void CheckUnmeasuredNumbers(List<string> problems)
+    {
+        try
+        {
+            PathMeasurement unmeasured = new(true, 40, null, null, 12, "живой поток игры");
+
+            bool wordsNotZeros = unmeasured.JitterRu == "не измерено" && unmeasured.LossRu == "не измерено";
+            bool numbersStayNull = unmeasured.JitterMs is null && unmeasured.LossPercent is null;
+
+            PathMeasurement measured = new(true, 40, 3.1, 0, 12, "живой поток игры");
+            bool measuredIsNumber = measured.JitterRu != "не измерено"
+                && measured.LossRu != "не измерено"
+                && measured.LossRu.Contains('%', StringComparison.Ordinal);
+
+            if (!wordsNotZeros || !numbersStayNull || !measuredIsNumber)
+            {
+                problems.Add("нет измерения — нет нуля: неизмеренный джиттер или потери превращаются в числа " +
+                    $"(слова: {(wordsNotZeros ? "да" : "нет")}, поля пустые: {(numbersStayNull ? "да" : "нет")}, " +
+                    $"измеренное числом: {(measuredIsNumber ? "да" : "нет")})");
+                StartupLog.Note("НЕТ ИЗМЕРЕНИЯ — НЕТ НУЛЯ: НЕ работает — пустые поля превращаются в нули");
+                return;
+            }
+
+            StartupLog.Note("НЕТ ИЗМЕРЕНИЯ — НЕТ НУЛЯ: неизмеренные джиттер и потери называются словами «не измерено», " +
+                "измеренные — числом, и ноль остаётся только измеренным нулём");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"нет измерения — нет нуля: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"НЕТ ИЗМЕРЕНИЯ — НЕТ НУЛЯ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 
