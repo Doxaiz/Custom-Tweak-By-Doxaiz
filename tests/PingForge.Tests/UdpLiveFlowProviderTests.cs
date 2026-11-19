@@ -208,7 +208,7 @@ public sealed class UdpLiveFlowProviderTests
 
         Assert.True(path.IsMeasurable);
         Assert.Equal(20.0, path.RttMedianMs, 2);
-        Assert.Equal(45.0, path.JitterMs, 2);
+        Assert.Equal(45.0, path.JitterMs!.Value, 2);
         Assert.Contains("пассивные метки", path.MethodRu, StringComparison.Ordinal);
         Assert.Equal(ProbeMethodUsed.LiveUdpPassiveFlow, path.Method);
     }
