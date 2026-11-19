@@ -71,7 +71,7 @@ public partial class MainWindow : Window
     /// Передать модели представления цвета настоящей темы. Ключи — из <c>App.xaml</c>; если темы нет
     /// (например, окно собрали без ресурсов), остаются значения по умолчанию из <see cref="PaletteNote"/>.
     /// </summary>
-    private static void ApplyThemeColors(UiScaleViewModel scale)
+    private void ApplyThemeColors(UiScaleViewModel scale)
     {
         string? text = HexOf("TextColor");
         string? muted = HexOf("MutedColor");
@@ -83,7 +83,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Цвет ресурса темы в виде <c>#RRGGBB</c>: в этом виде его понимает расчёт контраста.</summary>
-    private static string? HexOf(string key) =>
+    private string? HexOf(string key) =>
         TryFindResource(key) is Color color ? $"#{color.R:X2}{color.G:X2}{color.B:X2}" : null;
 
     private void ApplyUiScale()

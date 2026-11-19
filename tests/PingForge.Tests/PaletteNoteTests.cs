@@ -90,9 +90,9 @@ public sealed class PaletteNoteTests
         // тест упадёт здесь, а не в подписи на экране.
         XDocument theme = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "checked-App.xaml"));
 
-        Assert.Equal(ColorOf(theme, "TextColor"), PaletteNote.TextColor, ignoreCase: true);
-        Assert.Equal(ColorOf(theme, "MutedColor"), PaletteNote.MutedColor, ignoreCase: true);
-        Assert.Equal(ColorOf(theme, "BgColor"), PaletteNote.BgColor, ignoreCase: true);
+        Assert.Equal(PaletteNote.TextColor, ColorOf(theme, "TextColor"), ignoreCase: true);
+        Assert.Equal(PaletteNote.MutedColor, ColorOf(theme, "MutedColor"), ignoreCase: true);
+        Assert.Equal(PaletteNote.BgColor, ColorOf(theme, "BgColor"), ignoreCase: true);
     }
 
     [Fact]
