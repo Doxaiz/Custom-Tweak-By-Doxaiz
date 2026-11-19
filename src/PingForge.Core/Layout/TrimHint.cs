@@ -97,7 +97,7 @@ public static class TrimHint
     /// <summary>Значение задано: не пусто и не пробелы. Привязка тоже задана — в ней будет текст.</summary>
     private static bool Given(string? value) => !string.IsNullOrWhiteSpace(value);
 
-    /// <summary>Текст надписи или привязка — по нему место ищется в разметке мгновенно.</summary>
+    /// <summary>Текст надписи или привязка — по нему место находится в разметке сразу.</summary>
     private static string TextOf(XElement block)
     {
         string? text = block.Attribute("Text")?.Value;

@@ -1588,7 +1588,7 @@ internal static class SelfCheck
             }
         }
 
-        if (labels.TryGetValue(control, out string named) && named.Length != 0)
+        if (labels.TryGetValue(control, out string? named) && !string.IsNullOrEmpty(named))
         {
             return named;
         }
