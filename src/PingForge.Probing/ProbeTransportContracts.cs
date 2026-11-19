@@ -29,15 +29,27 @@ public enum TcpProbeStatus
 public sealed record TcpProbeReply(TcpProbeStatus Status, double RoundTripMs);
 
 /// <summary>Провайдер живого потока игры: метрики берутся из уже существующего соединения.</summary>
-public sealed record LiveFlowRttSample(string MethodName, double RttAverageMs, double JitterMs, int Retransmissions, int SamplesAvailable);
+/// <param name="UnansweredSends">Сколько отправок осталось без ответа за окно наблюдения (у UDP — незакрытые пары).</param>
+/// <param name="RttMedianMs">Медиана отдельных замеров, если провайдер её знает.
+/// У пассивного UDP-замера она есть; у TCP-статистики соединения — нет, там только среднее.</param>
+public sealed record LiveFlowRttSample(
+    string MethodName,
+    double RttAverageMs,
+    double JitterMs,
+    int Retransmissions,
+    int SamplesAvailable,
+    int UnansweredSends = 0,
+    double? RttMedianMs = null);
 
 public interface ILiveFlowRttProvider
 {
     /// <summary>
     /// Возвращает метрики уже открытого соединения игры: для TCP — статистика соединения,
     /// для UDP — пассивные метки на ответах сервера. Если поток недоступен — false, числа не выдумываются.
-    /// <para>Внимание: реализаций этого интерфейса в приложении нет, поэтому цепочка проб до него
-    /// не доходит — замеры идут ICMP и TCP-рукопожатием. Это записанный долг, а не забытая ветка.</para>
+    /// <para>Реализация в приложении одна — <c>UdpObservationsLiveFlowRttProvider</c>: она считает UDP-задержку
+    /// по парам «отправка → ответ» из событий сетевого стека и не отправляет ни одного пакета. TCP-статистика
+    /// уже открытого соединения (<c>SIO_TCP_INFO</c>) по-прежнему не читается — это оставшийся долг,
+    /// и он назван здесь, а не спрятан.</para>
     /// </summary>
     bool TryGetLiveFlowRtt(int processId, string gameServerEndpoint, out LiveFlowRttSample sample);
 }

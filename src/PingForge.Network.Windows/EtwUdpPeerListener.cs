@@ -39,6 +39,7 @@ public sealed class EtwUdpPeerListener : IRemotePeerTracker, IDisposable
 
     private readonly Action<string> _log;
     private readonly RecentUdpPeerStore _store;
+    private readonly Action<UdpPeerObservation>? _onObservation;
     private readonly object _sync = new();
     private readonly byte[] _payload = new byte[128];
 
@@ -56,11 +57,17 @@ public sealed class EtwUdpPeerListener : IRemotePeerTracker, IDisposable
     /// <summary>
     /// Хранилище можно передать снаружи (например, чтобы прочитать то же самое в тестах или
     /// самопроверке). По умолчанию — свои 30 секунд и 4096 записей.
+    /// <paramref name="onObservation"/> — дополнительный получатель каждого наблюдения: по нему служба
+    /// считает пассивную задержку живого UDP-потока, не отправляя ни одного пакета.
     /// </summary>
-    public EtwUdpPeerListener(Action<string>? log = null, RecentUdpPeerStore? store = null)
+    public EtwUdpPeerListener(
+        Action<string>? log = null,
+        RecentUdpPeerStore? store = null,
+        Action<UdpPeerObservation>? onObservation = null)
     {
         _log = log ?? (_ => { });
         _store = store ?? new RecentUdpPeerStore();
+        _onObservation = onObservation;
     }
 
     /// <summary>Идёт ли наблюдение прямо сейчас. Не «обещание», а факт: сеанс создан и поток читает.</summary>
@@ -293,6 +300,10 @@ public sealed class EtwUdpPeerListener : IRemotePeerTracker, IDisposable
                 && observation is not null)
             {
                 _store.Observe(observation);
+
+                // Второй получатель — пассивный замер задержки: он считает пары «отправка → ответ»
+                // по тем же событиям и не отправляет ничего сам.
+                _onObservation?.Invoke(observation);
             }
         }
         catch
