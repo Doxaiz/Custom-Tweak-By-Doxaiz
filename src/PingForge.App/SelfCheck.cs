@@ -77,6 +77,7 @@ internal static class SelfCheck
         CheckContrastNote(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
+        CheckLiveTcpFlow(problems);
         CheckService(problems);
 
         // Если окно построилось, но раскладка или привязки плохи — это тот же отказ, что и «окно не собралось»:
@@ -1123,6 +1124,76 @@ internal static class SelfCheck
             problems.Add($"история сессий (задача J): проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ИСТОРИЯ СЕССИЙ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Живой TCP-поток: задержка должна браться из статистики уже открытого соединения, а если взять
+    /// её нельзя — причина должна быть названа. Здесь проверяется то, что от системы не зависит
+    /// (выбор соединения, цепочка, метка способа), и то, что зависит (читатель на этой машине обязан
+    /// либо отдать числа, либо назвать причину, но не молчать).
+    /// </summary>
+    private static void CheckLiveTcpFlow(List<string> problems)
+    {
+        try
+        {
+            var chain = new Network.ChainedLiveFlowRttProvider(
+                new SilentLiveFlowProvider(),
+                new Network.TcpEstatsLiveFlowRttProvider(new StubTcpStatsReader()));
+
+            bool chained = chain.TryGetLiveFlowRtt(0, "203.0.113.20:25565", out LiveFlowRttSample sample);
+            bool namesTcp = chained && string.Equals(sample.MethodName, Network.TcpEstatsLiveFlowRttProvider.MethodName, StringComparison.Ordinal);
+            bool tagIsLiveTcp = chained && ProbeMethodTags.Tag(ProbeMethodUsed.LiveTcpEstats) == ProbeMethodTags.LiveTcp;
+
+            // Читатель на этой машине: список без причины пустоты — это молчание, а не ответ.
+            var reader = new Network.WindowsTcpEstatsReader();
+            IReadOnlyList<LiveTcpConnectionStats> connections = reader.ReadEstablishedConnections(Environment.ProcessId);
+            bool readerHonest = connections.Count > 0 || !string.IsNullOrWhiteSpace(reader.ProblemRu);
+
+            // Соединение чужого сервера не выдаётся за игровое: отказ обязателен.
+            var picky = new Network.TcpEstatsLiveFlowRttProvider(new StubTcpStatsReader());
+            bool refusesOthers = !picky.TryGetLiveFlowRtt(0, "198.51.100.7:25565", out _)
+                && !string.IsNullOrWhiteSpace(picky.LastProblemRu);
+
+            if (!chained || !namesTcp || !tagIsLiveTcp || !readerHonest || !refusesOthers)
+            {
+                problems.Add("живой TCP-поток: статистика соединения читается неверно " +
+                    $"(цепочка: {(chained ? "да" : "нет")}, способ: {(namesTcp ? "назван" : "потерян")}, " +
+                    $"метка: {(tagIsLiveTcp ? "живой tcp" : "другая")}, читатель: {(readerHonest ? "причина или числа" : "молчит")}, " +
+                    $"чужой сервер: {(refusesOthers ? "отказ" : "выдан за игровой")})");
+                StartupLog.Note("ЖИВОЙ TCP-ПОТОК: НЕ работает — числа или отказы расходятся с правилом честности");
+                return;
+            }
+
+            StartupLog.Note("ЖИВОЙ TCP-ПОТОК: статистика открытого соединения читается вторым способом после UDP, " +
+                "способ назван (живой TCP-поток), соединение чужого сервера не выдаётся за игровое, " +
+                $"на этой машине {(connections.Count > 0 ? "числа есть" : "причина названа: " + reader.ProblemRu)}");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"живой TCP-поток: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ЖИВОЙ TCP-ПОТОК: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Провайдер, который ничего не знает: нужен, чтобы цепочка шла ко второму.</summary>
+    private sealed class SilentLiveFlowProvider : ILiveFlowRttProvider
+    {
+        public bool TryGetLiveFlowRtt(int processId, string gameServerEndpoint, out LiveFlowRttSample sample)
+        {
+            sample = null!;
+            return false;
+        }
+    }
+
+    /// <summary>Подставной читатель: одно игровое соединение и одно чужое.</summary>
+    private sealed class StubTcpStatsReader : ITcpConnectionStatsReader
+    {
+        public string ProblemRu => string.Empty;
+
+        public IReadOnlyList<LiveTcpConnectionStats> ReadEstablishedConnections(int processId) =>
+        [
+            new LiveTcpConnectionStats("203.0.113.20", 25565, 21.4, 3.1, 120, 2),
+        ];
     }
 
     /// <summary>Сколько линий графика реально нарисовано в разметке: геометрия из модели дошла до экрана.</summary>
