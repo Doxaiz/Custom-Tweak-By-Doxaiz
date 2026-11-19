@@ -123,6 +123,11 @@ public sealed class RealtimeOptimizer
 
     private const int RecentWindowLimit = 12;
 
+    // Способы замера «до» и последнего замера. Из них строится запись журнала: постоянная строка
+    // «LiveFlow» на любой замер была неправдой, как только способов стало больше одного.
+    private string _baselineMethodTag = string.Empty;
+    private string _lastMethodTag = string.Empty;
+
     public async Task<RealtimeSnapshot> StartAsync(
         RealtimeOptions? options = null,
         bool isAdministrator = true,
@@ -196,6 +201,7 @@ public sealed class RealtimeOptimizer
             }
 
             _baselineWindows.Add(window.RttMedianMs);
+            _baselineMethodTag = ProbeMethodTags.Tag(window.Method);
             UpdateFloor(window.RttMedianMs);
         }
 
@@ -473,7 +479,9 @@ public sealed class RealtimeOptimizer
             AppliedActionTitles: _applied.Select(a => a.TitleRu).ToList(),
             RevertMessagesRu: revertMessages,
             EverythingReverted: everythingReverted,
-            HonestSummaryRu: summary);
+            HonestSummaryRu: summary,
+            BaselineMethodTag: _baselineMethodTag,
+            FinalMethodTag: _lastMethodTag);
 
         _applied.Clear();
         _appliedRouteAction = false;
@@ -852,6 +860,8 @@ public sealed class RealtimeOptimizer
         _lastLossPercent = null;
         _baselineWindows.Clear();
         _recentWindows.Clear();
+        // Сервер сменился — прежний способ замера «до» к новому серверу не относится.
+        _baselineMethodTag = string.Empty;
 
         if (_pathOptions is not null && _options.AllowRoutingChanges)
         {
@@ -932,7 +942,16 @@ public sealed class RealtimeOptimizer
 
         try
         {
-            return await _measurement.MeasurePathAsync(_flow.RemoteEndpoint, _flow.RemotePort, ct).ConfigureAwait(false);
+            PathMeasurement measurement = await _measurement
+                .MeasurePathAsync(_flow.RemoteEndpoint, _flow.RemotePort, ct)
+                .ConfigureAwait(false);
+
+            if (measurement.IsMeasurable)
+            {
+                _lastMethodTag = ProbeMethodTags.Tag(measurement.Method);
+            }
+
+            return measurement;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1021,7 +1040,9 @@ public sealed class RealtimeOptimizer
         QualityLabelRu: QualityLabel(_lastRttMs ?? _confirmationRttMs ?? _baselineRttMs),
         AppliedActions: _applied.ToList(),
         Warnings: _warnings.ToList(),
-        UpdatedUtc: _clock());
+        UpdatedUtc: _clock(),
+        BaselineMethodTag: _baselineMethodTag,
+        FinalMethodTag: _lastMethodTag);
 
     private string BuildHonestSummary(double? baselineRttMs, double? finalRttMs, double? improvement, bool everythingReverted)
     {
@@ -1137,6 +1158,9 @@ public sealed class RealtimeOptimizer
         _lastSwitchUtc = null;
         _windowsSinceServerCheck = 0;
         _baselineIsForAnotherServer = false;
+        // Метки способа относятся к своей сессии: без сброса новый замер унаследовал бы чужой способ.
+        _baselineMethodTag = string.Empty;
+        _lastMethodTag = string.Empty;
         _consecutiveBadWindows = 0;
         _consecutiveGoodWindows = 0;
     }

@@ -227,6 +227,8 @@ public sealed class SessionHistoryTests
         Assert.True(completed.IsCompleted);
         Assert.Contains("было 120 мс → стало 95 мс", completed.ResultRu);
         Assert.Contains("лучше на 25", completed.ResultRu);
+        Assert.Contains("способ: живой поток игры (пассивные метки)", completed.ResultRu);
+        Assert.DoesNotContain("способ:", unfinished.ResultRu);
     }
 
     [Fact]
@@ -614,6 +616,45 @@ public sealed class SessionHistoryTests
         ]}
         """;
 
+    [Fact]
+    public void Незавершённая_сессия_с_числом_называет_способ_замера()
+    {
+        var row = Row("s-method", "203.0.113.9", 130, null, completed: false) with
+        {
+            MethodRu = ProbeMethodTags.DescribePairRu(ProbeMethodTags.LiveUdp, ProbeMethodTags.Unmeasurable),
+        };
+
+        Assert.Contains("«до» 130", row.ResultRu);
+        Assert.Contains("способ:", row.ResultRu);
+        Assert.Contains("пассивные метки", row.ResultRu);
+        Assert.Contains("«после»: не измерено", row.ResultRu);
+    }
+
+    [Fact]
+    public void Разные_способы_пары_предупреждают_о_разнице()
+    {
+        SessionHistoryRow row = Row("s-diff-method", "203.0.113.9", 120, 95, completed: true) with
+        {
+            MethodRu = ProbeMethodTags.DescribePairRu(ProbeMethodTags.Icmp, ProbeMethodTags.LiveUdp),
+            MethodsDiffer = true,
+        };
+
+        Assert.Contains("было 120 мс → стало 95 мс", row.ResultRu);
+        Assert.Contains("разница может быть от способа замера", row.ResultRu);
+
+        SessionHistoryRow same = row with { MethodsDiffer = false };
+        Assert.DoesNotContain("разница может быть от способа замера", same.ResultRu);
+    }
+
+    [Fact]
+    public void Сессия_без_способа_не_приписывает_его()
+    {
+        SessionHistoryRow row = Row("s-no-method", "203.0.113.9", 120, 95, completed: true);
+
+        Assert.Contains("было 120 мс → стало 95 мс", row.ResultRu);
+        Assert.DoesNotContain("способ", row.ResultRu);
+    }
+
     private const string TwoSessionsJson = """
         {"count":2,"records":[
           {"sessionId":"s2","startedUtc":"2026-10-18T12:00:00Z","stoppedUtc":null,"gameTitleRu":"Fortnite",
@@ -623,7 +664,8 @@ public sealed class SessionHistoryTests
           {"sessionId":"s1","startedUtc":"2026-10-17T12:00:00Z","stoppedUtc":"2026-10-17T12:20:00Z","gameTitleRu":"Fortnite",
            "endpoint":"203.0.113.9","hasGame":true,"isMeasurable":true,"baselineRttMs":120,"finalRttMs":95,
            "improvementMs":25,"actions":["Маршрут для игры"],"rollbackState":"EverythingReverted","rollbackStateRu":"Изменения сняты полностью",
-           "isCompleted":true,"statusRu":"Сессия завершена: «после» измерено, свои изменения сняты.","outcome":"Completed"}
+           "isCompleted":true,"statusRu":"Сессия завершена: «после» измерено, свои изменения сняты.","outcome":"Completed",
+           "methodRu":"способ: живой поток игры (пассивные метки)"}
         ]}
         """;
 

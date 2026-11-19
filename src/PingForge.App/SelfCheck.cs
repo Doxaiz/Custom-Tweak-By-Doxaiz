@@ -1076,22 +1076,47 @@ internal static class SelfCheck
             IReadOnlyList<DailyRttPoint> daily = DailyRttHistory.Build([unfinished, other], "203.0.113.9");
             bool singleServerDaily = daily.Count == 1 && Math.Abs(daily[0].AverageRttMs - 100) < 0.01;
 
+            // Способ замера: числа без способа — половина ответа. Пара «до/после» от разных способов
+            // обязана называть оба, а старая запись — называться старой, а не «живым потоком».
+            string pairRu = Core.Models.ProbeMethodTags.DescribePairRu(
+                Core.Models.ProbeMethodTags.Icmp, Core.Models.ProbeMethodTags.LiveUdp);
+            string legacyRu = Core.Models.ProbeMethodTags.DescribePairRu(
+                Core.Models.ProbeMethodTags.LegacyLiveFlow, Core.Models.ProbeMethodTags.LegacyLiveFlow);
+
+            string namedPair = (other with { MethodRu = pairRu }).ResultRu;
+            bool namesMethod = namedPair.Contains("«до»", StringComparison.Ordinal)
+                && namedPair.Contains("«после»", StringComparison.Ordinal)
+                && namedPair.Contains("ICMP", StringComparison.Ordinal);
+
+            bool pairCaveat = (other with { MethodRu = pairRu, MethodsDiffer = true }).ResultRu
+                .Contains("разница может быть от способа замера", StringComparison.Ordinal);
+
+            bool legacyIsCalledOld = (other with { MethodRu = legacyRu }).ResultRu
+                .Contains("старая запись", StringComparison.Ordinal);
+
+            bool noMethodWithoutTag = !other.ResultRu.Contains("способ", StringComparison.Ordinal);
+
             if (!honestText || !noInventedNumber || !refusesDifferentServers || !refusesSameSession
-                || !refusesUnknownAddress || !singleServerDaily)
+                || !refusesUnknownAddress || !singleServerDaily
+                || !namesMethod || !legacyIsCalledOld || !noMethodWithoutTag || !pairCaveat)
             {
                 problems.Add("история сессий: разбор «до/после» или график по дням работает неверно " +
                     $"(незавершённая: {(honestText ? "да" : "нет")}, без выдуманных чисел: {(noInventedNumber ? "да" : "нет")}, " +
                     $"разные серверы: {(refusesDifferentServers ? "отказ" : "сравнил")}, " +
                     $"сессия с собой: {(refusesSameSession ? "отказ" : "сравнил")}, " +
                     $"неизвестный адрес: {(refusesUnknownAddress ? "отказ" : "сравнил")}, " +
-                    $"график: {(singleServerDaily ? "да" : "нет")})");
+                    $"график: {(singleServerDaily ? "да" : "нет")}, " +
+                    $"способ в паре: {(namesMethod ? "назван" : "потерян")}, " +
+                    $"старая запись: {(legacyIsCalledOld ? "названа старой" : "выдана за живую")}, " +
+                    $"разные способы: {(pairCaveat ? "предупреждает" : "молчит")})");
                 StartupLog.Note("ИСТОРИЯ СЕССИЙ: НЕ работает — числа или сравнение сессий расходятся с правилом честности");
                 return;
             }
 
             StartupLog.Note("ИСТОРИЯ СЕССИЙ: вкладка «Сессии» на месте, до нажатия записей нет, " +
                 "незавершённая сессия называется незавершённой, разные серверы, одна и та же сессия и " +
-                "неизвестный адрес не сравниваются, график — по одному серверу");
+                "неизвестный адрес не сравниваются, график — по одному серверу, способ замера назван, " +
+                "старая запись названа старой, разные способы пары названы причиной разницы");
         }
         catch (Exception ex)
         {

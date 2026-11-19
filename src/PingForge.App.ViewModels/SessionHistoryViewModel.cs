@@ -24,7 +24,9 @@ public sealed record SessionHistoryRow(
     string RollbackStateRu,
     bool IsCompleted,
     string StatusRu,
-    string Outcome)
+    string Outcome,
+    string MethodRu = "",
+    bool MethodsDiffer = false)
 {
     public bool HasValidTime => StartedUtc != DateTime.MinValue;
 
@@ -47,6 +49,10 @@ public sealed record SessionHistoryRow(
     {
         get
         {
+            // Способ замера — рядом с числами: «до» и «после» могли быть сняты разными способами,
+            // и человек должен видеть, чем именно мерили. Пустая подпись не добавляется.
+            string method = string.IsNullOrWhiteSpace(MethodRu) ? string.Empty : " — " + MethodRu;
+
             if (!HasGame)
             {
                 return "«до» не измерено: игра не найдена — итог неизвестен";
@@ -59,23 +65,28 @@ public sealed record SessionHistoryRow(
 
             if (FinalRttMs is not { } after)
             {
-                return $"«до» {before:0.#} мс, «после» не измерено — сессия не завершена, итог неизвестен";
+                return $"«до» {before:0.#} мс, «после» не измерено — сессия не завершена, итог неизвестен" + method;
             }
 
             double difference = ImprovementMs ?? before - after;
             string line = $"было {before:0.#} мс → стало {after:0.#} мс";
 
+            // Пара снята разными способами: разница может быть свойством способа, а не действий.
+            string caveat = MethodsDiffer
+                ? "; разница может быть от способа замера, а не от действий"
+                : string.Empty;
+
             if (difference > 0.5)
             {
-                return line + $", лучше на {difference:0.#} мс";
+                return line + $", лучше на {difference:0.#} мс" + method + caveat;
             }
 
             if (difference < -0.5)
             {
-                return line + $", хуже на {-difference:0.#} мс";
+                return line + $", хуже на {-difference:0.#} мс" + method + caveat;
             }
 
-            return line + ", заметного выигрыша нет";
+            return line + ", заметного выигрыша нет" + method + caveat;
         }
     }
 
@@ -659,7 +670,9 @@ public sealed class SessionHistoryViewModel : ObservableObject
                     ReadText(item, "rollbackStateRu"),
                     ReadBool(item, "isCompleted"),
                     ReadText(item, "statusRu"),
-                    ReadText(item, "outcome")));
+                    ReadText(item, "outcome"),
+                    ReadText(item, "methodRu"),
+                    ReadBool(item, "methodsDiffer")));
             }
 
             return rows;

@@ -40,6 +40,8 @@ public static class OptimizationSessionMapping
             RollbackState: SessionRollbackStates.Unknown,
             IsCompleted: false,
             Outcome: noGame ? SessionOutcomes.NoGame : SessionOutcomes.NotFinished,
+            BaselineMethodTag: snapshot.BaselineMethodTag,
+            FinalMethodTag: string.Empty,
             StatusNoteRu: noGame
                 ? "Игра не найдена: замер не состоялся — итог неизвестен."
                 : "Сессия не завершена: итог неизвестен, «после» ещё не измерено.");
@@ -66,6 +68,11 @@ public static class OptimizationSessionMapping
                 ? session.Endpoint
                 : report.Endpoint,
             IsMeasurable = measured || session.BaselineRttMs is not null,
+            // Способ замера идёт вместе с числами: пара «до/после» могла быть снята разными способами.
+            BaselineMethodTag = string.IsNullOrWhiteSpace(report.BaselineMethodTag)
+                ? session.BaselineMethodTag
+                : report.BaselineMethodTag,
+            FinalMethodTag = report.FinalMethodTag,
             BaselineRttMs = report.BaselineRttMs ?? session.BaselineRttMs,
             FinalRttMs = report.FinalRttMs,
             ImprovementMs = report.ImprovementMs,

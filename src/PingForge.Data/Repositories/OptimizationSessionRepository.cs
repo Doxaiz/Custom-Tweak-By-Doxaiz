@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using PingForge.Core.Models;
 
 namespace PingForge.Data.Repositories;
 
@@ -58,7 +59,9 @@ public sealed record OptimizationSessionRecord(
     string RollbackState,
     bool IsCompleted,
     string Outcome,
-    string StatusNoteRu)
+    string StatusNoteRu,
+    string BaselineMethodTag = "",
+    string FinalMethodTag = "")
 {
     /// <summary>Игра была найдена: есть адрес сервера и название, а не «игра не найдена».</summary>
     public bool HasGame => !string.IsNullOrWhiteSpace(GameTitleRu)
@@ -109,7 +112,7 @@ public sealed class OptimizationSessionRepository
                 rollback_state, outcome, is_completed, verdict_comment
             ) VALUES (
                 $id, $exe, $game, $endpoint, 'live',
-                'LiveFlow', $optimizedMethod, $started, $stopped,
+                $baselineMethod, $finalMethod, $started, $stopped,
                 $baseline, $final, $measurable, $actions,
                 $rollback, $outcome, $completed, $note
             );
@@ -118,8 +121,10 @@ public sealed class OptimizationSessionRepository
         command.Parameters.AddWithValue("$exe", session.ProcessExeName ?? string.Empty);
         command.Parameters.AddWithValue("$game", session.GameTitleRu ?? string.Empty);
         command.Parameters.AddWithValue("$endpoint", session.Endpoint ?? string.Empty);
-        command.Parameters.AddWithValue("$optimizedMethod",
-            session.FinalRttMs is null ? DBNull.Value : "LiveFlow");
+        // Способ замера — из сессии, а не константа: у живой оптимизации он разный (живой поток,
+        // ICMP-эхо, TCP-рукопожатие), и журнал обязан называть тот, которым числа и получены.
+        command.Parameters.AddWithValue("$baselineMethod", MethodTagOrUnmeasurable(session.BaselineMethodTag));
+        command.Parameters.AddWithValue("$finalMethod", MethodTagOrUnmeasurable(session.FinalMethodTag));
         command.Parameters.AddWithValue("$started", ToIso(session.StartedUtc));
         command.Parameters.AddWithValue("$stopped",
             session.StoppedUtc is { } stopped ? ToIso(stopped) : DBNull.Value);
@@ -145,7 +150,8 @@ public sealed class OptimizationSessionRepository
         command.CommandText = """
             SELECT session_id, started_utc, stopped_utc, game_title_ru, process_exe_name,
                    remote_game_endpoint, is_measurable, baseline_rtt_avg, optimized_rtt_avg,
-                   applied_actions_json, rollback_state, is_completed, outcome, verdict_comment
+                   applied_actions_json, rollback_state, is_completed, outcome, verdict_comment,
+                   baseline_probe_method, optimized_probe_method
             FROM route_optimization_sessions
             ORDER BY started_utc DESC
             LIMIT $limit;
@@ -174,7 +180,9 @@ public sealed class OptimizationSessionRepository
                 reader.GetString(10),
                 reader.GetInt32(11) != 0,
                 reader.GetString(12),
-                reader.IsDBNull(13) ? string.Empty : reader.GetString(13)));
+                reader.IsDBNull(13) ? string.Empty : reader.GetString(13),
+                reader.IsDBNull(14) ? string.Empty : reader.GetString(14),
+                reader.IsDBNull(15) ? string.Empty : reader.GetString(15)));
         }
 
         return result;
@@ -191,6 +199,13 @@ public sealed class OptimizationSessionRepository
         command.CommandText = "DELETE FROM route_optimization_sessions;";
         return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Пустая метка становится «не измерено», а не пустой строкой и не прежним словом «LiveFlow»:
+    /// колонка способа в схеме обязательная, и выдумывать в ней способ нельзя.
+    /// </summary>
+    private static object MethodTagOrUnmeasurable(string? tag) =>
+        string.IsNullOrWhiteSpace(tag) ? ProbeMethodTags.Unmeasurable : tag;
 
     private static string ToIso(DateTime value) =>
         (value.Kind == DateTimeKind.Unspecified
