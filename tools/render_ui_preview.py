@@ -1476,6 +1476,20 @@ def build(data: dict, progress: dict) -> str:
         f'<tr><td>{esc(c["name"])}</td><td><code>{esc(c["primary"])}</code></td><td><code>{esc(c["secondary"])}</code></td></tr>'
         for c in data["probing"]["dnsCandidates"])
 
+    # Число автотестов приходит из журнала прогона (TRX): страница собрана в том же прогоне, и цифру
+    # нельзя вписать руками — иначе она врёт через месяц, как вписала «169» при 1147 настоящих.
+    tests_total = progress.get("testsTotal") or 0
+    tests_chip = (
+        f'<span class="chip" data-tests="{tests_total}">{tests_total} автотестов</span>'
+        if tests_total > 0
+        else '<span class="chip dim">число — из журнала прогона</span>')
+    tests_note = (
+        ''
+        if tests_total > 0
+        else '<p class="note-inline">Число автотестов здесь не вписано: оно берётся из журнала прогона '
+             'сборки, а эта страница собрана без него. Список выше — то, что тесты проверяют, '
+             'и он не зависит от числа.</p>')
+
     progress_rows = "".join(f"""
               <tr>
                 <td>{esc(r["name"])}</td>
@@ -2485,10 +2499,11 @@ settings.json.bak-20261118-122451  ← копия «до сброса»</pre>
 
   <div class="grid g2">
     <div class="card tight">
-      <h3>Проверено тестами прямо сейчас</h3>
-      <p class="small muted">169 автотестов: снапшоты и откат на реальной базе, канонические форматы значений,
+      <h3>Проверено тестами прямо сейчас {tests_chip}</h3>
+      <p class="small muted">Снапшоты и откат на реальной базе, канонические форматы значений,
       разбор русского вывода netsh, гистерезис маршрутов, MAD-джиттер, DF-MTU, DNS с ловлей подмены,
       аудит запретов в каталоге, советы по MTU/DNS и разбор каталога относительно текущих настроек.</p>
+      {tests_note}
     </div>
     <div class="card tight">
       <h3>Проверено только компилятором</h3>
@@ -2664,9 +2679,32 @@ def decorate(html: str) -> str:
     return html
 
 
+def tests_from_args(args: list[str]) -> int:
+    """Число автотестов из журнала прогона: `--tests N` или `--tests=N`.
+
+    Ноль означает «прогона не было»: тогда страница честно говорит, что числа нет, вместо того чтобы
+    показать вписанную когда-то цифру. Дробное и отрицательное не принимаем: число тестов — целое.
+    """
+    for index, arg in enumerate(args):
+        value: str | None = None
+        if arg == "--tests" and index + 1 < len(args):
+            value = args[index + 1]
+        elif arg.startswith("--tests="):
+            value = arg.split("=", 1)[1]
+        if value is None:
+            continue
+        try:
+            number = int(value.strip())
+        except ValueError:
+            return 0
+        return number if number > 0 else 0
+    return 0
+
+
 def main() -> int:
     data_path = Path(sys.argv[1] if len(sys.argv) > 1 else "/var/tmp/catalog.json")
     out_path = Path(sys.argv[2] if len(sys.argv) > 2 else "docs/pingforge-ui-preview.html")
+    tests_total = tests_from_args(sys.argv[3:])
 
     data = json.loads(data_path.read_text(encoding="utf-8"))
 
@@ -2730,6 +2768,7 @@ def main() -> int:
     progress = {
         "rows": [{"name": n, "weight": w, "done": d, "note": note} for n, w, d, note in progress_rows],
         "total": total,
+        "testsTotal": tests_total,
     }
 
     # данные для вставок: справочник маршрутов, профили потребления, меню трея
@@ -2750,6 +2789,7 @@ def main() -> int:
     print(f"Готово: {out_path} ({len(html_out) // 1024} КБ)")
     print(f"Твиков в макете: {data['tweakCount']}")
     print(f"Готовность программы: {total:.1f}%")
+    print("Автотестов из прогона: " + (str(tests_total) if tests_total > 0 else "не передано"))
     return 0
 
 

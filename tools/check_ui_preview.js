@@ -462,6 +462,40 @@ setTimeout(async () => {
     html.includes('Готовность программы') && !/Готовность\s+PingForge/.test(html),
     `подпись «Готовность программы»: ${html.includes('Готовность программы')}`);
 
+  // «Сумма весов ровно 100 %, итог считается по весам» — это утверждение, а не украшение: считаем его
+  // по самой таблице страницы. Если кто-то поправит процент руками, подпись с цифрой разойдутся.
+  const progressTable = [...d.querySelectorAll('#progress table')].find(t => /Готово/.test(t.textContent));
+  const progressRows = progressTable ? [...progressTable.querySelectorAll('tbody tr')] : [];
+  const rowNumbers = progressRows.map(tr => ({
+    weight: parseInt(tr.children[1].textContent, 10),
+    done: parseInt(tr.children[2].textContent, 10),
+  }));
+  const weightsTotal = rowNumbers.reduce((sum, row) => sum + row.weight, 0);
+  const byFormula = weightsTotal > 0
+    ? rowNumbers.reduce((sum, row) => sum + row.weight * row.done, 0) / weightsTotal
+    : 0;
+  const scoreCell = d.querySelector('#progress .score');
+  const scoreOnPage = scoreCell ? parseFloat(scoreCell.textContent.replace(',', '.')) : NaN;
+  check('итог готовности на странице сходится с весами и процентами таблицы',
+    progressRows.length >= 10 && weightsTotal === 100 && Math.abs(byFormula - scoreOnPage) < 0.05,
+    `строк: ${progressRows.length}, сумма весов: ${weightsTotal}, по формуле: ${byFormula.toFixed(1)}, ` +
+      `на странице: ${Number.isNaN(scoreOnPage) ? 'нет числа' : scoreOnPage}`);
+
+  // Число автотестов: либо оно пришло из журнала прогона и совпадает с подписью, либо страница честно
+  // говорит, что числа нет. Вписанная руками цифра — это то, как «169» прожило полтора года при 1147.
+  const testsChip = d.querySelector('[data-tests]');
+  const testsHonest = 'Число автотестов здесь не вписано: оно берётся из журнала прогона';
+  const testsAttr = testsChip ? testsChip.getAttribute('data-tests') : '';
+  const testsFromRun = !!testsChip
+    && /^\d+$/.test(testsAttr)
+    && Number(testsAttr) >= 100
+    && testsChip.textContent.includes(testsAttr);
+  check('число автотестов взято из журнала прогона, а не вписано руками',
+    testsChip ? testsFromRun : html.includes(testsHonest),
+    testsChip
+      ? `подпись «${testsChip.textContent.trim()}», атрибут ${testsAttr}`
+      : `нет подписи с числом и нет фразы «${testsHonest}»`);
+
   console.log(`Файл: ${path.resolve(FILE)} (${(html.length / 1024).toFixed(0)} КБ)`);
   console.log('порядок разделов:', ids.join(' → '));
   console.log(`=== пройдено ${ok.length}, проблем ${problems.length} ===`);
