@@ -414,6 +414,20 @@ setTimeout(async () => {
     contrast(primaryText, vars.accent) >= 4.5 && contrast(primaryText, vars.accent2) >= 4.5,
     `${contrast(primaryText, vars.accent).toFixed(2)}:1 и ${contrast(primaryText, vars.accent2).toFixed(2)}:1`);
 
+  // Подпись о контрасте — обещание, а не украшение: её числа обязаны совпадать с расчётом по палитре
+  // самой страницы. В программе эта подпись считается тем же способом (PingForge.Core.Ui.PaletteNote).
+  const note = html.match(
+    /Контраст основного текста #([0-9A-Fa-f]{6}) на фоне #([0-9A-Fa-f]{6}) — (\d+,\d):1, подписей #([0-9A-Fa-f]{6}) — (\d+,\d):1/);
+  const ru = value => value.toFixed(1).replace('.', ',') + ':1';
+  check('числа в подписи о контрасте совпадают с палитрой макета',
+    !!note && `#${note[1]}`.toLowerCase() === vars.text && `#${note[2]}`.toLowerCase() === vars.bg
+      && `#${note[4]}`.toLowerCase() === vars.muted
+      && `${note[3]}:1` === ru(contrast(vars.text, vars.bg))
+      && `${note[5]}:1` === ru(contrast(vars.muted, vars.bg)),
+    note
+      ? `в тексте ${note[3]}:1 и ${note[5]}:1, по палитре ${ru(contrast(vars.text, vars.bg))} и ${ru(contrast(vars.muted, vars.bg))}`
+      : 'фразы о контрасте в макете нет');
+
   const snippetNames = ['service.log.2', 'Дата,Твик,Код', '"SchemaVersion"', 'отчёт об ошибке', 'PingForge-поддержка', 'settings.json.bak-'];
   const snippets = [...d.querySelectorAll('.snippet')];
   check('в примерах файлов шесть разных выгрузок программы',
