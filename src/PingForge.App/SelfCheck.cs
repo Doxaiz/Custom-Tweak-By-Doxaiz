@@ -87,6 +87,7 @@ internal static class SelfCheck
             || problem.Contains("нет карточки ответа", StringComparison.Ordinal)
             || problem.Contains("текст обрезан в рамке", StringComparison.Ordinal)
             || problem.Contains("без имени для диктора", StringComparison.Ordinal)
+            || problem.Contains("многоточие без подсказки", StringComparison.Ordinal)
             || problem.Contains("выходят за край окна", StringComparison.Ordinal)
             || problem.Contains("не переносятся", StringComparison.Ordinal)
             || problem.Contains("история сессий", StringComparison.Ordinal)
@@ -1351,6 +1352,10 @@ internal static class SelfCheck
     /// Меряется не сам элемент, а проба: такой же <c>TextBlock</c> с теми же шрифтом, кеглем и текстом.
     /// Ей дают бесконечную ширину — получают ширину одной строки; потом дают ширину элемента — получают
     /// нужную высоту. Настоящий элемент не трогается: раскладку портить нельзя.
+    ///
+    /// Второе правило той же проверки: многоточие — не дефект, но только если полный текст можно
+    /// прочитать. Надпись, которая на самом деле сократилась, обязана иметь подсказку — свою или
+    /// у рамки вокруг неё. Иначе «Игра: Fortnite — …» остаётся загадкой.
     /// </summary>
     private static void CheckTextIsWhole(App app, List<string> problems)
     {
@@ -1365,6 +1370,8 @@ internal static class SelfCheck
         CollectTextBlocks(root, blocks, depth: 0);
 
         var cuts = new List<string>();
+        var lost = new List<string>();
+        int trimmed = 0;
         foreach (TextBlock block in blocks)
         {
             if (block.Visibility != Visibility.Visible || string.IsNullOrWhiteSpace(block.Text))
@@ -1415,22 +1422,46 @@ internal static class SelfCheck
             {
                 cuts.Add($"{measured.Name}: {TextClipping.DescribeRu(measured, cut)}");
             }
+
+            if (measured.Trims && measured.NaturalWidth > measured.AvailableWidth + TextClipping.Tolerance)
+            {
+                trimmed++;
+                if (TextClipping.NeedsTooltip(measured, HasTooltipNear(block)))
+                {
+                    lost.Add($"{measured.Name}: {TextClipping.DescribeTooltipRu(measured)}");
+                }
+            }
         }
 
-        if (cuts.Count == 0)
+        if (lost.Count != 0)
         {
-            StartupLog.Note($"Текст: обрезанных нет — просмотрено {blocks.Count} надписей");
-            return;
+            string lostList = string.Join("; ", lost.Take(5));
+            if (lost.Count > 5)
+            {
+                lostList += $" и ещё {lost.Count - 5}";
+            }
+
+            problems.Add($"многоточие без подсказки у {lost.Count} надписей: {lostList}");
+            StartupLog.Warn($"Текст: {lost.Count} надписей сокращены многоточием, а полного текста нет в подсказке: {lostList}");
         }
 
-        string list = string.Join("; ", cuts.Take(5));
-        if (cuts.Count > 5)
+        if (cuts.Count != 0)
         {
-            list += $" и ещё {cuts.Count - 5}";
+            string list = string.Join("; ", cuts.Take(5));
+            if (cuts.Count > 5)
+            {
+                list += $" и ещё {cuts.Count - 5}";
+            }
+
+            problems.Add($"текст обрезан в рамке у {cuts.Count} надписей: {list}");
+            StartupLog.Warn($"Текст: {cuts.Count} надписей не влезли целиком: {list}");
         }
 
-        problems.Add($"текст обрезан в рамке у {cuts.Count} надписей: {list}");
-        StartupLog.Warn($"Текст: {cuts.Count} надписей не влезли целиком: {list}");
+        if (cuts.Count == 0 && lost.Count == 0)
+        {
+            StartupLog.Note($"Текст: обрезанных нет — просмотрено {blocks.Count} надписей, " +
+                $"сокращённых многоточием {trimmed} — у всех есть подсказка");
+        }
     }
 
     /// <summary>
@@ -1557,7 +1588,7 @@ internal static class SelfCheck
             }
         }
 
-        if (labels.TryGetValue(control, out string named) && named.Length != 0)
+        if (labels.TryGetValue(control, out string? named) && !string.IsNullOrEmpty(named))
         {
             return named;
         }
@@ -1592,6 +1623,35 @@ internal static class SelfCheck
                 return string.Empty;
         }
     }
+
+    /// <summary>
+    /// Есть ли подсказка с полным текстом: у самой надписи или у рамки вокруг неё (до трёх уровней
+    /// вверх — столько же, сколько разрешает правило разметки <see cref="TrimHint"/>).
+    /// </summary>
+    private static bool HasTooltipNear(FrameworkElement element)
+    {
+        DependencyObject? node = element;
+        for (int level = 0; node is not null && level <= TrimHint.HintDepth; level++)
+        {
+            if (node is FrameworkElement current
+                && (HasTooltipText(current.ToolTip) || HasTooltipText(ToolTipService.GetToolTip(current))))
+            {
+                return true;
+            }
+
+            node = VisualTreeHelper.GetParent(node);
+        }
+
+        return false;
+    }
+
+    /// <summary>Подсказка задана: текст непустой, а объект подсказки — это уже готовая подсказка.</summary>
+    private static bool HasTooltipText(object? value) => value switch
+    {
+        null => false,
+        string text => !string.IsNullOrWhiteSpace(text),
+        _ => true,
+    };
 
     /// <summary>Собрать все надписи визуального дерева: проверяется каждая.</summary>
     private static void CollectTextBlocks(DependencyObject node, List<TextBlock> blocks, int depth)

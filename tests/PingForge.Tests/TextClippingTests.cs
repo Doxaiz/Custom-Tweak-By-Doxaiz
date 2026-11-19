@@ -82,4 +82,52 @@ public sealed class TextClippingTests
     {
         Assert.Equal("не обрезан", TextClipping.DescribeRu(Text(), TextCut.None));
     }
+
+    [Fact]
+    public void Многоточие_без_подсказки_это_потерянный_текст()
+    {
+        // Многоточие поставлено нарочно и обрезкой не считается, но полного текста прочитать негде.
+        MeasuredText text = Text(naturalWidth: 412, availableWidth: 300, wraps: false, trims: true);
+
+        Assert.Equal(TextCut.None, TextClipping.Find(text));
+        Assert.True(TextClipping.NeedsTooltip(text, hasTooltip: false));
+        Assert.Equal(
+            "сокращён многоточием без подсказки: нужно 412 точек, есть 300",
+            TextClipping.DescribeTooltipRu(text));
+    }
+
+    [Fact]
+    public void Многоточие_с_подсказкой_потерей_не_считается()
+    {
+        MeasuredText text = Text(naturalWidth: 412, availableWidth: 300, wraps: false, trims: true);
+
+        Assert.False(TextClipping.NeedsTooltip(text, hasTooltip: true));
+    }
+
+    [Fact]
+    public void Короткая_надпись_с_многоточием_подсказки_не_требует()
+    {
+        // Текст поместился целиком: многоточия на экране нет, и подсказка была бы пустой формальностью.
+        MeasuredText text = Text(naturalWidth: 280, availableWidth: 300, wraps: false, trims: true);
+
+        Assert.False(TextClipping.NeedsTooltip(text, hasTooltip: false));
+    }
+
+    [Fact]
+    public void Текст_без_многоточия_подсказки_от_этого_правила_не_требует()
+    {
+        // Он не сокращается — значит, речь идёт об обрезке, а её ловит Find, а не это правило.
+        MeasuredText text = Text(naturalWidth: 412, availableWidth: 300, wraps: false);
+
+        Assert.Equal(TextCut.Right, TextClipping.Find(text));
+        Assert.False(TextClipping.NeedsTooltip(text, hasTooltip: false));
+    }
+
+    [Fact]
+    public void Округление_в_пределах_допуска_подсказки_не_требует()
+    {
+        MeasuredText text = Text(naturalWidth: 301.5, availableWidth: 300, wraps: false, trims: true);
+
+        Assert.False(TextClipping.NeedsTooltip(text, hasTooltip: false));
+    }
 }

@@ -71,6 +71,26 @@ public static class TextClipping
         return cutBottom ? TextCut.Bottom : TextCut.None;
     }
 
+    /// <summary>
+    /// Теряет ли текст смысл из-за многоточия: он сокращён, а прочитать его целиком негде.
+    /// </summary>
+    /// <remarks>
+    /// Многоточие само по себе — не дефект: оно честно говорит «текст длиннее». Дефект начинается,
+    /// когда полный текст недоступен ни в подсказке, ни где-то ещё. Тогда «Игра: Fortnite — …»
+    /// остаётся загадкой: человек не узнает, обрезан адрес сервера или название игры.
+    /// </remarks>
+    /// <param name="text">Замер текста.</param>
+    /// <param name="hasTooltip">Есть ли подсказка с полным текстом у надписи или у её рамки.</param>
+    /// <param name="tolerance">Допуск в точках.</param>
+    public static bool NeedsTooltip(MeasuredText text, bool hasTooltip, double tolerance = Tolerance) =>
+        text.Trims
+        && !hasTooltip
+        && text.NaturalWidth > text.AvailableWidth + Math.Max(0, tolerance);
+
+    /// <summary>Отчёт по-русски: «сокращён многоточием без подсказки: нужно 412 точек, есть 300».</summary>
+    public static string DescribeTooltipRu(MeasuredText text) =>
+        $"сокращён многоточием без подсказки: нужно {Round(text.NaturalWidth)} точек, есть {Round(text.AvailableWidth)}";
+
     /// <summary>Отчёт по-русски: «обрезан снизу: нужно 38 точек, есть 20».</summary>
     public static string DescribeRu(MeasuredText text, TextCut cut) => cut switch
     {
