@@ -35,11 +35,13 @@
               <WrapPanel Margin="0,8,0,0">
                 <StackPanel Margin="0,0,16,8">
                   <TextBlock Style="{StaticResource Caption}" Text="Поиск" />
-                  <TextBox Width="220" Margin="0,4,0,0" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
+                  <TextBox AutomationProperties.Name="Поиск по журналу" Width="220" Margin="0,4,0,0"
+                           Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
                 </StackPanel>
                 <StackPanel Margin="0,0,16,8">
                   <TextBlock Style="{StaticResource Caption}" Text="Тип" />
-                  <ComboBox Width="160" Margin="0,4,0,0" SelectedIndex="{Binding KindFilter, Mode=TwoWay}">
+                  <ComboBox AutomationProperties.Name="Тип записи" Width="160" Margin="0,4,0,0"
+                            SelectedIndex="{Binding KindFilter, Mode=TwoWay}">
                     <ComboBoxItem Content="всё" />
                     <ComboBoxItem Content="твики" />
                     <ComboBoxItem Content="маршрут" />
@@ -50,7 +52,8 @@
                 </StackPanel>
                 <StackPanel Margin="0,0,16,8">
                   <TextBlock Style="{StaticResource Caption}" Text="Статус" />
-                  <ComboBox Width="160" Margin="0,4,0,0" SelectedIndex="{Binding StatusFilter, Mode=TwoWay}">
+                  <ComboBox AutomationProperties.Name="Статус записи" Width="160" Margin="0,4,0,0"
+                            SelectedIndex="{Binding StatusFilter, Mode=TwoWay}">
                     <ComboBoxItem Content="всё" />
                     <ComboBoxItem Content="успех" />
                     <ComboBoxItem Content="ошибка" />
@@ -59,7 +62,8 @@
                 </StackPanel>
                 <StackPanel Margin="0,0,16,8">
                   <TextBlock Style="{StaticResource Caption}" Text="Дата" />
-                  <ComboBox Width="160" Margin="0,4,0,0" SelectedIndex="{Binding DateFilter, Mode=TwoWay}">
+                  <ComboBox AutomationProperties.Name="Период записей" Width="160" Margin="0,4,0,0"
+                            SelectedIndex="{Binding DateFilter, Mode=TwoWay}">
                     <ComboBoxItem Content="за всё время" />
                     <ComboBoxItem Content="сегодня" />
                     <ComboBoxItem Content="последние 7 дней" />
@@ -68,7 +72,7 @@
                 </StackPanel>
                 <Button Style="{StaticResource GhostButton}" Content="Сбросить фильтры" Command="{Binding ClearFiltersCommand}" VerticalAlignment="Bottom" Margin="0,0,0,8" />
               </WrapPanel>
-              <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" Foreground="Orange" Text="{Binding FilterHintRu}" />
+              <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" Foreground="{StaticResource Warn}" Text="{Binding FilterHintRu}" />
               <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding PaginationLineRu}" />
             </StackPanel>
           </Border>
@@ -143,9 +147,11 @@
               <TextBlock Text="Сравнение двух сессий" FontWeight="SemiBold" />
               <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding ComparisonHintRu}" />
               <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                <ComboBox Width="340" Margin="0,0,8,0" ItemsSource="{Binding Rows}" DisplayMemberPath="TitleRu"
+                <ComboBox AutomationProperties.Name="Первая сессия для сравнения" Width="340" Margin="0,0,8,0"
+                          ItemsSource="{Binding Rows}" DisplayMemberPath="TitleRu"
                           SelectedItem="{Binding SelectedFirst, Mode=TwoWay}" />
-                <ComboBox Width="340" Margin="0,0,8,0" ItemsSource="{Binding Rows}" DisplayMemberPath="TitleRu"
+                <ComboBox AutomationProperties.Name="Вторая сессия для сравнения" Width="340" Margin="0,0,8,0"
+                          ItemsSource="{Binding Rows}" DisplayMemberPath="TitleRu"
                           SelectedItem="{Binding SelectedSecond, Mode=TwoWay}" />
                 <Button x:Name="CompareSessionsButton" Style="{StaticResource GhostButton}" Content="Сравнить"
                         Command="{Binding CompareCommand}" />
@@ -168,7 +174,8 @@
               <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding DailyCaptionRu}" />
               <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                 <TextBlock Text="Сервер:" VerticalAlignment="Center" Style="{StaticResource Caption}" Margin="0,0,8,0" />
-                <ComboBox Width="340" ItemsSource="{Binding Endpoints}" SelectedItem="{Binding SelectedEndpoint, Mode=TwoWay}" />
+                <ComboBox AutomationProperties.Name="Сервер для графика RTT по дням" Width="340"
+                          ItemsSource="{Binding Endpoints}" SelectedItem="{Binding SelectedEndpoint, Mode=TwoWay}" />
               </StackPanel>
               <ItemsControl ItemsSource="{Binding Daily}" Margin="0,8,0,0">
                 <ItemsControl.ItemTemplate>

@@ -1,11 +1,13 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using PingForge.App.ViewModels;
 using PingForge.App.Views;
 using PingForge.Core.Models;
 using PingForge.Core.Layout;
+using PingForge.Core.Ui;
 using PingForge.Probing;
 using PingForge.Routing;
 
@@ -71,6 +73,7 @@ internal static class SelfCheck
         CheckLayout(app, problems);
         CheckNothingIsCutOff(app, problems);
         CheckTextIsWhole(app, problems);
+        CheckAccessibleNames(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
         CheckService(problems);
@@ -83,6 +86,7 @@ internal static class SelfCheck
             || problem.Contains("нет надписей", StringComparison.Ordinal)
             || problem.Contains("нет карточки ответа", StringComparison.Ordinal)
             || problem.Contains("текст обрезан в рамке", StringComparison.Ordinal)
+            || problem.Contains("без имени для диктора", StringComparison.Ordinal)
             || problem.Contains("выходят за край окна", StringComparison.Ordinal)
             || problem.Contains("не переносятся", StringComparison.Ordinal)
             || problem.Contains("история сессий", StringComparison.Ordinal)
@@ -1409,6 +1413,166 @@ internal static class SelfCheck
 
         problems.Add($"текст обрезан в рамке у {cuts.Count} надписей: {list}");
         StartupLog.Warn($"Текст: {cuts.Count} надписей не влезли целиком: {list}");
+    }
+
+    /// <summary>
+    /// Имя для экранного диктора. Правило разметки (<see cref="AccessibleName"/>) ловит это до сборки,
+    /// но видит только текст объявления: у переключателя твика имя появляется из привязки во время
+    /// работы, а у кнопки с панелью внутри — из вложенной надписи. Здесь спрашивается само окно,
+    /// и отвечает оно настоящими данными.
+    ///
+    /// Свёрнутое и выключенное пропускается: диктор такого не читает. Элементы, созданные шаблоном
+    /// другого элемента управления (стрелка полосы прокрутки, заголовок раскрывашки), тоже
+    /// пропускаются — имя им даёт шаблон, а не разметка раздела.
+    /// </summary>
+    private static void CheckAccessibleNames(App app, List<string> problems)
+    {
+        if (app.Shell?.Content is not FrameworkElement root)
+        {
+            return;
+        }
+
+        root.UpdateLayout();
+
+        var labels = new Dictionary<object, string>();
+        CollectLabelTargets(root, labels, depth: 0);
+
+        var controls = new List<Control>();
+        CollectSurveyedControls(root, controls, depth: 0);
+
+        var anonymous = new List<string>();
+        int surveyed = 0;
+        foreach (Control control in controls)
+        {
+            if (control.Visibility != Visibility.Visible || !control.IsEnabled)
+            {
+                continue;
+            }
+
+            surveyed++;
+            if (AccessibleNameOf(control, labels).Length == 0)
+            {
+                anonymous.Add(DescribeLayoutElement(control));
+            }
+        }
+
+        string kinds = TweakOrdering.Plural(surveyed, "элемент управления", "элемента управления", "элементов управления");
+        if (anonymous.Count == 0)
+        {
+            StartupLog.Note($"Доступность: у всех {surveyed} {kinds} есть имя для экранного диктора");
+            return;
+        }
+
+        string list = string.Join("; ", anonymous.Take(5));
+        if (anonymous.Count > 5)
+        {
+            list += $" и ещё {anonymous.Count - 5}";
+        }
+
+        problems.Add($"без имени для диктора {anonymous.Count} из {surveyed} {kinds}: {list}");
+        StartupLog.Warn($"Доступность: без имени {anonymous.Count} {kinds} — {list}");
+    }
+
+    /// <summary>Элементы, за которыми следит правило имён, из настоящего дерева окна.</summary>
+    private static void CollectSurveyedControls(DependencyObject node, List<Control> controls, int depth)
+    {
+        if (depth > 64)
+        {
+            return;
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(node, i);
+            if (child is Control control
+                && AccessibleName.IsSurveyed(control.GetType().Name)
+                && control.TemplatedParent is not Control)
+            {
+                controls.Add(control);
+            }
+
+            CollectSurveyedControls(child, controls, depth + 1);
+        }
+    }
+
+    /// <summary>Надписи, на которые ссылаются через <c>Label Target</c>: имя берётся оттуда.</summary>
+    private static void CollectLabelTargets(DependencyObject node, Dictionary<object, string> labels, int depth)
+    {
+        if (depth > 64)
+        {
+            return;
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(node, i);
+            if (child is Label label && label.Target is { } target)
+            {
+                string text = TextInside(label.Content);
+                if (text.Length != 0)
+                {
+                    labels[target] = text;
+                }
+            }
+
+            CollectLabelTargets(child, labels, depth + 1);
+        }
+    }
+
+    /// <summary>Имя элемента так, как его прочитает диктор: явное, от надписи или из содержимого.</summary>
+    private static string AccessibleNameOf(Control control, Dictionary<object, string> labels)
+    {
+        string direct = AutomationProperties.GetName(control);
+        if (!string.IsNullOrWhiteSpace(direct))
+        {
+            return direct.Trim();
+        }
+
+        if (AutomationProperties.GetLabeledBy(control) is FrameworkElement label)
+        {
+            string labeled = TextInside(label);
+            if (labeled.Length != 0)
+            {
+                return labeled;
+            }
+        }
+
+        if (labels.TryGetValue(control, out string named) && named.Length != 0)
+        {
+            return named;
+        }
+
+        string header = control is HeaderedContentControl headered ? TextInside(headered.Header) : string.Empty;
+        if (header.Length != 0)
+        {
+            return header;
+        }
+
+        return control is ContentControl content ? TextInside(content.Content) : string.Empty;
+    }
+
+    /// <summary>Видимый текст внутри: содержимое строкой, надписью или панелью с надписями.</summary>
+    private static string TextInside(object? content)
+    {
+        switch (content)
+        {
+            case null:
+                return string.Empty;
+            case string text:
+                return text.Trim();
+            case TextBlock block:
+                return block.Text.Trim();
+            case FrameworkElement element:
+                var texts = new List<TextBlock>();
+                CollectTextBlocks(element, texts, depth: 0);
+                return string.Join(
+                    " ",
+                    texts.Select(block => block.Text?.Trim()).Where(text => !string.IsNullOrEmpty(text)));
+            default:
+                return string.Empty;
+        }
     }
 
     /// <summary>Собрать все надписи визуального дерева: проверяется каждая.</summary>
