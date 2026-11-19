@@ -72,8 +72,8 @@ public interface IGameFlowReporter : IGameFlowWatcher
 public sealed record PathMeasurement(
     bool IsMeasurable,
     double RttMedianMs,
-    double JitterMs,
-    double LossPercent,
+    double? JitterMs,
+    double? LossPercent,
     int Samples,
     string MethodRu,
     double? RttMinMs = null,
@@ -81,7 +81,16 @@ public sealed record PathMeasurement(
     double? RttP95Ms = null,
     ProbeMethodUsed Method = ProbeMethodUsed.Unmeasurable)
 {
-    public static PathMeasurement Unmeasurable(string reasonRu) => new(false, 0, 0, 0, 0, reasonRu);
+    public static PathMeasurement Unmeasurable(string reasonRu) => new(false, 0, null, null, 0, reasonRu);
+
+    /// <summary>
+    /// Джиттер для текста. Неизмеренное называется словами, а не превращается в «0,0 мс»:
+    /// ноль — это измеренное отсутствие разброса, и путать его с отсутствием замера нельзя.
+    /// </summary>
+    public string JitterRu => JitterMs is { } jitter ? $"{jitter:F1} мс" : "не измерено";
+
+    /// <summary>Потери для текста: тот же принцип — нет замера, нет нуля.</summary>
+    public string LossRu => LossPercent is { } loss ? $"{loss:F1} %" : "не измерено";
 }
 
 /// <summary>

@@ -67,8 +67,8 @@ public class LiveEngineTests
 
         Assert.True(window.IsMeasurable);
         Assert.Equal(78.4, window.RttMedianMs, 3);
-        Assert.Equal(2.5, window.JitterMs, 3);
-        Assert.Equal(0, window.LossPercent, 3);
+        Assert.Equal(2.5, window.JitterMs!.Value, 3);
+        Assert.Equal(0, window.LossPercent!.Value, 3);
         Assert.Equal(12, window.Samples);
         Assert.Contains("ICMP", window.MethodRu);
         Assert.Equal(ProbeMethodUsed.ActiveIcmpEcho, window.Method);

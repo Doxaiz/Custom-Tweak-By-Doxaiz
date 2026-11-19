@@ -225,8 +225,8 @@ public sealed class RoutePathComparisonService
                     hop, node.Name, node.SourceRu,
                     window.IsMeasurable,
                     window.IsMeasurable ? Math.Round(window.RttMedianMs, 2) : null,
-                    window.IsMeasurable ? Math.Round(window.JitterMs, 2) : null,
-                    window.IsMeasurable ? Math.Round(window.LossPercent, 2) : null,
+                    window.IsMeasurable && window.JitterMs is { } jitter ? Math.Round(jitter, 2) : null,
+                    window.IsMeasurable && window.LossPercent is { } loss ? Math.Round(loss, 2) : null,
                     measureProblem));
 
                 if (!restored)
@@ -328,10 +328,18 @@ public sealed class RoutePathComparisonService
             sourceRu,
             true,
             Math.Round(Median(medians), 2),
-            Math.Round(Median(rounds.Select(round => round.JitterMs ?? 0).ToList()), 2),
-            Math.Round(Median(rounds.Select(round => round.LossPercent ?? 0).ToList()), 2),
+            // В медиану идут только измеренные значения: ноль вместо «не измерено» исказил бы её.
+            MedianOrNull(rounds.Select(round => round.JitterMs)),
+            MedianOrNull(rounds.Select(round => round.LossPercent)),
             null,
             Math.Round(spread, 2));
+    }
+
+    /// <summary>Медиана по измеренным значениям; пусто — значит нечего усреднять, а не ноль.</summary>
+    private static double? MedianOrNull(IEnumerable<double?> values)
+    {
+        List<double> measured = values.Where(value => value.HasValue).Select(value => value!.Value).ToList();
+        return measured.Count == 0 ? null : Math.Round(Median(measured), 2);
     }
 
     private static double Median(IReadOnlyList<double> values)
@@ -361,8 +369,8 @@ public sealed class RoutePathComparisonService
             PathMeasurement direct = await _measurement.MeasurePathAsync(target, Math.Max(0, port), ct).ConfigureAwait(false);
             return new RoutePathProbeResult(target, "прямой путь", "замер без изменения маршрутов", direct.IsMeasurable,
                 direct.IsMeasurable ? Math.Round(direct.RttMedianMs, 2) : null,
-                direct.IsMeasurable ? Math.Round(direct.JitterMs, 2) : null,
-                direct.IsMeasurable ? Math.Round(direct.LossPercent, 2) : null,
+                direct.IsMeasurable && direct.JitterMs is { } jitter ? Math.Round(jitter, 2) : null,
+                direct.IsMeasurable && direct.LossPercent is { } loss ? Math.Round(loss, 2) : null,
                 direct.IsMeasurable ? null : direct.MethodRu);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

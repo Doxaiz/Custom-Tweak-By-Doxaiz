@@ -477,6 +477,53 @@ public sealed class RealtimeOptimizationTests
     }
 
     [Fact]
+    public async Task Неизмеренный_джиттер_не_превращается_в_ноль()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+
+        // Живой замер без джиттера и потерь: это «нет данных», а не «ноль». Подставлять нули значило бы
+        // нарисовать человеку идеальную сеть, которую никто не мерил.
+        PathMeasurement unmeasured = new(true, 120, null, null, 12, "живой поток игры (TCP-статистика)");
+        var measurements = new ScriptedMeasurements(unmeasured, unmeasured, unmeasured, unmeasured, unmeasured);
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+        await optimizer.StartAsync(new RealtimeOptions(DegradedWindowsBeforeSwitch: 2));
+        RealtimeSnapshot snapshot = await optimizer.TickOnceAsync();
+
+        Assert.Null(snapshot.CurrentJitterMs);
+        Assert.Null(snapshot.CurrentLossPercent);
+        Assert.Contains("джиттер не измерено", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("потери не измерено", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("джиттер 0", snapshot.StatusRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Просадка_по_RTT_видна_даже_когда_джиттер_и_потери_не_измерены()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+
+        var measurements = new ScriptedMeasurements(
+            new PathMeasurement(true, 80, null, null, 12, "живой поток игры (TCP-статистика)"),
+            new PathMeasurement(true, 80, null, null, 12, "живой поток игры (TCP-статистика)"),
+            new PathMeasurement(true, 80, null, null, 12, "живой поток игры (TCP-статистика)"),
+            new PathMeasurement(true, 80, null, null, 12, "живой поток игры (TCP-статистика)"),
+            new PathMeasurement(true, 130, null, null, 12, "живой поток игры (TCP-статистика)"),
+            new PathMeasurement(true, 131, null, null, 12, "живой поток игры (TCP-статистика)"));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+        await optimizer.StartAsync(new RealtimeOptions(DegradedWindowsBeforeSwitch: 2));
+        await optimizer.TickOnceAsync();
+        RealtimeSnapshot snapshot = await optimizer.TickOnceAsync();
+
+        // Пустые поля не скрывают просадку: RTT вырос на 50 мс, и это видно без джиттера с потерями.
+        Assert.Equal(RealtimeOptimizationState.Degraded, snapshot.State);
+        Assert.Contains("джиттер не измерено", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("потери не измерено", snapshot.StatusRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task На_путь_где_уже_было_хуже_второй_раз_не_переключаемся()
     {
         var watcher = new StubWatcher(Fortnite());
