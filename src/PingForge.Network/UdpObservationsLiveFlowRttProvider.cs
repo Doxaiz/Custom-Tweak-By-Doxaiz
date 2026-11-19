@@ -100,16 +100,23 @@ public sealed class UdpObservationsLiveFlowRttProvider : ILiveFlowRttProvider
             return false;
         }
 
-        address = text[..colon].Trim('[', ']');
-        string portText = text[(colon + 1)..];
+        // Адрес наружу отдаём только вместе с годным портом: при отказе оба выхода пустые,
+        // иначе вызывающий получит половину разбора и решит, что её можно использовать.
+        string candidate = text[..colon].Trim('[', ']');
+        if (candidate.Length == 0)
+        {
+            return false;
+        }
 
-        if (!int.TryParse(portText, NumberStyles.None, CultureInfo.InvariantCulture, out port)
-            || port is <= 0 or > 65535)
+        if (!int.TryParse(text[(colon + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out int parsedPort)
+            || parsedPort is <= 0 or > 65535)
         {
             port = 0;
             return false;
         }
 
-        return address.Length > 0;
+        address = candidate;
+        port = parsedPort;
+        return true;
     }
 }

@@ -50,14 +50,22 @@ public sealed class PassiveUdpRttTests
     [Fact]
     public void Ответ_позже_окна_становится_неотвеченной_отправкой()
     {
-        var tracker = new PassiveUdpRttTracker(clock: () => T0.AddSeconds(5));
+        var tracker = new PassiveUdpRttTracker(clock: () => T0.AddSeconds(10));
 
         tracker.Observe(Send(at: T0));
         tracker.Observe(Reply(at: T0.AddSeconds(3)));
 
         // Замеров нет: три секунды — это не задержка пути, а потерянный ответ.
-        Assert.False(tracker.TryGet(4242, Peer, Port, out PassiveUdpRttSummary summary));
-        Assert.Equal(0, summary.Samples);
+        Assert.False(tracker.TryGet(4242, Peer, Port, out _));
+
+        // И это не молчание: поздний ответ засчитан как отправка без ответа, а следующая пара — замер.
+        tracker.Observe(Send(at: T0.AddSeconds(6)));
+        tracker.Observe(Reply(at: T0.AddSeconds(6).AddMilliseconds(25)));
+
+        Assert.True(tracker.TryGet(4242, Peer, Port, out PassiveUdpRttSummary summary));
+        Assert.Equal(1, summary.Samples);
+        Assert.Equal(25.0, summary.MedianMs, 3);
+        Assert.Equal(1, summary.UnansweredSends);
     }
 
     [Fact]
