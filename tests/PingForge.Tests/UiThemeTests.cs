@@ -209,12 +209,22 @@ public sealed class UiThemeTests
         // исключением не был: подсказка внизу карточки красилась литералом #61748F и давала
         // 3,8:1 на своей подложке — ниже требования AA (4,5:1). Поэтому цвета текста проверяются
         // во всех файлах без исключений: либо кисть темы, либо именованный цвет в App.xaml.
+        //
+        // Ловятся оба вида литерала: шестнадцатеричный и системное имя. Второй вид проскакивал
+        // мимо проверки — подсказка фильтров в «Журнале» красилась Foreground="Orange", цветом,
+        // которого нет ни в теме, ни в расчёте контраста. Transparent — не цвет текста, а его
+        // отсутствие, поэтому он единственное исключение.
         var inline = new List<string>();
         foreach (string file in XamlFiles.Where(name => name != "checked-App.xaml"))
         {
             string xaml = Regex.Replace(ReadChecked(file), "<!--.*?-->", string.Empty, RegexOptions.Singleline);
-            foreach (Match match in Regex.Matches(xaml, "Foreground=\"(#[0-9A-Fa-f]{6,8})\""))
+            foreach (Match match in Regex.Matches(xaml, "Foreground=\"(#[0-9A-Fa-f]{6,8}|[A-Za-z]+)\""))
             {
+                if (match.Groups[1].Value == "Transparent")
+                {
+                    continue;
+                }
+
                 inline.Add($"{file}: {match.Groups[1].Value}");
             }
         }

@@ -421,6 +421,11 @@ setTimeout(async () => {
     `блок: ${!!d.getElementById('journal-files')}, примеров: ${snippets.length}, не хватает: ` +
       snippetNames.filter(name => !html.includes(name)).join(', '));
 
+  // Имена для экранного диктора — обещание программы, и макет обязан говорить о нём прямо.
+  const accessibleProse = 'у каждого поля ввода и списка есть имя для экранного диктора';
+  check('в макете сказано про имена для экранного диктора', html.includes(accessibleProse),
+    `нет фразы «${accessibleProse}»`);
+
   console.log(`Файл: ${path.resolve(FILE)} (${(html.length / 1024).toFixed(0)} КБ)`);
   console.log('порядок разделов:', ids.join(' → '));
   console.log(`=== пройдено ${ok.length}, проблем ${problems.length} ===`);

@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using PingForge.App.ViewModels;
 
@@ -28,7 +29,10 @@ public partial class GamesView : UserControl
 
         // Маленький диалог ввода названия: без него переименование своей игры было бы
         // обещано в модели, но недоступно человеку в окне.
+        // Имя для экранного диктора: у поля ввода его нет из содержимого, и без него диктор
+        // скажет просто «поле редактирования».
         var box = new TextBox { Text = card.TitleRu, MinWidth = 260, Margin = new Thickness(0, 8, 0, 12) };
+        AutomationProperties.SetName(box, "Новое название своей игры");
         var panel = new StackPanel { Margin = new Thickness(16) };
         panel.Children.Add(new TextBlock { Text = "Новое название своей игры:", TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(box);

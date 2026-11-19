@@ -250,7 +250,7 @@
 
         <TextBlock Style="{StaticResource StatLabel}" Text="ПОИСК" Margin="0,0,0,6" />
         <StackPanel Orientation="Horizontal">
-          <TextBox Width="300" VerticalContentAlignment="Center"
+          <TextBox AutomationProperties.Name="Поиск по твикам" Width="300" VerticalContentAlignment="Center"
                    ToolTip="Название, описание, код или назначение твика"
                    Text="{Binding SearchRu, UpdateSourceTrigger=PropertyChanged}" />
           <Button Style="{StaticResource GhostButton}" Content="Очистить" Margin="8,0,0,0"
@@ -298,7 +298,10 @@
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
 
+              <!-- Переключатель без подписи: рядом стоит название твика, и это же название —
+                   имя для экранного диктора. Состояние «включён/выключен» диктор читает сам. -->
               <CheckBox Grid.Column="0" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Top" Margin="0,3,12,0"
+                        AutomationProperties.Name="{Binding TitleRu}"
                         IsChecked="{Binding IsOn, Mode=TwoWay}" />
 
               <StackPanel Grid.Column="1">
