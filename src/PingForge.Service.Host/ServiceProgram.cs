@@ -348,10 +348,12 @@ public static class ServiceProgram
     /// <summary>Краткая справка: что это за программа и как её запускать.</summary>
     public static string HelpRu() =>
         $"""
-        Custom Tweak By Doxaiz — служба PingForge.
+        Custom Tweak By Doxaiz — служба программы.
 
         Это служебная часть программы: она меняет настройки Windows от имени LocalSystem и принимает
-        команды от окна программы по каналу {EngineProtocol.PipeName}.
+        команды от окна программы по каналу {EngineProtocol.PipeName}. Отдельной программы нет: техническое
+        имя службы и её папки данных — PingForge, оно осталось от первых версий и не меняется, чтобы
+        обновление не потеряло журнал изменений и снапшоты.
 
         Запуск диспетчером служб (обычный режим):
             sc create {ServiceName} binPath= "C:\путь\PingForge.Service.exe" start= auto

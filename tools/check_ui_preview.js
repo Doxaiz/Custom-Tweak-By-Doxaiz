@@ -450,6 +450,18 @@ setTimeout(async () => {
   check('в макете сказано про имена для экранного диктора', html.includes(accessibleProse),
     `нет фразы «${accessibleProse}»`);
 
+  // Одна программа: макет не должен выдавать за отдельный продукт ни «Lite», ни «Pro»,
+  // иначе человек читает страницу как две программы и ждёт вторую.
+  const oneProgram = 'Программа одна —';
+  const liteHitsInPage = (html.match(/PingForge\s+Lite/g) || []).length;
+  check('в макете сказано, что программа одна, а не две',
+    html.includes(oneProgram) && html.includes('второй программы нет') && liteHitsInPage === 0,
+    `фраза «${oneProgram}»: ${html.includes(oneProgram)}, ` +
+      `«второй программы нет»: ${html.includes('второй программы нет')}, «PingForge Lite»: ${liteHitsInPage}`);
+  check('готовность подписана как готовность программы, без второго имени',
+    html.includes('Готовность программы') && !/Готовность\s+PingForge/.test(html),
+    `подпись «Готовность программы»: ${html.includes('Готовность программы')}`);
+
   console.log(`Файл: ${path.resolve(FILE)} (${(html.length / 1024).toFixed(0)} КБ)`);
   console.log('порядок разделов:', ids.join(' → '));
   console.log(`=== пройдено ${ok.length}, проблем ${problems.length} ===`);
