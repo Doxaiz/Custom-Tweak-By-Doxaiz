@@ -100,7 +100,20 @@ jobs:
 
       - name: Витрины — перерисовать
         run: |
-          python tools/render_ui_preview.py docs/catalog.json docs/pingforge-ui-preview.html
+          # Число автотестов берём из журнала прогона: вписанная руками цифра врёт через месяц.
+          $tests = 0
+          $trx = Get-ChildItem test-results -Filter *.trx -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($trx) {
+            [xml]$doc = Get-Content $trx.FullName -Raw
+            $tests = [int]$doc.TestRun.ResultSummary.Counters.total
+          }
+          if ($tests -gt 0) {
+            Write-Host "Автотестов из журнала прогона: $tests"
+            python tools/render_ui_preview.py docs/catalog.json docs/pingforge-ui-preview.html --tests $tests
+          } else {
+            Write-Host "Журнала тестов нет: макет честно скажет, что числа нет"
+            python tools/render_ui_preview.py docs/catalog.json docs/pingforge-ui-preview.html
+          }
           python tools/render_app_site.py docs/catalog.json docs/custom-tweak-by-doxaiz.html
         shell: pwsh
 
