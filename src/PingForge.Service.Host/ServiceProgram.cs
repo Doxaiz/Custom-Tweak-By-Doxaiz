@@ -189,11 +189,19 @@ public static class ServiceProgram
         // UDP-собеседники игры: таблица соединений удалённую сторону у UDP не знает, поэтому
         // наблюдение идёт из событий сетевого стека Windows (ETW, только чтение). Сбой наблюдения
         // не роняет службу: без него UDP-игры просто не находятся, как и до этой части.
-        using var udpPeers = new EtwUdpPeerListener(Log);
+        // Пассивная задержка живого UDP-потока: пары «отправка → ответ» из тех же событий.
+        // Пока пар нет — замер идёт пробами, и программа говорит об этом прямо.
+        var udpRtt = new PassiveUdpRttTracker();
+        using var udpPeers = new EtwUdpPeerListener(Log, onObservation: observation =>
+        {
+            udpRtt.Observe(observation);
+        });
         udpPeers.Start();
         Log(udpPeers.IsRunning
             ? "UDP-собеседники: наблюдение идёт, служба увидит UDP-поток игры."
             : $"UDP-собеседники: наблюдение не идёт — {udpPeers.ProblemRu ?? "причина не названа"}. Остальное работает.");
+        Log("Живой UDP-поток: задержка считается по парам «отправка → ответ» из этих событий; " +
+            "пока пар нет — замер идёт пробами, и способ замера называется рядом с числом.");
 
         // IPv6 читаем: у Minecraft Bedrock и IPv6-only серверов поток иначе невидим вовсе. Маршрут по IPv6
         // продукт не ставит, поэтому такие потоки попадают в отчёт с пояснением, а не в оптимизацию.
@@ -209,7 +217,8 @@ public static class ServiceProgram
             icmp,
             new SocketTcpHandshakeProbe(),
             new SystemHostResolver(),
-            new HopTracerouteEngine(icmp));
+            new HopTracerouteEngine(icmp),
+            liveFlowProvider: new UdpObservationsLiveFlowRttProvider(udpRtt));
         var measurement = new RouteProbeMeasurementSource(probes, samplesPerWindow: 12);
 
         // ── Сервер маршрутизации (задача B) ──────────────────────────────────────────────────

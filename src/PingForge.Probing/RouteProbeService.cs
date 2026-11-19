@@ -147,15 +147,41 @@ public sealed class RouteProbeService : IRouteProbe
             : ProbeMethodUsed.LiveTcpEstats;
 
         double stability = StatisticalMetricsCalculator.ComputeStability(0, sample.JitterMs, 0);
-        string note = $"Измерение живого потока игры: {StatisticalMetricsCalculator.Describe(method)}. " +
-                      $"Ретрансмиссий за окно наблюдения: {sample.Retransmissions}.";
 
-        // min/max/median/p95 по живому потоку недоступны: окно TCP_INFO даёт усреднённые значения.
-        // Честно оставляем их null вместо подстановки среднего.
+        // У UDP ретрансмиссий не бывает вовсе: протокол не подтверждает доставку. Писать «ретрансмиссий: 0»
+        // значило бы выдавать отсутствие механизма за отсутствие потерь.
+        string tail = method == ProbeMethodUsed.LiveUdpPassiveFlow
+            ? "Ретрансмиссий в UDP не бывает: протокол не подтверждает доставку."
+            : $"Ретрансмиссий за окно наблюдения: {sample.Retransmissions}.";
+
+        if (method == ProbeMethodUsed.LiveUdpPassiveFlow && sample.UnansweredSends > 0)
+        {
+            tail += $" Отправок без ответа за окно: {sample.UnansweredSends} — это незакрытые пары наблюдения," +
+                    " а не измеренные потери в пути.";
+        }
+
+        // Центральное значение нужно всему, что стоит дальше по цепочке: без медианы замер считался бы
+        // неизмеренным, хотя числа есть. Медиана есть только там, где провайдер видел отдельные замеры;
+        // иначе честно берём среднее и говорим об этом.
+        bool medianKnown = sample.RttMedianMs.HasValue && sample.RttMedianMs.Value > 0;
+        double? median = medianKnown
+            ? Math.Round(sample.RttMedianMs!.Value, 2)
+            : Math.Round(sample.RttAverageMs, 2);
+
+        if (!medianKnown)
+        {
+            tail += " Медиана по отдельным замерам недоступна: в отчёте средняя задержка за окно.";
+        }
+
+        string note = $"Измерение живого потока игры: {StatisticalMetricsCalculator.Describe(method)}. " + tail;
+
+        // min/max/p95 по живому потоку недоступны: провайдер отдаёт одно число за окно наблюдения.
+        // Честно оставляем их null вместо подстановки среднего; медиана есть только тогда, когда провайдер
+        // действительно видел отдельные замеры (пассивный UDP-замер видит).
         return new ProbeStatistics(
             endpoint, routeLabel, true, method, ProbeFailureCause.None, note,
             sample.SamplesAvailable, sample.SamplesAvailable,
-            null, Math.Round(sample.RttAverageMs, 2), null, null, null, null,
+            null, Math.Round(sample.RttAverageMs, 2), null, median, null, null,
             Math.Round(sample.JitterMs, 2), 0.0, 0, Math.Round(stability, 1), false,
             Array.Empty<RouteHopMetric>(), DateTime.UtcNow);
     }
