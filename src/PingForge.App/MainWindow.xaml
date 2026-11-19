@@ -59,8 +59,11 @@
                  Проверка «ничего не выходит за правый край» поймала это на ширине 860. -->
             <WrapPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
                        VerticalAlignment="Center" Margin="12,0,0,0">
+              <!-- Строка об игре сокращается многоточием на 300 точках, поэтому полный текст
+                   доступен в подсказке: иначе «Игра: Fortnite — …» не прочитать до конца. -->
               <TextBlock Text="{Binding GameLineRu}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                         MaxWidth="300" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,12,0" />
+                         MaxWidth="300" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,12,0"
+                         ToolTip="{Binding GameLineRu}" />
               <Border Style="{StaticResource Pill}" VerticalAlignment="Center" Margin="0,0,10,0"
                       ToolTip="{Binding RightsNoteRu}">
                 <StackPanel Orientation="Horizontal">
