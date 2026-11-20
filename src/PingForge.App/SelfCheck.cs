@@ -1154,10 +1154,16 @@ internal static class SelfCheck
         try
         {
             using var client = new TcpClient();
-            if (!client.ConnectAsync(Host, Port, TimeSpan.FromSeconds(5)).GetAwaiter().GetResult())
+            using var connectTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            try
             {
-                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. Соединение с {Host}:{Port} не установилось — " +
-                    "проверять статистику не на чем.");
+                client.ConnectAsync(Host, Port, connectTimeout.Token).GetAwaiter().GetResult();
+            }
+            catch (Exception ex) when (ex is SocketException or OperationCanceledException)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. Соединение с {Host}:{Port} не установилось " +
+                    $"({ex.GetType().Name}) — проверять статистику не на чем.");
                 return;
             }
 
