@@ -1217,7 +1217,11 @@ internal static class SelfCheck
 
                         while (stream.DataAvailable)
                         {
+                            // Читаем ровно то, что уже пришло: ждать полного буфера здесь нельзя,
+                            // иначе ответ сервера повиснет и окно приёма переполнится.
+#pragma warning disable CA2022
                             stream.Read(drain, 0, drain.Length);
+#pragma warning restore CA2022
                         }
                     }
                     catch (IOException)

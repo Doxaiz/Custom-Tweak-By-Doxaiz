@@ -222,7 +222,8 @@ public sealed class ServiceEngineTests : IDisposable
         LiveEngineOperations ops = Build(realtime: optimizer);
         EngineOperationResult result = await ops.StatusAsync();
 
-        using JsonDocument document = JsonDocument.Parse(result.DataJson);
+        Assert.False(string.IsNullOrEmpty(result.DataJson));
+        using JsonDocument document = JsonDocument.Parse(result.DataJson!);
         JsonElement root = document.RootElement;
 
         Assert.Equal(40.0, root.GetProperty("improvementMs").GetDouble(), 3);
@@ -255,7 +256,8 @@ public sealed class ServiceEngineTests : IDisposable
         LiveEngineOperations ops = Build(realtime: optimizer);
         EngineOperationResult result = await ops.StatusAsync();
 
-        using JsonDocument document = JsonDocument.Parse(result.DataJson);
+        Assert.False(string.IsNullOrEmpty(result.DataJson));
+        using JsonDocument document = JsonDocument.Parse(result.DataJson!);
         JsonElement root = document.RootElement;
 
         // Поле, которого нет, окно читает как «не измерено»: ноль в провод не попадает вовсе.

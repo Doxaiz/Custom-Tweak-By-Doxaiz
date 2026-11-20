@@ -29,6 +29,11 @@ public enum TcpProbeStatus
 public sealed record TcpProbeReply(TcpProbeStatus Status, double RoundTripMs);
 
 /// <summary>Провайдер живого потока игры: метрики берутся из уже существующего соединения.</summary>
+/// <param name="MethodName">Имя способа, которым получены числа: по нему видно, кто ответил.</param>
+/// <param name="RttAverageMs">Средняя задержка окна, мс.</param>
+/// <param name="JitterMs">Джиттер окна: у UDP — разброс по отдельным замерам, у TCP — сглаженный RttVar.</param>
+/// <param name="Retransmissions">Повторные пакеты из того же снимка соединения (у UDP — не применимо).</param>
+/// <param name="SamplesAvailable">Сколько измерений стоит за числом.</param>
 /// <param name="UnansweredSends">Сколько отправок осталось без ответа за окно наблюдения (у UDP — незакрытые пары).</param>
 /// <param name="RttMedianMs">Медиана отдельных замеров, если провайдер её знает.
 /// У пассивного UDP-замера она есть; у TCP-статистики соединения — нет, там только среднее.</param>
