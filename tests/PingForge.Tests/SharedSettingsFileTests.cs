@@ -113,7 +113,7 @@ public sealed class SharedSettingsFileTests : IDisposable
             return root;
         });
 
-        // Окно перезаписывает файл ЦЕЛИКОМ своим объектом настроек — так оно и работает в бою.
+        // Так окно сохраняет настройки в бою: своим объектом настроек, через тот же писатель.
         var store = new JsonFileSettingsStore(path, NewWriter(path));
         store.Save(new AppSettings("economy", GamePaths: new Dictionary<string, string> { ["dota2.exe"] = @"C:\Games\dota2.exe" }));
 
@@ -121,9 +121,11 @@ public sealed class SharedSettingsFileTests : IDisposable
         Assert.Equal("economy", document.RootElement.GetProperty("PerfProfile").GetString());
         Assert.True(document.RootElement.TryGetProperty("GamePaths", out _));
 
-        // Чужое поле, которого окно не знает, при такой записи теряется — это честно и видно:
-        // окно владеет файлом настроек, служба пишет в него только свой ключ и не перезаписывает файл.
-        Assert.False(document.RootElement.TryGetProperty("СлужебноеПоле", out _));
+        // Чужое поле, которого окно не знает, остаётся: файл общий, и сохранение из окна сливает
+        // свои ключи в прочитанное, а не пишет снимок целиком. Раньше поле службы пропадало
+        // при каждом нажатии «Сохранить», и узнать об этом было негде.
+        Assert.True(document.RootElement.TryGetProperty("СлужебноеПоле", out JsonElement foreign));
+        Assert.Equal("значение службы", foreign.GetString());
     }
 
     [Fact]

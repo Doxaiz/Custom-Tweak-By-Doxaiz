@@ -1,9 +1,21 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using PingForge.App.ViewModels;
 using PingForge.App.Views;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using PingForge.Core.Models;
+using PingForge.Core.Layout;
+using PingForge.Core.Ui;
+using PingForge.Network;
+using PingForge.Network.Windows;
+using PingForge.Orchestration.Realtime;
+using PingForge.Probing;
+using PingForge.Routing;
 
 namespace PingForge.App;
 
@@ -57,9 +69,25 @@ internal static class SelfCheck
         CheckLauncherAndSetup(app, problems);
         CheckCustomGames(app, problems);
         CheckRoutingServers(app, problems);
+        CheckAnalysisIntegration(app, problems);
+        CheckUpdateChecker(app, problems);
+        CheckNetworkSelfCheck(app, problems);
+        CheckServerPath(app, problems);
+        CheckSessionHistory(app, problems);
+        CheckGameRegionsAndDns(app, problems);
+        CheckSupportPackage(app, problems);
         CheckLayout(app, problems);
+        CheckNothingIsCutOff(app, problems);
+        CheckTextIsWhole(app, problems);
+        CheckAccessibleNames(app, problems);
+        CheckContrastNote(app, problems);
         CheckParagraphWrapping(app, problems);
         CheckTray(app, problems);
+        CheckLiveTcpFlow(problems);
+        CheckUnmeasuredNumbers(problems);
+        CheckLiveNetwork(problems);
+        CheckLiveTcpEstats(problems);
+        CheckLiveTcpEstatsForeignProcess(problems);
         CheckService(problems);
 
         // Если окно построилось, но раскладка или привязки плохи — это тот же отказ, что и «окно не собралось»:
@@ -69,7 +97,14 @@ internal static class SelfCheck
             || problem.Contains("потеряла данные", StringComparison.Ordinal)
             || problem.Contains("нет надписей", StringComparison.Ordinal)
             || problem.Contains("нет карточки ответа", StringComparison.Ordinal)
-            || problem.Contains("не переносятся", StringComparison.Ordinal)))
+            || problem.Contains("текст обрезан в рамке", StringComparison.Ordinal)
+            || problem.Contains("без имени для диктора", StringComparison.Ordinal)
+            || problem.Contains("многоточие без подсказки", StringComparison.Ordinal)
+            || problem.Contains("подпись о контрасте", StringComparison.Ordinal)
+            || problem.Contains("выходят за край окна", StringComparison.Ordinal)
+            || problem.Contains("не переносятся", StringComparison.Ordinal)
+            || problem.Contains("история сессий", StringComparison.Ordinal)
+            || problem.Contains("пакет для поддержки", StringComparison.Ordinal)))
         {
             windowCode = WindowFailed;
         }
@@ -84,7 +119,8 @@ internal static class SelfCheck
         {
             int tweaks = app.Catalog.GetAllTweaks().Count;
             int presets = app.Catalog.GetByPreset(Core.Models.TweakProfilePreset.LowLatencyGaming).Count;
-            StartupLog.Note($"Каталог твиков: {tweaks} штук, в пресете «низкий пинг» {presets}");
+            StartupLog.Note($"Каталог твиков: {tweaks} {TweakOrdering.Plural(tweaks, "твик", "твика", "твиков")}, " +
+                $"в пресете «низкий пинг» — {presets}");
 
             if (tweaks < 47)
             {
@@ -404,6 +440,1177 @@ internal static class SelfCheck
     }
 
     /// <summary>
+    /// Задача F: анализ подключён к продукту. Проверяется то, что видит человек: график сети
+    /// в «Оптимизации» (с честной надписью «данных пока нет» до первого замера), карточка
+    /// «Задержка ввода» в «Твиках» и блок «Проверка настроек» в «Настройках».
+    ///
+    /// Модель графика прогоняется по-настоящему: серия с разрывом обязана превратиться в отрезки
+    /// линий в разметке (Polyline), а точка без измерения — остаться разрывом, а не нулём.
+    /// </summary>
+    private static void CheckAnalysisIntegration(App app, List<string> problems)
+    {
+        try
+        {
+            // ── График сети в «Оптимизации» ────────────────────────────────────────────────
+            var chart = app.MainScreen.Chart;
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "ChartCard") is null)
+                    {
+                        problems.Add("график сети: нет карточки «График сети» в разделе «Оптимизация»");
+                    }
+
+                    if (!HasText(root, "График сети") || !HasText(root, "Данных пока нет"))
+                    {
+                        problems.Add("график сети: нет честной надписи «данных пока нет» — пустой график без объяснения");
+                    }
+
+                    if (!HasText(root, "1 минута") || !HasText(root, "15 минут"))
+                    {
+                        problems.Add("график сети: нет переключателя окна 1/5/15 минут");
+                    }
+
+                    if (FindNamed<FrameworkElement>(root, "InputLatencyBlock") is null || !HasText(root, "Проверить задержку ввода"))
+                    {
+                        problems.Add("задержка ввода: нет карточки «Задержка ввода» с кнопкой проверки в разделе «Твики»");
+                    }
+
+                    if (FindNamed<FrameworkElement>(root, "SettingsCheckBlock") is null || !HasText(root, "Проверить настройки"))
+                    {
+                        problems.Add("проверка настроек: нет карточки «Проверка настроек» в разделе «Настройки»");
+                    }
+
+                    // Живая прогонка модели графика: серия с разрывом → линии в разметке.
+                    DateTimeOffset now = DateTimeOffset.Now;
+                    chart.ReceiveSamples(
+                    [
+                        new PingForge.Analysis.Charting.ChartSample(now.AddSeconds(-6), RttAvgMs: 40, JitterMadMs: 1.5, PacketLossPercent: 0),
+                        PingForge.Analysis.Charting.ChartSample.Empty(now.AddSeconds(-4)),
+                        new PingForge.Analysis.Charting.ChartSample(now.AddSeconds(-2), RttAvgMs: 46, JitterMadMs: 2, PacketLossPercent: 0.5),
+                    ]);
+                    chart.IsWindow5 = true;
+                    root.UpdateLayout();
+
+                    if (!chart.HasData || chart.RttPanel.IsEmpty || chart.RttPanel.Segments.Count < 1)
+                    {
+                        problems.Add("график сети: серия с измерениями не построилась в линии");
+                    }
+
+                    int lines = CountPolylines(root);
+                    if (lines < 3)
+                    {
+                        problems.Add($"график сети: в разметке {lines} линий, а панели (задержка, джиттер, потери) — три");
+                    }
+
+                    // Разрыв обязан остаться разрывом: две измеренные точки с пустой между ними —
+                    // это два отрезка у ряда RTT (или один, если точки соединились в обход пустой,
+                    // что было бы ошибкой), но никак не три подряд заполненных.
+                    var rttSeries = PingForge.Analysis.Charting.NetworkChartBuilder
+                        .Build(new[]
+                        {
+                            new PingForge.Analysis.Charting.ChartSample(now.AddSeconds(-6), RttAvgMs: 40),
+                            PingForge.Analysis.Charting.ChartSample.Empty(now.AddSeconds(-4)),
+                            new PingForge.Analysis.Charting.ChartSample(now.AddSeconds(-2), RttAvgMs: 46),
+                        }, TimeSpan.FromMinutes(5))
+                        .Series.Single(s => s.Indicator == PingForge.Analysis.Charting.ChartIndicator.RttAvgMs);
+                    if (rttSeries.Points.Any(p => !p.IsMeasured && p.Value is not null))
+                    {
+                        problems.Add("график сети: пустая точка превратилась в число — нарушено правило «нет измерения — нет нуля»");
+                    }
+                }
+            }
+
+            // ── Карточка задержки ввода: модель и фильтр ───────────────────────────────────
+            if (app.Tweaks.InputLatency is null)
+            {
+                problems.Add("задержка ввода: карточка не прикреплена к разделу «Твики»");
+                StartupLog.Note("ЗАДЕРЖКА ВВОДА: НЕ работает — карточка не прикреплена");
+            }
+            else
+            {
+                int allRows = app.Tweaks.Rows.Count;
+                app.Tweaks.ShowOnlyCodes(["MOUSE_ACCEL_SPEED", "KEYBOARD_FILTERKEYS_OFF"]);
+                bool filtered = app.Tweaks.IsFiltered
+                    && app.Tweaks.VisibleRows.Count < allRows
+                    && app.Tweaks.VisibleRows.All(row => row.Code is "MOUSE_ACCEL_SPEED" or "KEYBOARD_FILTERKEYS_OFF");
+                app.Tweaks.ClearFilter();
+                bool restored = !app.Tweaks.IsFiltered && app.Tweaks.VisibleRows.Count == allRows;
+
+                if (!filtered || !restored)
+                {
+                    problems.Add("задержка ввода: фильтр «показать связанные твики» не отбирает и не возвращает список");
+                    StartupLog.Note("ЗАДЕРЖКА ВВОДА: НЕ работает — фильтр связанных твиков сломан");
+                }
+                else
+                {
+                    StartupLog.Note("ЗАДЕРЖКА ВВОДА: карточка в «Твиках» есть, фильтр связанных твиков работает");
+                }
+            }
+
+            // ── Проверка настроек: модель ──────────────────────────────────────────────────
+            if (app.Settings.Check is null)
+            {
+                problems.Add("проверка настроек: блок не собран в разделе «Настройки»");
+                StartupLog.Note("ПРОВЕРКА НАСТРОЕК: НЕ работает — модель блока не собрана");
+            }
+            else
+            {
+                // До запуска проверки статус обязан говорить «ещё не запускалась», а не «всё хорошо».
+                bool honestIdle = app.Settings.Check.StatusRu.Contains("ещё не запускалась", StringComparison.Ordinal);
+                if (!honestIdle)
+                {
+                    problems.Add("проверка настроек: до запуска статус не говорит честное «ещё не запускалась»");
+                }
+
+                StartupLog.Note(honestIdle
+                    ? "ПРОВЕРКА НАСТРОЕК: блок в «Настройках» есть, честный статус до запуска на месте"
+                    : "ПРОВЕРКА НАСТРОЕК: НЕ работает — статус до запуска нечестный");
+            }
+
+            StartupLog.Note($"ГРАФИК СЕТИ: карточка построена, линий в разметке: {(app.Shell?.Content is FrameworkElement r ? CountPolylines(r) : 0)}, " +
+                "источник данных — только замеры живой оптимизации (собственных зондов у графика нет)");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"анализ (задача F): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"АНАЛИЗ (ЗАДАЧА F): НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Задача I: проверка обновлений в разделе «О программе». Что обязано быть видно человеку
+    /// и что самопроверка может доказать без сети: карточка и кнопка на месте, до нажатия статус
+    /// честно говорит «ещё не проверяли» (значит, в фоне запросов не было), кнопка страницы релиза
+    /// до проверки не предлагается. Сравнение версий и разбор ответа GitHub прогоняются на месте:
+    /// «v0.4.1» старше «0.5.0» быть не должно, а мусорный тег обязан отклоняться.
+    ///
+    /// Настоящий запрос к GitHub самопроверка не делает: проверка обновлений — действие человека
+    /// по кнопке, а не самодеятельность программы. Нажатие кнопки на живой Windows проверяет
+    /// сценарий tools/ui-walkthrough.ps1.
+    /// </summary>
+    private static void CheckUpdateChecker(App app, List<string> problems)
+    {
+        try
+        {
+            UpdateCheckViewModel updates = app.MainScreen.Updates;
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "UpdateBlock") is null
+                        || FindNamed<FrameworkElement>(root, "CheckUpdatesButton") is null
+                        || !HasText(root, "Проверить обновления"))
+                    {
+                        problems.Add("обновления: нет карточки «Обновления» с кнопкой «Проверить обновления» в разделе «О программе»");
+                    }
+
+                    if (!HasText(root, "Обновления ещё не проверяли"))
+                    {
+                        problems.Add("обновления: до нажатия кнопки статус не говорит честное «ещё не проверяли»");
+                    }
+
+                    if (!HasText(root, updates.CurrentVersionLineRu))
+                    {
+                        problems.Add("обновления: в карточке не видна текущая версия — сравнивать человеку не с чем");
+                    }
+
+                    if (FindNamed<FrameworkElement>(root, "OpenReleaseButton") is { Visibility: not Visibility.Collapsed })
+                    {
+                        problems.Add("обновления: кнопка «Открыть страницу релиза» видна до проверки — открывать пока нечего");
+                    }
+                }
+            }
+
+            // Главное правило задачи: до нажатия кнопки программа никуда не ходит. Модель только что
+            // построена вместе с окном и обязана стоять в исходном состоянии.
+            if (updates.State != UpdateCheckState.NotChecked || updates.HasReleasePage || updates.ReleasePageUrl is not null)
+            {
+                problems.Add("обновления: проверка началась без нажатия кнопки — фоновых запросов быть не должно");
+                StartupLog.Note("ОБНОВЛЕНИЯ: НЕ работает — проверка стартовала сама, без кнопки");
+            }
+
+            // Сравнение версий и разбор ответа — чистая логика, ей сеть не нужна.
+            bool versionsOk =
+                ReleaseTagVersion.TryParse("v0.4.1", out Version older)
+                && ReleaseTagVersion.TryParse("0.5.0", out Version newer)
+                && older.CompareTo(newer) < 0
+                && newer.CompareTo(older) > 0
+                && !ReleaseTagVersion.TryParse("nightly-build", out _)
+                && !ReleaseTagVersion.TryParse(null, out _);
+
+            var info = GitHubReleaseInfo.Parse(
+                "{\"tag_name\":\"v9.9.9\",\"html_url\":\"https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/tag/v9.9.9\"," +
+                "\"assets\":[{\"name\":\"SHA256SUMS.txt\",\"browser_download_url\":\"https://github.com/Doxaiz/x\"}]}");
+            var sums = Sha256SumsFile.Parse(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  CustomTweakByDoxaiz.exe\r\nмусорная строка");
+            bool parseOk = info.TagName == "v9.9.9" && info.FindChecksums() is not null
+                && sums.Count == 1 && sums[0].FileName == "CustomTweakByDoxaiz.exe";
+
+            if (!versionsOk || !parseOk)
+            {
+                problems.Add("обновления: сравнение версий или разбор ответа GitHub работает неверно");
+                StartupLog.Note($"ОБНОВЛЕНИЯ: НЕ работает — версии: {(versionsOk ? "да" : "нет")}, разбор: {(parseOk ? "да" : "нет")}");
+                return;
+            }
+
+            StartupLog.Note("ОБНОВЛЕНИЯ: кнопка в «О программе» на месте, до нажатия запросов нет " +
+                "(статус «ещё не проверяли»), кнопка страницы релиза до проверки скрыта, " +
+                "сравнение версий и разбор ответа GitHub работают");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"обновления (задача I): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ОБНОВЛЕНИЯ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Задача G: «Проверить сеть» рядом с главной кнопкой. Что доказывается здесь без живой сети:
+    /// карточка и кнопка в окне на месте, до нажатия статус — «ещё не запускалась» (значит, ни
+    /// одного замера при старте), кнопки «Применить рекомендованное» нет, пока рекомендовать нечего.
+    /// Оценщики пунктов прогоняются прямыми вызовами: двойной NAT по двум частным хопам обязан
+    /// находиться, провод — давать «не применимо», рост задержки под нагрузкой — считаться из
+    /// измеренных медиан, а не из воздуха.
+    ///
+    /// Сам прогон проверки по кнопке (включая согласие на bufferbloat) на живой Windows делает
+    /// сценарий tools/ui-walkthrough.ps1: самопроверка кнопку не нажимает — она стартовый дым, а не сеть.
+    /// </summary>
+    private static void CheckNetworkSelfCheck(App app, List<string> problems)
+    {
+        try
+        {
+            NetworkCheckViewModel check = app.MainScreen.NetworkCheck;
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "NetworkCheckCard") is null
+                        || FindNamed<FrameworkElement>(root, "CheckNetworkButton") is null
+                        || !HasText(root, "Проверить сеть"))
+                    {
+                        problems.Add("проверка сети: нет кнопки «Проверить сеть» или карточки результатов в разделе «Оптимизация»");
+                    }
+
+                    if (!HasText(root, "ещё не запускалась"))
+                    {
+                        problems.Add("проверка сети: до нажатия статус не говорит честное «ещё не запускалась»");
+                    }
+
+                    if (FindNamed<FrameworkElement>(root, "ApplyRecommendedButton") is { Visibility: not Visibility.Collapsed })
+                    {
+                        problems.Add("проверка сети: кнопка «Применить рекомендованное» видна без единой рекомендации");
+                    }
+                }
+            }
+
+            if (check.HasResult || check.Items.Count != 0 || check.HasRecommendations)
+            {
+                problems.Add("проверка сети: замеры или рекомендации появились без нажатия кнопки");
+                StartupLog.Note("ПРОВЕРКА СЕТИ: НЕ работает — результаты есть до запуска");
+            }
+
+            // Чистая логика пунктов: те же функции, что строят настоящий результат по кнопке.
+            bool natOk =
+                NetworkCheckEvaluators.EvaluateDoubleNat(
+                    ["192.168.1.50"], "192.168.1.1",
+                    [new RouteHopMetric(1, "192.168.1.1", 1, false), new RouteHopMetric(2, "10.0.0.1", 2, false)]).Status
+                    == NetworkCheckStatus.Attention
+                && NetworkCheckEvaluators.EvaluateDoubleNat(["85.140.1.2"], null, []).Status == NetworkCheckStatus.Ok
+                && NetworkCheckEvaluators.EvaluateDoubleNat(["192.168.1.50"], null, []).Status == NetworkCheckStatus.CannotCheck;
+
+            var wifiScan = WifiNetworksParser.Parse(
+                "SSID 1 : Home\n    BSSID 1 : aa:bb\n         Channel            : 6\nSSID 2 : Neigh\n    BSSID 1 : cc:dd\n         Channel            : 11\n");
+            bool wifiOk = wifiScan.NetworkCount == 2 && wifiScan.BssidsPerChannel.GetValueOrDefault(6) == 1
+                && NetworkCheckEvaluators.EvaluateWifi(false, null, null).Status == NetworkCheckStatus.NotApplicable;
+
+            var mtuOkResult = NetworkCheckEvaluators.EvaluateMtu(
+                new PathMtuDiscoveryResult(MtuDiscoveryOutcome.OptimalFound, 576, 1500, 1500, 1472, "подтверждено"),
+                1500, "якоря");
+            var bloatResult = NetworkCheckEvaluators.EvaluateBufferbloat(new BufferbloatResult(
+                BufferbloatOutcome.Measured, 20, 140, 50_000_000, 10, "пробы"));
+            bool evaluatorsOk = mtuOkResult.Status == NetworkCheckStatus.Ok
+                && bloatResult.Status == NetworkCheckStatus.Attention
+                && bloatResult.DetailRu.Contains("140", StringComparison.Ordinal)
+                && NetworkCheckEvaluators.EvaluateBackground(null, 0, null, null).Status == NetworkCheckStatus.CannotCheck;
+
+            if (!natOk || !wifiOk || !evaluatorsOk)
+            {
+                problems.Add("проверка сети: оценщики пунктов работают неверно (NAT, Wi-Fi или числа bufferbloat/MTU)");
+                StartupLog.Note($"ПРОВЕРКА СЕТИ: НЕ работает — NAT: {(natOk ? "да" : "нет")}, Wi-Fi: {(wifiOk ? "да" : "нет")}, оценщики: {(evaluatorsOk ? "да" : "нет")}");
+                return;
+            }
+
+            StartupLog.Note("ПРОВЕРКА СЕТИ: кнопка рядом с главной на месте, карточка результатов построена, " +
+                "до нажатия замеров нет (статус «ещё не запускалась»), кнопки применения без рекомендаций не видно, " +
+                "оценщики пунктов работают");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"проверка сети (задача G): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ПРОВЕРКА СЕТИ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Задача H: блок «Путь до сервера» в «Оптимизации». Что доказывается без живой игры:
+    /// блок и кнопка на месте, до нажатия трасса не строилась и в сеть не ушло ни одной пробы,
+    /// а разбор «где растёт задержка» честно разделяет первый шаг (дом) и путь дальше (провайдер),
+    /// подсказывая альтернативный маршрут. Анонимный хоп остаётся без чисел — «не отвечает».
+    ///
+    /// Саму трассу на живой Windows строит сценарий tools/ui-walkthrough.ps1: самопроверка
+    /// кнопку не нажимает — она стартовый дым, а не сеть.
+    /// </summary>
+    private static void CheckServerPath(App app, List<string> problems)
+    {
+        try
+        {
+            ServerPathViewModel path = app.MainScreen.ServerPath;
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "ServerPathCard") is null
+                        || FindNamed<FrameworkElement>(root, "ServerPathButton") is null
+                        || !HasText(root, "Путь до сервера")
+                        || !HasText(root, "Показать путь"))
+                    {
+                        problems.Add("путь до сервера: нет блока «Путь до сервера» или кнопки «Показать путь» в разделе «Оптимизация»");
+                    }
+                }
+            }
+
+            if (path.Hops.Count != 0 || path.HasResult || path.SentPackets != 0 || path.IsRunning)
+            {
+                problems.Add("путь до сервера: трасса началась без нажатия кнопки — при старте программа в сеть не ходит");
+                StartupLog.Note("ПУТЬ ДО СЕРВЕРА: НЕ работает — трасса запустилась сама");
+                return;
+            }
+
+            var home = new List<ServerPathProbeHop>
+            {
+                new(1, "192.168.1.1", 3, 3, new[] { 9.0, 10.0, 11.0 }),
+                new(2, "10.0.0.1", 3, 3, new[] { 10.0, 11.0, 12.0 }),
+            };
+            var provider = new List<ServerPathProbeHop>
+            {
+                new(1, "192.168.1.1", 3, 3, new[] { 2.0, 3.0, 2.0 }),
+                new(2, "10.0.0.1", 3, 3, new[] { 3.0, 4.0, 3.0 }),
+                new(3, "203.0.113.9", 3, 3, new[] { 42.0, 44.0, 43.0 }),
+            };
+            var silent = new List<ServerPathProbeHop>
+            {
+                new(1, null, 3, 0, Array.Empty<double>()),
+            };
+
+            string homeNote = ServerPathGrowth.DescribeRu(home);
+            string providerNote = ServerPathGrowth.DescribeRu(provider);
+            string silentNote = ServerPathGrowth.DescribeRu(silent);
+
+            bool homeOk = homeNote.Contains("домашней сети", StringComparison.Ordinal);
+            bool providerOk = providerNote.Contains("Сервер маршрутизации", StringComparison.Ordinal)
+                && providerNote.Contains("WARP", StringComparison.Ordinal)
+                && providerNote.Contains("/32", StringComparison.Ordinal);
+            bool silentOk = silent[0].AvgRttMs is null
+                && silent[0].P95RttMs is null
+                && silent[0].LossPercent is null
+                && ServerPathGrowth.Bottleneck(silent) is null
+                && silentNote.Contains("Ни один хоп не ответил", StringComparison.Ordinal);
+            bool idleOk = path.StatusRu.Contains("не строился", StringComparison.Ordinal);
+
+            if (!homeOk || !providerOk || !silentOk || !idleOk)
+            {
+                problems.Add("путь до сервера: разбор прироста задержки работает неверно (дом, провайдер или анонимный хоп)");
+                StartupLog.Note($"ПУТЬ ДО СЕРВЕРА: НЕ работает — дом: {(homeOk ? "да" : "нет")}, " +
+                    $"провайдер: {(providerOk ? "да" : "нет")}, анонимный: {(silentOk ? "да" : "нет")}, " +
+                    $"покой: {(idleOk ? "да" : "нет")}");
+                return;
+            }
+
+            StartupLog.Note("ПУТЬ ДО СЕРВЕРА: блок в «Оптимизации» на месте, до нажатия проб нет (0 пакетов), " +
+                "скачок на первом шаге называется домашней сетью, дальше — подсказывает альтернативный маршрут");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"путь до сервера (задача H): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ПУТЬ ДО СЕРВЕРА: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Регионы игр и DNS (задача D): у карточек «Игры» видно, где серверы игры и какие порты она
+    /// публикует; в «Твиках» есть карточка «DNS — это про вход, а не про пинг» со списком резолверов.
+    /// Проверяется без сети: данные — из GameRouteCatalog, а не из прогона. Поэтому «пинга до
+    /// региона» здесь и быть не может: у игр нет опубликованных адресов дата-центров.
+    /// </summary>
+    private static void CheckGameRegionsAndDns(App app, List<string> problems)
+    {
+        try
+        {
+            GameRegionsViewModel regions = app.Games.Regions;
+            DnsCardViewModel dns = app.Tweaks.Dns;
+
+            bool cardsOk = regions.Cards.Count == GameRouteCatalog.Targets.Count;
+            bool knownOk = regions.RegionsLineRu("cs2.exe").Contains("Европа", StringComparison.Ordinal)
+                && regions.RegionsLineRu("cs2.exe").Contains("матчмейкер", StringComparison.Ordinal);
+            bool unknownOk = regions.RegionsLineRu("игры-вне-справочника.exe").Contains("неизвестны", StringComparison.Ordinal)
+                && regions.PortsLineRu("игры-вне-справочника.exe").Contains("не публикуются", StringComparison.Ordinal);
+            bool dnsOk = dns.Resolvers.Count == GameRouteCatalog.FreeDnsRoutes.Count
+                && dns.ExplanationRu.Contains("не снижает пинг в матче", StringComparison.Ordinal)
+                && !dns.ExplanationRu.Contains("снизил пинг", StringComparison.Ordinal);
+            bool oneListOk = GameRegionsViewModel.BenchmarkCandidates.Count == GameRouteCatalog.FreeDnsRoutes.Count;
+
+            if (!cardsOk || !knownOk || !unknownOk || !dnsOk || !oneListOk)
+            {
+                problems.Add($"нет карточки регионов и DNS: карточки — {(cardsOk ? "да" : "нет")}, " +
+                    $"регионы CS2 — {(knownOk ? "да" : "нет")}, честное «неизвестно» — {(unknownOk ? "да" : "нет")}, " +
+                    $"DNS — {(dnsOk ? "да" : "нет")}, один список — {(oneListOk ? "да" : "нет")}");
+                StartupLog.Note("РЕГИОНЫ И DNS: НЕ работает — данные каталога не дошли до окна");
+                return;
+            }
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "GameRegionsCard") is null
+                        || FindNamed<FrameworkElement>(root, "DnsCard") is null
+                        || !HasText(root, GameRegionsViewModel.HeadingRu)
+                        || !HasText(root, "DNS — это про вход"))
+                    {
+                        problems.Add("нет карточки регионов и DNS: блока нет в разметке разделов «Игры» или «Твики»");
+                        StartupLog.Note("РЕГИОНЫ И DNS: НЕ работает — блок есть в модели, но не в окне");
+                        return;
+                    }
+                }
+            }
+
+            StartupLog.Note($"РЕГИОНЫ И DNS: карточек игр {regions.Cards.Count}, резолверов {dns.Resolvers.Count}, " +
+                "«пинга до региона» не обещаем — измеряется только выданный сервер");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"нет карточки регионов и DNS (задача D): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"РЕГИОНЫ И DNS: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Пакет для поддержки (задача Q): блок в «О программе» есть, и до нажатия он ничего не читает
+    /// и не пишет. Сборку здесь не делаем нарочно: самопроверка не имеет права оставлять архивы
+    /// на диске сборочной машины. Проверяется главное обещание — «само собой ничего не собирается».
+    /// </summary>
+    private static void CheckSupportPackage(App app, List<string> problems)
+    {
+        try
+        {
+            SupportPackageViewModel support = app.MainScreen.Support;
+
+            bool quietOk = !support.HasPreview && !support.HasBuiltPackage && !support.CanBuild;
+
+            if (!quietOk)
+            {
+                problems.Add("пакет для поддержки собрался сам, без нажатия кнопки");
+                StartupLog.Note("ПАКЕТ ДЛЯ ПОДДЕРЖКИ: НЕ работает — список появился до нажатия");
+                return;
+            }
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<FrameworkElement>(root, "SupportBlock") is null
+                        || FindNamed<FrameworkElement>(root, "SupportPrepareButton") is null
+                        || FindNamed<FrameworkElement>(root, "SupportBuildButton") is null
+                        || !HasText(root, "Пакет для поддержки"))
+                    {
+                        problems.Add("пакет для поддержки: блока нет в разделе «О программе»");
+                        StartupLog.Note("ПАКЕТ ДЛЯ ПОДДЕРЖКИ: НЕ работает — блок не найден в разметке");
+                        return;
+                    }
+                }
+            }
+
+            StartupLog.Note("ПАКЕТ ДЛЯ ПОДДЕРЖКИ: кнопка в «О программе» на месте, до нажатия не читается " +
+                "ни один файл и не пишется ни один архив");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"пакет для поддержки (задача Q): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ПАКЕТ ДЛЯ ПОДДЕРЖКИ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// История сессий (задача J): вкладка «Сессии» в «Журнале» — «до → после», сравнение двух
+    /// сессий и график среднего RTT по дням. Проверка идёт без службы: на старте программа не
+    /// читает историю и ничего не меняет, поэтому записи обязаны быть пустыми до нажатия.
+    /// </summary>
+    private static void CheckSessionHistory(App app, List<string> problems)
+    {
+        try
+        {
+            SessionHistoryViewModel sessions = app.Journal.Sessions;
+
+            if (app.Shell is { } shell)
+            {
+                ShowAllSections(shell);
+                if (shell.Content is FrameworkElement root)
+                {
+                    root.UpdateLayout();
+
+                    if (FindNamed<TabControl>(root, "JournalTabs") is not { } tabs)
+                    {
+                        problems.Add("история сессий: в разделе «Журнал» нет вкладок");
+                    }
+                    else
+                    {
+                        TabItem? page = tabs.Items.OfType<TabItem>().FirstOrDefault(item =>
+                            string.Equals(item.Header as string, "Сессии", StringComparison.Ordinal));
+
+                        if (page is null)
+                        {
+                            problems.Add("история сессий: в разделе «Журнал» нет вкладки «Сессии»");
+                        }
+                        else
+                        {
+                            // Вкладка создаёт содержимое только когда её показали: без этого проверять
+                            // кнопки бессмысленно, а ошибки разметки внутри вкладки остались бы незамеченными.
+                            int previous = tabs.SelectedIndex;
+                            tabs.SelectedItem = page;
+                            root.UpdateLayout();
+
+                            bool hasRefresh = FindNamed<FrameworkElement>(root, "SessionsRefreshButton") is not null;
+                            bool hasCompare = FindNamed<FrameworkElement>(root, "CompareSessionsButton") is not null;
+                            bool hasClear = FindNamed<FrameworkElement>(root, "SessionsClearButton") is not null;
+
+                            if (previous >= 0 && previous < tabs.Items.Count)
+                            {
+                                tabs.SelectedIndex = previous;
+                            }
+
+                            root.UpdateLayout();
+
+                            if (!hasRefresh || !hasCompare || !hasClear)
+                            {
+                                problems.Add("история сессий: на вкладке «Сессии» нет кнопок обновления, сравнения или очистки");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (sessions.Rows.Count != 0 || sessions.IsLoading)
+            {
+                problems.Add("история сессий: записи появились до нажатия «Обновить сессии» — на старте программа ничего не читает");
+                StartupLog.Note("ИСТОРИЯ СЕССИЙ: НЕ работает — записи загрузились сами");
+                return;
+            }
+
+            // Честность чисел: у незавершённой сессии нет «после», и она так и называется.
+            var unfinished = new SessionHistoryRow(
+                SessionId: "self-check-unfinished",
+                StartedUtc: DateTime.UtcNow,
+                StoppedUtc: null,
+                GameTitleRu: "Проверка",
+                Endpoint: "203.0.113.9",
+                HasGame: true,
+                IsMeasurable: true,
+                BaselineRttMs: 100,
+                FinalRttMs: null,
+                ImprovementMs: null,
+                Actions: [],
+                RollbackStateRu: "Неизвестно (сессия без итога)",
+                IsCompleted: false,
+                StatusRu: string.Empty,
+                Outcome: "NotFinished");
+
+            var other = new SessionHistoryRow(
+                SessionId: "self-check-other-server",
+                StartedUtc: DateTime.UtcNow.AddDays(-1),
+                StoppedUtc: DateTime.UtcNow.AddDays(-1).AddMinutes(20),
+                GameTitleRu: "Проверка",
+                Endpoint: "198.51.100.7",
+                HasGame: true,
+                IsMeasurable: true,
+                BaselineRttMs: 90,
+                FinalRttMs: 80,
+                ImprovementMs: 10,
+                Actions: [],
+                RollbackStateRu: "Изменения сняты полностью",
+                IsCompleted: true,
+                StatusRu: string.Empty,
+                Outcome: "Completed");
+
+            bool honestText = unfinished.ResultRu.Contains("сессия не завершена", StringComparison.Ordinal);
+            bool noInventedNumber = unfinished.FinalRttMs is null && unfinished.ImprovementMs is null;
+
+            SessionComparisonResult comparison = SessionComparison.Compare(unfinished, other);
+            bool refusesDifferentServers = !comparison.Comparable
+                && comparison.ReasonRu == SessionComparison.DifferentServersReason;
+
+            // Та же сессия дважды: разница с собой всегда ноль, и выдавать её за измерение нельзя.
+            SessionComparisonResult self = SessionComparison.Compare(unfinished, unfinished with { });
+            bool refusesSameSession = !self.Comparable
+                && self.ReasonRu == SessionComparison.SameSessionReason
+                && self.Lines.Any(line => line.Contains("одна и та же", StringComparison.Ordinal));
+
+            // Неизвестный адрес — не «тот же самый»: две сессии без адреса сравнивать вслепую нельзя.
+            SessionComparisonResult blind = SessionComparison.Compare(
+                unfinished with { SessionId = "self-check-no-address-1", Endpoint = string.Empty },
+                unfinished with { SessionId = "self-check-no-address-2", Endpoint = "   " });
+            bool refusesUnknownAddress = !blind.Comparable
+                && blind.ReasonRu == SessionComparison.UnknownEndpointReason;
+
+            IReadOnlyList<DailyRttPoint> daily = DailyRttHistory.Build([unfinished, other], "203.0.113.9");
+            bool singleServerDaily = daily.Count == 1 && Math.Abs(daily[0].AverageRttMs - 100) < 0.01;
+
+            // Способ замера: числа без способа — половина ответа. Пара «до/после» от разных способов
+            // обязана называть оба, а старая запись — называться старой, а не «живым потоком».
+            string pairRu = Core.Models.ProbeMethodTags.DescribePairRu(
+                Core.Models.ProbeMethodTags.Icmp, Core.Models.ProbeMethodTags.LiveUdp);
+            string legacyRu = Core.Models.ProbeMethodTags.DescribePairRu(
+                Core.Models.ProbeMethodTags.LegacyLiveFlow, Core.Models.ProbeMethodTags.LegacyLiveFlow);
+
+            string namedPair = (other with { MethodRu = pairRu }).ResultRu;
+            bool namesMethod = namedPair.Contains("«до»", StringComparison.Ordinal)
+                && namedPair.Contains("«после»", StringComparison.Ordinal)
+                && namedPair.Contains("ICMP", StringComparison.Ordinal);
+
+            bool pairCaveat = (other with { MethodRu = pairRu, MethodsDiffer = true }).ResultRu
+                .Contains("разница может быть от способа замера", StringComparison.Ordinal);
+
+            bool legacyIsCalledOld = (other with { MethodRu = legacyRu }).ResultRu
+                .Contains("старая запись", StringComparison.Ordinal);
+
+            bool noMethodWithoutTag = !other.ResultRu.Contains("способ", StringComparison.Ordinal);
+
+            if (!honestText || !noInventedNumber || !refusesDifferentServers || !refusesSameSession
+                || !refusesUnknownAddress || !singleServerDaily
+                || !namesMethod || !legacyIsCalledOld || !noMethodWithoutTag || !pairCaveat)
+            {
+                problems.Add("история сессий: разбор «до/после» или график по дням работает неверно " +
+                    $"(незавершённая: {(honestText ? "да" : "нет")}, без выдуманных чисел: {(noInventedNumber ? "да" : "нет")}, " +
+                    $"разные серверы: {(refusesDifferentServers ? "отказ" : "сравнил")}, " +
+                    $"сессия с собой: {(refusesSameSession ? "отказ" : "сравнил")}, " +
+                    $"неизвестный адрес: {(refusesUnknownAddress ? "отказ" : "сравнил")}, " +
+                    $"график: {(singleServerDaily ? "да" : "нет")}, " +
+                    $"способ в паре: {(namesMethod ? "назван" : "потерян")}, " +
+                    $"старая запись: {(legacyIsCalledOld ? "названа старой" : "выдана за живую")}, " +
+                    $"разные способы: {(pairCaveat ? "предупреждает" : "молчит")})");
+                StartupLog.Note("ИСТОРИЯ СЕССИЙ: НЕ работает — числа или сравнение сессий расходятся с правилом честности");
+                return;
+            }
+
+            StartupLog.Note("ИСТОРИЯ СЕССИЙ: вкладка «Сессии» на месте, до нажатия записей нет, " +
+                "незавершённая сессия называется незавершённой, разные серверы, одна и та же сессия и " +
+                "неизвестный адрес не сравниваются, график — по одному серверу, способ замера назван, " +
+                "старая запись названа старой, разные способы пары названы причиной разницы");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"история сессий (задача J): проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ИСТОРИЯ СЕССИЙ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Живая проверка iphlpapi: статистика уже открытого TCP-соединения. Долг был записан прямо в коде —
+    /// вызов читателя проверен структурно, но ни разу не подтверждён на живом соединении.
+    ///
+    /// Проверка открывает настоящее соединение, шлёт один запрос (стеку нужен трафик, иначе измерений нет),
+    /// включает сбор статистики пути и читает его. Соединение закрывается тут же: настройка сбора живёт
+    /// вместе с соединением, в системе ничего не остаётся.
+    ///
+    /// Нет прав или система не поддерживает сбор — «пропущено» с причиной, названной читателем.
+    /// Стек назвал ноль при нуле измерений — поломка, и она называется.
+    /// </summary>
+    private static void CheckLiveTcpEstats(List<string> problems)
+    {
+        const string Host = "github.com";
+        const int Port = 80;
+
+        try
+        {
+            // Адрес, а не имя: сравнивать прочитанное соединение нужно с тем адресом, куда мы правда
+            // подключились, иначе проверка ничего не докажет.
+            IReadOnlyList<System.Net.IPAddress> addresses = new SystemHostResolver()
+                .ResolveAsync(Host).GetAwaiter().GetResult();
+            System.Net.IPAddress? target = addresses
+                .FirstOrDefault(item => item.AddressFamily == AddressFamily.InterNetwork);
+
+            if (target is null)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. Имя {Host} не разрешилось в IPv4-адрес — " +
+                    "проверять статистику не на чем.");
+                return;
+            }
+
+            string endpoint = target.ToString();
+
+            using var client = new TcpClient();
+            using var connectTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            try
+            {
+                client.ConnectAsync(endpoint, Port, connectTimeout.Token).GetAwaiter().GetResult();
+            }
+            catch (Exception ex) when (ex is SocketException or OperationCanceledException)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. Соединение с {endpoint}:{Port} не установилось " +
+                    $"({ex.GetType().Name}) — проверять статистику не на чем.");
+                return;
+            }
+
+            var reader = new WindowsTcpEstatsReader();
+            var drain = new byte[2048];
+            NetworkStream stream = client.GetStream();
+
+            // Сбор статистики включаем до трафика: стек считает замеры только по данным, прошедшим
+            // при включённом сборе. Первое чтение таблицы как раз и включает его — и больше не трогает,
+            // иначе каждый опрос обнулял бы накопленное и «0 измерений» было бы нашей же виной.
+            reader.ReadEstablishedConnections(Environment.ProcessId);
+
+            if (reader.ProblemRu.Length > 0)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. {endpoint}:{Port}: {reader.ProblemRu}");
+                return;
+            }
+
+            byte[] request = Encoding.ASCII.GetBytes(
+                $"GET / HTTP/1.1\r\nHost: {Host}\r\nConnection: keep-alive\r\n\r\n");
+
+            LiveTcpEstatsVerdict verdict = LiveTcpEstatsVerdict.Evaluate(
+                endpoint, Port, [], "соединение ещё не попало в таблицу");
+
+            for (int attempt = 0; attempt < 15; attempt++)
+            {
+                // Обмен по соединению: без трафика при включённом сборе стек не даст ни одного замера.
+                // Ответ обязательно забираем — иначе окно переполняется и сервер отвечает сбросом.
+                if (attempt < 2)
+                {
+                    try
+                    {
+                        stream.Write(request, 0, request.Length);
+                        Thread.Sleep(400);
+
+                        while (stream.DataAvailable)
+                        {
+                            // Читаем ровно то, что уже пришло: ждать полного буфера здесь нельзя,
+                            // иначе ответ сервера повиснет и окно приёма переполнится.
+#pragma warning disable CA2022
+                            stream.Read(drain, 0, drain.Length);
+#pragma warning restore CA2022
+                        }
+                    }
+                    catch (IOException)
+                    {
+                        // Сервер закрыл соединение — ниже об этом скажет вердикт, а не догадка.
+                    }
+                }
+
+                IReadOnlyList<LiveTcpConnectionStats> connections = reader.ReadEstablishedConnections(Environment.ProcessId);
+                verdict = LiveTcpEstatsVerdict.Evaluate(endpoint, Port, connections, reader.ProblemRu);
+
+                if (verdict.Verified)
+                {
+                    break;
+                }
+
+                Thread.Sleep(300);
+            }
+
+            if (verdict.Verified)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (iphlpapi): {verdict.TextRu}");
+                return;
+            }
+
+            if (verdict.Skipped)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. {verdict.TextRu}");
+                return;
+            }
+
+            problems.Add($"живой TCP-замер через iphlpapi: {verdict.TextRu}");
+            StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: НЕ работает — {verdict.TextRu}");
+        }
+        catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException
+            or NotSupportedException or TimeoutException or OperationCanceledException)
+        {
+            StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. Сеть не дала ответа: {ex.GetType().Name}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"живой TCP-замер через iphlpapi: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Живой замер по соединению ЧУЖОГО процесса. Служба читает статистику не своего соединения, а
+    /// соединения найденной игры, — и это единственный способ проверить такой путь: дочерний процесс
+    /// держит настоящее TCP-соединение с настоящим сервером и шлёт данные, а мы читаем статистику по
+    /// таблице всех процессов (номер 0) и убеждаемся, что числа пришли.
+    ///
+    /// Своего соединения у проверки нет: если числа появились, их дал чужой процесс, а не мы сами.
+    /// </summary>
+    private static void CheckLiveTcpEstatsForeignProcess(List<string> problems)
+    {
+        const string Host = "github.com";
+        const int Port = 80;
+        const int Seconds = 20;
+
+        try
+        {
+            string? exe = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(exe))
+            {
+                StartupLog.Note("ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): пропущен. Путь к программе не известен — " +
+                    "запускать дочерний процесс нечем.");
+                return;
+            }
+
+            // Адрес разрешает родитель и передаёт дочернему процессу числом: иначе два процесса могут
+            // попасть на разные адреса одного имени, и сравнение ничего не докажет.
+            IReadOnlyList<System.Net.IPAddress> addresses = new SystemHostResolver()
+                .ResolveAsync(Host).GetAwaiter().GetResult();
+            System.Net.IPAddress? target = addresses
+                .FirstOrDefault(item => item.AddressFamily == AddressFamily.InterNetwork);
+
+            if (target is null)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): пропущен. Имя {Host} не разрешилось " +
+                    "в IPv4-адрес — проверять не на чем.");
+                return;
+            }
+
+            string endpoint = target.ToString();
+
+            var start = new System.Diagnostics.ProcessStartInfo(exe)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            start.ArgumentList.Add(PingForge.Probing.HoldTcpRequest.Switch);
+            start.ArgumentList.Add(endpoint);
+            start.ArgumentList.Add(Port.ToString());
+            start.ArgumentList.Add(Seconds.ToString());
+
+            using System.Diagnostics.Process? child = System.Diagnostics.Process.Start(start);
+            if (child is null)
+            {
+                StartupLog.Note("ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): пропущен. Дочерний процесс не запустился.");
+                return;
+            }
+
+            try
+            {
+                var reader = new WindowsTcpEstatsReader();
+                LiveTcpEstatsVerdict verdict = LiveTcpEstatsVerdict.Evaluate(
+                    endpoint, Port, [], "чужой процесс ещё не открыл соединение");
+
+                for (int attempt = 0; attempt < 20; attempt++)
+                {
+                    // Номер 0 — все процессы: так служба и ищет соединение игры, не зная её номера.
+                    IReadOnlyList<LiveTcpConnectionStats> connections = reader.ReadEstablishedConnections(0);
+                    verdict = LiveTcpEstatsVerdict.Evaluate(endpoint, Port, connections, reader.ProblemRu);
+
+                    if (verdict.Verified)
+                    {
+                        break;
+                    }
+
+                    Thread.Sleep(300);
+                }
+
+                if (verdict.Verified)
+                {
+                    StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): {verdict.TextRu} " +
+                        $"Соединение держит другая программа (номер {child.Id}), а не самопроверка.");
+                    return;
+                }
+
+                if (verdict.Skipped)
+                {
+                    StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): пропущен. {verdict.TextRu}");
+                    return;
+                }
+
+                problems.Add($"живой TCP-замер по чужому процессу через iphlpapi: {verdict.TextRu}");
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): НЕ работает — {verdict.TextRu}");
+            }
+            finally
+            {
+                try
+                {
+                    if (!child.HasExited)
+                    {
+                        child.Kill(entireProcessTree: true);
+                    }
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    // Дочерний процесс уже вышел — добивать нечего.
+                }
+            }
+        }
+        catch (Exception ex) when (ex is SocketException or System.ComponentModel.Win32Exception
+            or PlatformNotSupportedException or NotSupportedException or OperationCanceledException)
+        {
+            StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): пропущен. {ex.GetType().Name}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"живой TCP-замер по чужому процессу через iphlpapi: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Живой замер на настоящей сети: те самые пробы, которыми программа меряет задержку, отправляются
+    /// в настоящий адрес. Здесь проверяется то, чего не видно в юнит-тестах с нарисованными ответами:
+    /// что проба вообще возвращает числа, и что эти числа похожи на правду.
+    ///
+    /// Сети нет или ICMP запрещён — это не поломка программы, а условие машины: тогда в журнале стоит
+    /// «пропущен» с причиной, а не зелёная галочка. Ноль вместо задержки — поломка, и она называется.
+    /// </summary>
+    private static void CheckLiveNetwork(List<string> problems)
+    {
+        const string Target = "1.1.1.1";
+        const int Port = 443;
+        const int Attempts = 5;
+
+        try
+        {
+            IPAddress address = IPAddress.Parse(Target);
+            var icmp = new SystemNetIcmpProbe();
+
+            var icmpRtts = new List<double>();
+            string? refusal = null;
+
+            for (int attempt = 0; attempt < Attempts; attempt++)
+            {
+                IcmpProbeReply reply = icmp
+                    .SendAsync(address, payloadBytes: 32, dontFragment: false, ttl: 64, TimeSpan.FromSeconds(2))
+                    .GetAwaiter().GetResult();
+
+                if (reply.Status == IcmpProbeStatus.Success && reply.RoundTripMs > 0)
+                {
+                    icmpRtts.Add(reply.RoundTripMs);
+                }
+                else
+                {
+                    refusal = reply.Status == IcmpProbeStatus.PermissionDenied
+                        ? "ICMP-эху не дали прав"
+                        : $"ICMP-эхо не вернулось ({reply.Status})";
+                }
+            }
+
+            LiveProbeVerdict verdict;
+            if (icmpRtts.Count > 0)
+            {
+                verdict = LiveProbeVerdict.FromReplies($"{Target}:{Port} (ICMP)", "ICMP-эхо", icmpRtts);
+            }
+            else
+            {
+                // ICMP часто закрыт: тогда меряем тем же, чем меряет программа в этом случае — TCP-рукопожатием.
+                var tcp = new SocketTcpHandshakeProbe();
+                var tcpRtts = new List<double>();
+
+                for (int attempt = 0; attempt < Attempts; attempt++)
+                {
+                    TcpProbeReply reply = tcp
+                        .TryConnectAsync(new IPEndPoint(address, Port), TimeSpan.FromSeconds(2))
+                        .GetAwaiter().GetResult();
+
+                    if ((reply.Status is TcpProbeStatus.Established or TcpProbeStatus.ConnectionRefused)
+                        && reply.RoundTripMs > 0)
+                    {
+                        tcpRtts.Add(reply.RoundTripMs);
+                    }
+                    else
+                    {
+                        refusal = $"{refusal ?? "ответа нет"} и TCP-рукопожатие не удалось ({reply.Status})";
+                    }
+                }
+
+                verdict = LiveProbeVerdict.FromReplies($"{Target}:{Port} (TCP)", "TCP-рукопожатие", tcpRtts, refusal);
+            }
+
+            if (verdict.Verified)
+            {
+                StartupLog.Note($"ЖИВОЙ ЗАМЕР: {verdict.TextRu}");
+                return;
+            }
+
+            if (verdict.Skipped)
+            {
+                StartupLog.Note($"ЖИВОЙ ЗАМЕР: пропущен. {verdict.TextRu}");
+                return;
+            }
+
+            problems.Add($"живой замер на настоящей сети: {verdict.TextRu}");
+            StartupLog.Note($"ЖИВОЙ ЗАМЕР: НЕ работает — {verdict.TextRu}");
+        }
+        // Условия машины — не поломка программы: нет сети, нет прав, проба не поддерживается.
+        // Это «пропущено» с причиной. Всё остальное — ошибка в самой проверке, и она называется.
+        catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException
+            or NotSupportedException or TimeoutException or OperationCanceledException)
+        {
+            StartupLog.Note($"ЖИВОЙ ЗАМЕР: пропущен. Сеть не дала ответа: {ex.GetType().Name}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"живой замер на настоящей сети: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ЖИВОЙ ЗАМЕР: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Правило «нет измерения — нет нуля»: окно живого замера без джиттера и без потерь не должно
+    /// превращаться в «0,0 мс» и «0,0 %» ни в числах, ни в текстах.
+    /// </summary>
+    private static void CheckUnmeasuredNumbers(List<string> problems)
+    {
+        try
+        {
+            PathMeasurement unmeasured = new(true, 40, null, null, 12, "живой поток игры");
+
+            bool wordsNotZeros = unmeasured.JitterRu == "не измерено" && unmeasured.LossRu == "не измерено";
+            bool numbersStayNull = unmeasured.JitterMs is null && unmeasured.LossPercent is null;
+
+            PathMeasurement measured = new(true, 40, 3.1, 0, 12, "живой поток игры");
+            bool measuredIsNumber = measured.JitterRu != "не измерено"
+                && measured.LossRu != "не измерено"
+                && measured.LossRu.Contains('%', StringComparison.Ordinal);
+
+            if (!wordsNotZeros || !numbersStayNull || !measuredIsNumber)
+            {
+                problems.Add("нет измерения — нет нуля: неизмеренный джиттер или потери превращаются в числа " +
+                    $"(слова: {(wordsNotZeros ? "да" : "нет")}, поля пустые: {(numbersStayNull ? "да" : "нет")}, " +
+                    $"измеренное числом: {(measuredIsNumber ? "да" : "нет")})");
+                StartupLog.Note("НЕТ ИЗМЕРЕНИЯ — НЕТ НУЛЯ: НЕ работает — пустые поля превращаются в нули");
+                return;
+            }
+
+            StartupLog.Note("НЕТ ИЗМЕРЕНИЯ — НЕТ НУЛЯ: неизмеренные джиттер и потери называются словами «не измерено», " +
+                "измеренные — числом, и ноль остаётся только измеренным нулём");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"нет измерения — нет нуля: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"НЕТ ИЗМЕРЕНИЯ — НЕТ НУЛЯ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Живой TCP-поток: задержка должна браться из статистики уже открытого соединения, а если взять
+    /// её нельзя — причина должна быть названа. Здесь проверяется то, что от системы не зависит
+    /// (выбор соединения, цепочка, метка способа), и то, что зависит (читатель на этой машине обязан
+    /// либо отдать числа, либо назвать причину, но не молчать).
+    /// </summary>
+    private static void CheckLiveTcpFlow(List<string> problems)
+    {
+        try
+        {
+            var chain = new Network.ChainedLiveFlowRttProvider(
+                new SilentLiveFlowProvider(),
+                new Network.TcpEstatsLiveFlowRttProvider(new StubTcpStatsReader()));
+
+            bool chained = chain.TryGetLiveFlowRtt(0, "203.0.113.20:25565", out LiveFlowRttSample sample);
+            bool namesTcp = chained && string.Equals(sample.MethodName, Network.TcpEstatsLiveFlowRttProvider.MethodName, StringComparison.Ordinal);
+            bool tagIsLiveTcp = chained && ProbeMethodTags.Tag(ProbeMethodUsed.LiveTcpEstats) == ProbeMethodTags.LiveTcp;
+
+            // Читатель на этой машине: список без причины пустоты — это молчание, а не ответ.
+            var reader = new Network.WindowsTcpEstatsReader();
+            IReadOnlyList<LiveTcpConnectionStats> connections = reader.ReadEstablishedConnections(Environment.ProcessId);
+            bool readerHonest = connections.Count > 0 || !string.IsNullOrWhiteSpace(reader.ProblemRu);
+
+            // Соединение чужого сервера не выдаётся за игровое: отказ обязателен.
+            var picky = new Network.TcpEstatsLiveFlowRttProvider(new StubTcpStatsReader());
+            bool refusesOthers = !picky.TryGetLiveFlowRtt(0, "198.51.100.7:25565", out _)
+                && !string.IsNullOrWhiteSpace(picky.LastProblemRu);
+
+            if (!chained || !namesTcp || !tagIsLiveTcp || !readerHonest || !refusesOthers)
+            {
+                problems.Add("живой TCP-поток: статистика соединения читается неверно " +
+                    $"(цепочка: {(chained ? "да" : "нет")}, способ: {(namesTcp ? "назван" : "потерян")}, " +
+                    $"метка: {(tagIsLiveTcp ? "живой tcp" : "другая")}, читатель: {(readerHonest ? "причина или числа" : "молчит")}, " +
+                    $"чужой сервер: {(refusesOthers ? "отказ" : "выдан за игровой")})");
+                StartupLog.Note("ЖИВОЙ TCP-ПОТОК: НЕ работает — числа или отказы расходятся с правилом честности");
+                return;
+            }
+
+            StartupLog.Note("ЖИВОЙ TCP-ПОТОК: статистика открытого соединения читается вторым способом после UDP, " +
+                "способ назван (живой TCP-поток), соединение чужого сервера не выдаётся за игровое, " +
+                $"на этой машине {(connections.Count > 0 ? "числа есть" : "причина названа: " + reader.ProblemRu)}");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"живой TCP-поток: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ЖИВОЙ TCP-ПОТОК: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Провайдер, который ничего не знает: нужен, чтобы цепочка шла ко второму.</summary>
+    private sealed class SilentLiveFlowProvider : ILiveFlowRttProvider
+    {
+        public bool TryGetLiveFlowRtt(int processId, string gameServerEndpoint, out LiveFlowRttSample sample)
+        {
+            sample = null!;
+            return false;
+        }
+    }
+
+    /// <summary>Подставной читатель: одно игровое соединение и одно чужое.</summary>
+    private sealed class StubTcpStatsReader : ITcpConnectionStatsReader
+    {
+        public string ProblemRu => string.Empty;
+
+        public IReadOnlyList<LiveTcpConnectionStats> ReadEstablishedConnections(int processId) =>
+        [
+            new LiveTcpConnectionStats("203.0.113.20", 25565, 21.4, 3.1, 120, 2),
+        ];
+    }
+
+    /// <summary>Сколько линий графика реально нарисовано в разметке: геометрия из модели дошла до экрана.</summary>
+    private static int CountPolylines(DependencyObject node)
+    {
+        int count = node is System.Windows.Shapes.Polyline ? 1 : 0;
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            count += CountPolylines(VisualTreeHelper.GetChild(node, i));
+        }
+
+        return count;
+    }
+
+    /// <summary>
     /// route print -4 руками: ровно та команда, чей вывод показывает и служба, — человек может
     /// сравнить таблицу в консоли с тем, что увидела программа. При ошибке — пустая строка: «не
     /// прочитали» не превращаем в «маршрутов нет».
@@ -535,32 +1742,572 @@ internal static class SelfCheck
         }
 
         const double MinCardWidth = 110;
-        string[] cards = ["StatPing", "StatBetter", "StatBefore", "StatQuality"];
-        var squeezed = new List<string>();
 
-        foreach (string name in cards)
+        // Задача F: четыре статичные карточки показателей (StatPing…StatQuality) заменены
+        // графиком сети. Сжатая карточка графика — это нечитаемые оси и легенда, поэтому
+        // проверяется она: ширина не меньше порога, тем же правилом, что и старые карточки.
+        if (view.FindName("ChartCard") is not FrameworkElement chart)
         {
-            if (view.FindName(name) is not FrameworkElement card)
-            {
-                problems.Add($"в окне нет карточки показателя «{name}»");
-                continue;
-            }
-
-            System.Diagnostics.Debug.WriteLine($"{name}: {card.ActualWidth}×{card.ActualHeight}");
-            if (card.ActualWidth + 0.5 < MinCardWidth)
-            {
-                squeezed.Add($"{name} — {Math.Round(card.ActualWidth)} точек");
-            }
-        }
-
-        if (squeezed.Count > 0)
-        {
-            problems.Add($"карточки показателей сжаты: {string.Join("; ", squeezed)}");
-            StartupLog.Warn($"Раскладка: карточки показателей сжаты — {string.Join("; ", squeezed)}");
+            problems.Add("в окне нет карточки показателя «ChartCard»");
             return;
         }
 
-        StartupLog.Note($"Раскладка: карточки показателей не сжаты (проверено {cards.Length} штук)");
+        if (chart.ActualWidth + 0.5 < MinCardWidth)
+        {
+            problems.Add($"карточки показателей сжаты: график сети — {Math.Round(chart.ActualWidth)} точек");
+            StartupLog.Warn($"Раскладка: карточка графика сети сжата — {Math.Round(chart.ActualWidth)} точек");
+            return;
+        }
+
+        StartupLog.Note($"Раскладка: карточка графика сети не сжата ({Math.Round(chart.ActualWidth)} точек)");
+    }
+
+    /// <summary>
+    /// Ничего не выходит за правый край окна. Полоса содержимого прокручивается только вниз
+    /// (<c>HorizontalScrollBarVisibility="Disabled"</c>), поэтому всё, что шире окна, обрезано справа:
+    /// человек видит половину карточки и доскроллить до неё не может. Этот дефект уже был —
+    /// его заметили на снимке окна, но тогда ширину сравнивали глазами.
+    ///
+    /// Проверяются две ширины: та, на которой окно построилось, и минимальная из разметки (860).
+    /// На минимальной карточки теснее всего, и именно туда человек попадает, потянув за край окна.
+    /// После проверки раскладка возвращается к прежней: следующие проверки ждут штатное окно.
+    ///
+    /// Сравниваются границы элементов, отсчитанные от корня окна, а не <c>ActualWidth</c> по
+    /// отдельности: у элемента есть поле, рамка и масштаб интерфейса, и левый край не всегда ноль.
+    /// </summary>
+    private static void CheckNothingIsCutOff(App app, List<string> problems)
+    {
+        if (app.Shell?.Content is not FrameworkElement root || app.Shell is null)
+        {
+            return;
+        }
+
+        var usual = new Size(root.ActualWidth, root.ActualHeight);
+        if (usual.Width <= 0 || usual.Height <= 0)
+        {
+            problems.Add("ширина окна не измерилась — проверить правый край не на чем");
+            return;
+        }
+
+        try
+        {
+            foreach (double width in LayoutOverflow.CheckWidths(usual.Width, app.Shell.MinWidth))
+            {
+                LayOutAt(root, width, usual.Height);
+                CheckCutOffAt(root, width, problems);
+            }
+        }
+        finally
+        {
+            LayOutAt(root, usual.Width, usual.Height);
+        }
+    }
+
+    /// <summary>Пересобрать раскладку окна под заданную ширину — теми же вызовами, что при старте окна.</summary>
+    private static void LayOutAt(FrameworkElement root, double width, double height)
+    {
+        var size = new Size(width, height);
+        root.Measure(size);
+        root.Arrange(new Rect(size));
+        root.UpdateLayout();
+    }
+
+    /// <summary>Один замер: что вышло за правый край на этой ширине.</summary>
+    private static void CheckCutOffAt(FrameworkElement root, double width, List<string> problems)
+    {
+        double limit = root.ActualWidth;
+        if (limit <= 0)
+        {
+            problems.Add($"ширина {Math.Round(width)} не измерилась — проверить правый край не на чем");
+            return;
+        }
+
+        var boxes = new List<LayoutBox>();
+        CollectLayoutBoxes(root, root, boxes, depth: 0, parentName: string.Empty);
+
+        // Худшее — первым: в журнал и аннотацию попадает начало списка, и там должен стоять тот
+        // элемент, который вылез дальше всех, а не тот, что случайно обошли раньше.
+        IReadOnlyList<LayoutBox> outside = LayoutOverflow
+            .Find(boxes, limit)
+            .OrderByDescending(box => box.Right)
+            .ToList();
+        if (outside.Count == 0)
+        {
+            StartupLog.Note($"Раскладка: на ширине {Math.Round(limit)} точек за правый край ничего не выходит — просмотрено {boxes.Count} элементов");
+            return;
+        }
+
+        string report = LayoutOverflow.DescribeRu(outside, limit);
+        problems.Add($"элементы выходят за край окна на ширине {Math.Round(limit)}: {report}");
+        StartupLog.Warn($"Раскладка: на ширине {Math.Round(limit)} точек {outside.Count} элементов обрезаны справа: {report}");
+    }
+
+    /// <summary>
+    /// Текст целиком: то, что не влезло в свою рамку и не сокращено многоточием, человек не прочитает.
+    /// Проверка края окна такое не видит — элемент не шире окна, он обрезан внутри себя, и никакая
+    /// полоса прокрутки до обрезанного хвоста не доведёт.
+    ///
+    /// Меряется не сам элемент, а проба: такой же <c>TextBlock</c> с теми же шрифтом, кеглем и текстом.
+    /// Ей дают бесконечную ширину — получают ширину одной строки; потом дают ширину элемента — получают
+    /// нужную высоту. Настоящий элемент не трогается: раскладку портить нельзя.
+    ///
+    /// Второе правило той же проверки: многоточие — не дефект, но только если полный текст можно
+    /// прочитать. Надпись, которая на самом деле сократилась, обязана иметь подсказку — свою или
+    /// у рамки вокруг неё. Иначе «Игра: Fortnite — …» остаётся загадкой.
+    /// </summary>
+    private static void CheckTextIsWhole(App app, List<string> problems)
+    {
+        if (app.Shell?.Content is not FrameworkElement root)
+        {
+            return;
+        }
+
+        root.UpdateLayout();
+
+        var blocks = new List<TextBlock>();
+        CollectTextBlocks(root, blocks, depth: 0);
+
+        var cuts = new List<string>();
+        var lost = new List<string>();
+        int trimmed = 0;
+        foreach (TextBlock block in blocks)
+        {
+            if (block.Visibility != Visibility.Visible || string.IsNullOrWhiteSpace(block.Text))
+            {
+                continue;
+            }
+
+            double width = block.ActualWidth - block.Padding.Left - block.Padding.Right;
+            double height = block.ActualHeight - block.Padding.Top - block.Padding.Bottom;
+            if (width <= 0 || height <= 0)
+            {
+                continue;   // свёрнуто или ещё не разложено
+            }
+
+            var probe = new TextBlock
+            {
+                FontFamily = block.FontFamily,
+                FontSize = block.FontSize,
+                FontStretch = block.FontStretch,
+                FontStyle = block.FontStyle,
+                FontWeight = block.FontWeight,
+                LineHeight = block.LineHeight,
+                LineStackingStrategy = block.LineStackingStrategy,
+                Text = block.Text,
+            };
+            TextOptions.SetTextFormattingMode(probe, TextOptions.GetTextFormattingMode(block));
+            TextOptions.SetTextRenderingMode(probe, TextOptions.GetTextRenderingMode(block));
+
+            probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double naturalWidth = probe.DesiredSize.Width;
+
+            probe.TextWrapping = TextWrapping.Wrap;
+            probe.InvalidateMeasure();
+            probe.Measure(new Size(width, double.PositiveInfinity));
+            double naturalHeight = probe.DesiredSize.Height;
+
+            var measured = new MeasuredText(
+                DescribeLayoutElement(block),
+                naturalWidth,
+                naturalHeight,
+                width,
+                height,
+                Wraps: block.TextWrapping != TextWrapping.NoWrap,
+                Trims: block.TextTrimming != TextTrimming.None);
+
+            TextCut cut = TextClipping.Find(measured);
+            if (cut != TextCut.None)
+            {
+                cuts.Add($"{measured.Name}: {TextClipping.DescribeRu(measured, cut)}");
+            }
+
+            if (measured.Trims && measured.NaturalWidth > measured.AvailableWidth + TextClipping.Tolerance)
+            {
+                trimmed++;
+                if (TextClipping.NeedsTooltip(measured, HasTooltipNear(block)))
+                {
+                    lost.Add($"{measured.Name}: {TextClipping.DescribeTooltipRu(measured)}");
+                }
+            }
+        }
+
+        if (lost.Count != 0)
+        {
+            string lostList = string.Join("; ", lost.Take(5));
+            if (lost.Count > 5)
+            {
+                lostList += $" и ещё {lost.Count - 5}";
+            }
+
+            problems.Add($"многоточие без подсказки у {lost.Count} надписей: {lostList}");
+            StartupLog.Warn($"Текст: {lost.Count} надписей сокращены многоточием, а полного текста нет в подсказке: {lostList}");
+        }
+
+        if (cuts.Count != 0)
+        {
+            string list = string.Join("; ", cuts.Take(5));
+            if (cuts.Count > 5)
+            {
+                list += $" и ещё {cuts.Count - 5}";
+            }
+
+            problems.Add($"текст обрезан в рамке у {cuts.Count} надписей: {list}");
+            StartupLog.Warn($"Текст: {cuts.Count} надписей не влезли целиком: {list}");
+        }
+
+        if (cuts.Count == 0 && lost.Count == 0)
+        {
+            StartupLog.Note($"Текст: обрезанных нет — просмотрено {blocks.Count} надписей, " +
+                $"сокращённых многоточием {trimmed} — у всех есть подсказка");
+        }
+    }
+
+    /// <summary>
+    /// Имя для экранного диктора. Правило разметки (<see cref="AccessibleName"/>) ловит это до сборки,
+    /// но видит только текст объявления: у переключателя твика имя появляется из привязки во время
+    /// работы, а у кнопки с панелью внутри — из вложенной надписи. Здесь спрашивается само окно,
+    /// и отвечает оно настоящими данными.
+    ///
+    /// Свёрнутое и выключенное пропускается: диктор такого не читает. Элементы, созданные шаблоном
+    /// другого элемента управления (стрелка полосы прокрутки, заголовок раскрывашки), тоже
+    /// пропускаются — имя им даёт шаблон, а не разметка раздела.
+    /// </summary>
+    private static void CheckAccessibleNames(App app, List<string> problems)
+    {
+        if (app.Shell?.Content is not FrameworkElement root)
+        {
+            return;
+        }
+
+        root.UpdateLayout();
+
+        var labels = new Dictionary<object, string>();
+        CollectLabelTargets(root, labels, depth: 0);
+
+        var controls = new List<Control>();
+        CollectSurveyedControls(root, controls, depth: 0);
+
+        var anonymous = new List<string>();
+        int surveyed = 0;
+        foreach (Control control in controls)
+        {
+            if (control.Visibility != Visibility.Visible || !control.IsEnabled)
+            {
+                continue;
+            }
+
+            surveyed++;
+            if (AccessibleNameOf(control, labels).Length == 0)
+            {
+                anonymous.Add(DescribeLayoutElement(control));
+            }
+        }
+
+        string kinds = TweakOrdering.Plural(surveyed, "элемент управления", "элемента управления", "элементов управления");
+        if (anonymous.Count == 0)
+        {
+            StartupLog.Note($"Доступность: у всех {surveyed} {kinds} есть имя для экранного диктора");
+            return;
+        }
+
+        string list = string.Join("; ", anonymous.Take(5));
+        if (anonymous.Count > 5)
+        {
+            list += $" и ещё {anonymous.Count - 5}";
+        }
+
+        problems.Add($"без имени для диктора {anonymous.Count} из {surveyed} {kinds}: {list}");
+        StartupLog.Warn($"Доступность: без имени {anonymous.Count} {kinds} — {list}");
+    }
+
+    /// <summary>Элементы, за которыми следит правило имён, из настоящего дерева окна.</summary>
+    private static void CollectSurveyedControls(DependencyObject node, List<Control> controls, int depth)
+    {
+        if (depth > 64)
+        {
+            return;
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(node, i);
+            if (child is Control control
+                && AccessibleName.IsSurveyed(control.GetType().Name)
+                && control.TemplatedParent is not Control)
+            {
+                controls.Add(control);
+            }
+
+            CollectSurveyedControls(child, controls, depth + 1);
+        }
+    }
+
+    /// <summary>Надписи, на которые ссылаются через <c>Label Target</c>: имя берётся оттуда.</summary>
+    private static void CollectLabelTargets(DependencyObject node, Dictionary<object, string> labels, int depth)
+    {
+        if (depth > 64)
+        {
+            return;
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(node, i);
+            if (child is Label label && label.Target is { } target)
+            {
+                string text = TextInside(label.Content);
+                if (text.Length != 0)
+                {
+                    labels[target] = text;
+                }
+            }
+
+            CollectLabelTargets(child, labels, depth + 1);
+        }
+    }
+
+    /// <summary>Имя элемента так, как его прочитает диктор: явное, от надписи или из содержимого.</summary>
+    private static string AccessibleNameOf(Control control, Dictionary<object, string> labels)
+    {
+        string direct = AutomationProperties.GetName(control);
+        if (!string.IsNullOrWhiteSpace(direct))
+        {
+            return direct.Trim();
+        }
+
+        if (AutomationProperties.GetLabeledBy(control) is FrameworkElement label)
+        {
+            string labeled = TextInside(label);
+            if (labeled.Length != 0)
+            {
+                return labeled;
+            }
+        }
+
+        if (labels.TryGetValue(control, out string? named) && !string.IsNullOrEmpty(named))
+        {
+            return named;
+        }
+
+        string header = control is HeaderedContentControl headered ? TextInside(headered.Header) : string.Empty;
+        if (header.Length != 0)
+        {
+            return header;
+        }
+
+        return control is ContentControl content ? TextInside(content.Content) : string.Empty;
+    }
+
+    /// <summary>Видимый текст внутри: содержимое строкой, надписью или панелью с надписями.</summary>
+    private static string TextInside(object? content)
+    {
+        switch (content)
+        {
+            case null:
+                return string.Empty;
+            case string text:
+                return text.Trim();
+            case TextBlock block:
+                return block.Text.Trim();
+            case FrameworkElement element:
+                var texts = new List<TextBlock>();
+                CollectTextBlocks(element, texts, depth: 0);
+                return string.Join(
+                    " ",
+                    texts.Select(block => block.Text?.Trim()).Where(text => !string.IsNullOrEmpty(text)));
+            default:
+                return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Подпись о контрасте в «Настройках» обязана считаться по настоящей теме, а не по памяти.
+    /// Проверяется три вещи: подпись в модели представления совпадает с той, что получается из цветов
+    /// темы; эта подпись действительно есть в окне; и вывод в ней честный — при контрасте ниже AA
+    /// она говорит «нельзя», а не «читается без напряжения».
+    /// </summary>
+    private static void CheckContrastNote(App app, List<string> problems)
+    {
+        if (app.Shell is not { } shell)
+        {
+            return;
+        }
+
+        ShowAllSections(shell);
+        if (shell.Content is not FrameworkElement root)
+        {
+            return;
+        }
+
+        string? text = app.TryFindResource("TextColor") is Color textColor ? HexOf(textColor) : null;
+        string? muted = app.TryFindResource("MutedColor") is Color mutedColor ? HexOf(mutedColor) : null;
+        string? background = app.TryFindResource("BgColor") is Color bgColor ? HexOf(bgColor) : null;
+
+        if (text is null || muted is null || background is null)
+        {
+            problems.Add("подпись о контрасте: в теме нет цветов TextColor, MutedColor или BgColor");
+            return;
+        }
+
+        string expected = PaletteNote.SentenceRu(text, muted, background);
+        UiScaleViewModel scale = app.Settings.UiScale;
+        bool counts = string.Equals(scale.WcagNoteRu, expected, StringComparison.Ordinal);
+        bool onScreen = HasText(root, Contrast.RatioRu(text, background));
+        bool honestVerdict = PaletteNote.VerdictOf(text, muted, background) != PaletteVerdict.BelowAa;
+
+        if (!counts || !onScreen || !honestVerdict)
+        {
+            problems.Add("подпись о контрасте не совпадает с темой " +
+                $"(считает по теме: {(counts ? "да" : "нет")}, есть в окне: {(onScreen ? "да" : "нет")}, " +
+                $"вывод честный: {(honestVerdict ? "да" : "нет")})");
+            StartupLog.Warn($"КОНТРАСТ: подпись в «Настройках» расходится с темой — {expected}");
+            return;
+        }
+
+        StartupLog.Note($"КОНТРАСТ: подпись в «Настройках» считается по теме — " +
+            $"{Contrast.RatioRu(text, background)} и {Contrast.RatioRu(muted, background)}, вывод {VerdictRu(text, muted, background)}");
+    }
+
+    /// <summary>Вывод о контрасте по-русски — для журнала запуска.</summary>
+    private static string VerdictRu(string text, string muted, string background) =>
+        PaletteNote.VerdictOf(text, muted, background) switch
+        {
+            PaletteVerdict.AboveAaa => "выше AAA",
+            PaletteVerdict.AboveAa => "выше AA, но ниже AAA",
+            _ => "НИЖЕ AA",
+        };
+
+    /// <summary>Цвет темы в виде <c>#RRGGBB</c> — в этом виде его понимает расчёт контраста.</summary>
+    private static string HexOf(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+
+    /// <summary>
+    /// Есть ли подсказка с полным текстом: у самой надписи или у рамки вокруг неё (до трёх уровней
+    /// вверх — столько же, сколько разрешает правило разметки <see cref="TrimHint"/>).
+    /// </summary>
+    private static bool HasTooltipNear(FrameworkElement element)
+    {
+        DependencyObject? node = element;
+        for (int level = 0; node is not null && level <= TrimHint.HintDepth; level++)
+        {
+            if (node is FrameworkElement current
+                && (HasTooltipText(current.ToolTip) || HasTooltipText(ToolTipService.GetToolTip(current))))
+            {
+                return true;
+            }
+
+            node = VisualTreeHelper.GetParent(node);
+        }
+
+        return false;
+    }
+
+    /// <summary>Подсказка задана: текст непустой, а объект подсказки — это уже готовая подсказка.</summary>
+    private static bool HasTooltipText(object? value) => value switch
+    {
+        null => false,
+        string text => !string.IsNullOrWhiteSpace(text),
+        _ => true,
+    };
+
+    /// <summary>Собрать все надписи визуального дерева: проверяется каждая.</summary>
+    private static void CollectTextBlocks(DependencyObject node, List<TextBlock> blocks, int depth)
+    {
+        if (depth > 64)
+        {
+            return;
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(node, i);
+            if (child is TextBlock block)
+            {
+                blocks.Add(block);
+            }
+
+            CollectTextBlocks(child, blocks, depth + 1);
+        }
+    }
+
+    /// <summary>
+    /// Обойти видимое дерево и собрать границы элементов от корня окна. Свёрнутое пропускается
+    /// (места не занимает), декор со свечением — тоже: он выходит за край нарочно, под обрезкой.
+    /// Блок с прокруткой вбок пропускается целиком: его содержимое можно докрутить — это не обрез.
+    /// </summary>
+    private static void CollectLayoutBoxes(
+        FrameworkElement root,
+        DependencyObject node,
+        List<LayoutBox> boxes,
+        int depth,
+        string parentName)
+    {
+        if (depth > 64)
+        {
+            return;
+        }
+
+        int children = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < children; i++)
+        {
+            if (VisualTreeHelper.GetChild(node, i) is not FrameworkElement element)
+            {
+                continue;
+            }
+
+            if (element.Visibility != Visibility.Visible || !element.IsHitTestVisible)
+            {
+                continue;
+            }
+
+            if (element is ScrollViewer scroller &&
+                scroller.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled)
+            {
+                continue;
+            }
+
+            try
+            {
+                Rect bounds = element.TransformToAncestor(root)
+                    .TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
+                string name = DescribeLayoutElement(element);
+                boxes.Add(new LayoutBox(
+                    parentName.Length == 0 ? name : $"{name} в {parentName}",
+                    bounds.Left,
+                    bounds.Width));
+            }
+            catch (InvalidOperationException)
+            {
+                continue;   // элемент не из этого дерева — сравнивать нечего
+            }
+
+            CollectLayoutBoxes(root, element, boxes, depth + 1, DescribeLayoutElement(element));
+        }
+    }
+
+    /// <summary>
+    /// Имя элемента для отчёта. <c>x:Name</c> важнее типа — по нему ищут в разметке, — а если имени нет,
+    /// называются первые слова текста: «TextBlock «Готово: пакет…»» ищется в разметке мгновенно, а
+    /// «TextBlock» без ничего не ищется никак.
+    /// </summary>
+    private static string DescribeLayoutElement(FrameworkElement element)
+    {
+        string type = element.GetType().Name;
+        string own = string.IsNullOrEmpty(element.Name) ? type : $"{type} «{element.Name}»";
+        if (element is not TextBlock text || string.IsNullOrWhiteSpace(text.Text))
+        {
+            return own;
+        }
+
+        string snippet = text.Text.Trim().Replace("\r", " ").Replace("\n", " ");
+        if (snippet.Length > 28)
+        {
+            snippet = snippet[..28] + "…";
+        }
+
+        return $"{own} «{snippet}»";
     }
 
     /// <summary>

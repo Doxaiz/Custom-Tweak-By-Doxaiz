@@ -51,4 +51,11 @@ public sealed class WindowsRoutingCandidateSource(IRouteTableReader table, IAdap
 
     public Task<IReadOnlyList<RoutingNodeEntry>> DiscoverAsync(CancellationToken ct = default) =>
         RoutingNodeDiscovery.DiscoverAsync(_table, _adapters, ct);
+
+    /// <summary>
+    /// Тот же поиск, но с честными пояснениями: работающий туннель без IPv4-шлюза (Cloudflare WARP
+    /// и другие wintun-туннели) в список узлов не попадает — человек должен увидеть причину.
+    /// </summary>
+    public Task<RouteDiscoveryResult> DiscoverWithNotesAsync(CancellationToken ct = default) =>
+        RoutingNodeDiscovery.DiscoverWithNotesAsync(_table, _adapters, ct);
 }

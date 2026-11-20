@@ -130,7 +130,7 @@ public class NetworkFlowTests
     {
         var catalog = new GameProcessCatalog();
 
-        Assert.Equal(20, catalog.All.Count);
+        Assert.Equal(22, catalog.All.Count);
 
         Assert.True(catalog.TryMatch(@"C:\Games\Fortnite\FortniteClient-Win64-Shipping.exe", out KnownGame fortnite));
         Assert.Equal("Fortnite", fortnite.TitleRu);
@@ -139,9 +139,126 @@ public class NetworkFlowTests
         Assert.True(catalog.TryMatch("VALORANT-Win64-Shipping.EXE", out KnownGame valorant));
         Assert.Equal(AntiCheatStatus.KnownKernelConflict, valorant.AntiCheat);
 
+        // Minecraft: Java — это javaw.exe (то же имя у любой Java-программы), Bedrock — UWP-процесс.
+        Assert.True(catalog.TryMatch(@"C:\Program Files\Minecraft\runtime\javaw.exe", out KnownGame minecraftJava));
+        Assert.Equal("Minecraft (Java)", minecraftJava.TitleRu);
+        Assert.True(minecraftJava.RequiresPortMatch);
+        Assert.True(minecraftJava.MatchesPort(25565));
+        Assert.False(minecraftJava.MatchesPort(443));
+
+        // java.exe — тот же общий процесс: серверные сборки и лаунчеры запускаются им же.
+        Assert.True(catalog.TryMatch("java.exe", out KnownGame minecraftJavaServer));
+        Assert.Equal("Minecraft (Java)", minecraftJavaServer.TitleRu);
+
+        Assert.True(catalog.TryMatch("Minecraft.Windows.exe", out KnownGame bedrock));
+        Assert.Equal("Minecraft (Bedrock)", bedrock.TitleRu);
+        Assert.True(bedrock.MatchesPort(19132));
+        Assert.True(bedrock.MatchesPort(19133));
+
         Assert.False(catalog.TryMatch("notagame.exe", out _));
         Assert.True(GameProcessCatalog.IsIgnored("Steam.exe"));
         Assert.Equal("steam.exe", GameProcessCatalog.Normalize(@"C:\Program Files\Steam\Steam.Exe"));
+    }
+
+    [Fact]
+    public void Каталог_порты_игр_не_пересекаются_с_веб_и_служебными()
+    {
+        // Порты игры — это признак «это матч, а не браузер». Если в подсказку попадёт 443 или 53,
+        // ранжирование начнёт называть игрой обновление или DNS. Проверяем весь каталог, а не одну игру.
+        int[] forbiddenHints = [80, 443, 53, 123, 5353, 5355, 67, 68, 25, 110, 143];
+
+        // В диапазонах игр mDNS/LLMNR (5353/5355) встречаются законно — например, League of Legends
+        // играет в 5000–5500. Служебные порты внутри процесса игры всё равно получают минус в Score,
+        // а вот веб-порты и DNS в диапазоне игры — это уже ошибка каталога.
+        int[] forbiddenRanges = [80, 443, 53, 123, 67, 68, 25, 110, 143];
+
+        foreach (KnownGame game in GameProcessCatalog.DefaultGames)
+        {
+            foreach (int port in game.PortHints ?? [])
+            {
+                Assert.InRange(port, 1, 65535);
+                Assert.DoesNotContain(port, forbiddenHints);
+            }
+
+            foreach ((int from, int to) in game.PortRanges ?? [])
+            {
+                Assert.InRange(from, 1, 65535);
+                Assert.InRange(to, 1, 65535);
+                Assert.True(from <= to, $"{game.TitleRu}: диапазон {from}–{to} перевёрнут");
+                Assert.DoesNotContain(forbiddenRanges, port => port >= from && port <= to);
+            }
+        }
+    }
+
+    [Fact]
+    public void Детектор_узнаёт_каждую_игру_каталога_по_её_порту()
+    {
+        // Проверка «разных игр», а не только Fortnite и Minecraft: для каждой игры, у которой задан
+        // порт, строим поток этого процесса на этот порт и требуем, чтобы детектор назвал именно её.
+        // Если у игры портов нет — она обязана остаться «кандидатом», а не получить чужое имя.
+        var detector = new GameFlowDetector();
+        var checkedGames = new List<string>();
+
+        foreach (KnownGame game in GameProcessCatalog.DefaultGames)
+        {
+            // Берём первый известный порт игры: сначала подсказку, иначе начало диапазона.
+            int? known = game.PortHints is { Count: > 0 } hints
+                ? hints[0]
+                : game.PortRanges is { Count: > 0 } ranges ? ranges[0].From : null;
+
+            if (known is not { } port)
+            {
+                continue;
+            }
+
+            var rows = new List<RawConnectionRow>
+            {
+                new(ConnectionProtocol.Udp, 4200, "192.168.1.50", 51000, "34.16.1.5", port, "")
+            };
+
+            GameFlowDetectionReport report = detector.Detect(rows, new Dictionary<int, string> { [4200] = game.ProcessName });
+
+            DetectedGameFlow flow = Assert.Single(report.Games);
+            Assert.Equal(game.TitleRu, flow.GameTitleRu);
+            Assert.Equal(port, flow.Flow.RemotePort);
+            checkedGames.Add(game.TitleRu);
+        }
+
+        // Сторож на сам список: если подсказки портов вдруг исчезнут у всех игр, тест не должен
+        // стать «зелёным ни о чём».
+        Assert.True(checkedGames.Count >= 18, $"проверено игр: {checkedGames.Count}");
+    }
+
+    [Fact]
+    public void Детектор_предпочитает_порт_игры_а_не_голосовой_чат_у_разных_игр()
+    {
+        // Один и тот же процесс держит и матч, и голос (3478). У каждой игры с диапазоном портов
+        // поток матча обязан выиграть — иначе оптимизация уйдёт в голосовой сокет.
+        var checks = new (string Process, int GamePort, string Title)[]
+        {
+            ("VALORANT-Win64-Shipping.exe", 7777, "VALORANT"),
+            ("r5apex.exe", 37015, "Apex Legends"),
+            ("rocketleague.exe", 8000, "Rocket League"),
+            ("tslgame.exe", 7086, "PUBG: Battlegrounds"),
+            ("cod.exe", 27015, "Call of Duty"),
+        };
+
+        var detector = new GameFlowDetector();
+
+        foreach ((string process, int gamePort, string title) in checks)
+        {
+            var rows = new List<RawConnectionRow>
+            {
+                new(ConnectionProtocol.Udp, 4300, "192.168.1.50", 52000, "99.86.1.1", 3478, ""),
+                new(ConnectionProtocol.Udp, 4300, "192.168.1.50", 52001, "34.16.1.5", gamePort, "")
+            };
+
+            GameFlowDetectionReport report = detector.Detect(rows, new Dictionary<int, string> { [4300] = process });
+
+            DetectedGameFlow flow = Assert.Single(report.Games);
+            Assert.Equal(title, flow.GameTitleRu);
+            Assert.Equal(gamePort, flow.Flow.RemotePort);
+        }
     }
 
     [Fact]
@@ -191,6 +308,134 @@ public class NetworkFlowTests
             .Detect(rows, new Dictionary<int, string> { [700] = "rocketleague.exe" });
 
         Assert.Equal(9339, report.BestGame!.Flow.RemotePort);
+    }
+
+    [Fact]
+    public void Detector_Находит_Minecraft_Java_по_порту_25565()
+    {
+        // Живой случай: клиент Minecraft — это javaw.exe с одним TCP-потоком на 25565 и веб-соединениями рядом.
+        var rows = new List<RawConnectionRow>
+        {
+            new(ConnectionProtocol.Tcp, 6412, "192.168.1.50", 51234, "51.79.12.34", 25565, "Established"), // сервер Minecraft
+            new(ConnectionProtocol.Tcp, 6412, "192.168.1.50", 51235, "142.250.185.78", 443, "Established") // лончер/тема
+        };
+
+        GameFlowDetectionReport report = new GameFlowDetector()
+            .Detect(rows, new Dictionary<int, string> { [6412] = "javaw.exe" });
+
+        DetectedGameFlow flow = Assert.Single(report.Games);
+        Assert.Equal("Minecraft (Java)", flow.GameTitleRu);
+        Assert.Equal("51.79.12.34:25565", flow.EndpointText);
+        Assert.Equal("TCP", flow.Flow.Transport);
+        Assert.Contains("совпал с портом игры", flow.ReasonRu, StringComparison.Ordinal);
+        Assert.True(flow.CanOptimize);
+    }
+
+    [Fact]
+    public void Detector_Не_называет_игрой_Java_процесс_на_чужом_порту()
+    {
+        // То же имя javaw.exe носит любая Java-программа: без совпадения порта называть её Minecraft нельзя,
+        // иначе маршрут уйдёт в чужое соединение. Это честное «кандидат, а не игра».
+        var rows = new List<RawConnectionRow>
+        {
+            new(ConnectionProtocol.Tcp, 6412, "192.168.1.50", 51234, "34.16.1.5", 8443, "Established")
+        };
+
+        GameFlowDetectionReport report = new GameFlowDetector()
+            .Detect(rows, new Dictionary<int, string> { [6412] = "javaw.exe" });
+
+        Assert.Empty(report.Games);
+        UnknownGameCandidate candidate = Assert.Single(report.UnknownCandidates);
+        Assert.True(candidate.IsAmbiguousProcess);
+        Assert.Contains("javaw.exe", candidate.ReasonRu, StringComparison.Ordinal);
+        Assert.Contains("25565", candidate.ReasonRu, StringComparison.Ordinal);
+        Assert.Contains("не угадываем", candidate.ReasonRu, StringComparison.Ordinal);
+
+        // Лобби не утверждается: у общего процесса «пусто и значит лобби» — догадка без признаков.
+        string reason = WindowsGameFlowWatcher.DescribeNoGameRu(report);
+        Assert.Contains("общим именем", reason, StringComparison.Ordinal);
+        Assert.DoesNotContain("добавьте её в список известных игр", reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Detector_Находит_Minecraft_Bedrock_по_UDP_19132()
+    {
+        // Bedrock — UWP-процесс: игровой сервер по UDP 19132, рядом веб-потоки Xbox Live по 443.
+        var rows = new List<RawConnectionRow>
+        {
+            new(ConnectionProtocol.Udp, 9001, "192.168.1.50", 52000, "51.79.12.34", 19132, ""),
+            new(ConnectionProtocol.Tcp, 9001, "192.168.1.50", 52001, "52.14.7.9", 443, "Established")
+        };
+
+        GameFlowDetectionReport report = new GameFlowDetector()
+            .Detect(rows, new Dictionary<int, string> { [9001] = "Minecraft.Windows.exe" });
+
+        DetectedGameFlow flow = Assert.Single(report.Games);
+        Assert.Equal("Minecraft (Bedrock)", flow.GameTitleRu);
+        Assert.Equal(19132, flow.Flow.RemotePort);
+        Assert.Equal("UDP", flow.Flow.Transport);
+    }
+
+    [Fact]
+    public void Detector_У_Фортнайта_берёт_поток_матча_а_не_голосовой_чат()
+    {
+        // В одном процессе Fortnite живут матч (UDP 5795–5847/7000–9100) и голос (UDP 3478).
+        // Без портов самой игры выбирался голосовой поток — и «оптимизация» шла в чужой сокет.
+        var rows = new List<RawConnectionRow>
+        {
+            new(ConnectionProtocol.Udp, 8124, "192.168.1.50", 51000, "99.86.1.1", 3478, ""),  // голос
+            new(ConnectionProtocol.Udp, 8124, "192.168.1.50", 51001, "34.16.1.5", 5795, "")   // матч
+        };
+
+        GameFlowDetectionReport report = new GameFlowDetector()
+            .Detect(rows, new Dictionary<int, string> { [8124] = "FortniteClient-Win64-Shipping.exe" });
+
+        DetectedGameFlow flow = Assert.Single(report.Games);
+        Assert.Equal("Fortnite", flow.GameTitleRu);
+        Assert.Equal(5795, flow.Flow.RemotePort);
+    }
+
+    [Fact]
+    public void Detector_У_Фортнайта_голос_не_обгоняет_матч_на_неизвестном_порту()
+    {
+        // Матч может оказаться на порту вне известных диапазонов (сезон меняет порты). Тогда решает
+        // не «игровой порт», а то, что 3478 — голосовой чат: иначе оптимизация шла бы в голосовой сокет.
+        var rows = new List<RawConnectionRow>
+        {
+            new(ConnectionProtocol.Udp, 8124, "192.168.1.50", 51000, "99.86.1.1", 3478, ""),   // голос
+            new(ConnectionProtocol.Udp, 8124, "192.168.1.50", 51001, "34.16.1.5", 20000, "")   // матч
+        };
+
+        GameFlowDetectionReport report = new GameFlowDetector()
+            .Detect(rows, new Dictionary<int, string> { [8124] = "FortniteClient-Win64-Shipping.exe" });
+
+        DetectedGameFlow flow = Assert.Single(report.Games);
+        Assert.Equal(20000, flow.Flow.RemotePort);
+        Assert.Contains("UDP", flow.ReasonRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Detector_IPv6_поток_виден_но_не_оптимизируется()
+    {
+        // IPv6-only сервер Minecraft: поток виден, но маршрут по IPv6 продукт не ставит.
+        // Молчать об этом нельзя — иначе человек читает «игр не найдено» и не понимает причину.
+        var rows = new List<RawConnectionRow>
+        {
+            new(ConnectionProtocol.Tcp, 6412, "fe80::1%12", 51234, "2a02:6b8::2:242", 25565, "Established")
+        };
+
+        GameFlowDetectionReport report = new GameFlowDetector()
+            .Detect(rows, new Dictionary<int, string> { [6412] = "javaw.exe" });
+
+        Assert.Empty(report.Games);
+        Assert.Equal(1, report.Ipv6FlowRows);
+        Assert.Equal(0, report.PublicFlowRows);
+        Assert.Contains(report.NotesRu, n => n.Contains("IPv6", StringComparison.Ordinal));
+        Assert.DoesNotContain(report.Games, g => g.ReasonRu.Contains("лобби", StringComparison.Ordinal));
+
+        string reason = WindowsGameFlowWatcher.DescribeNoGameRu(report);
+        Assert.Contains("IPv6", reason, StringComparison.Ordinal);
+        Assert.DoesNotContain("добавьте её в список известных игр", reason, StringComparison.Ordinal);
     }
 
     [Fact]

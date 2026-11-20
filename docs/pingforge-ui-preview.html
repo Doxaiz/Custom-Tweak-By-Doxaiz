@@ -6,9 +6,11 @@
 <title>Custom Tweak By Doxaiz — макет интерфейса (данные из кода проекта)</title>
 <style>
 :root{
-  --bg:#0b0f16; --bg2:#111826; --card:#141c2b; --line:#1f2b3f; --line2:#2a3852;
-  --text:#e8eef8; --muted:#93a3bd; --dim:#6b7c99;
-  --accent:#3ea6ff; --accent2:#7c5cff; --ok:#31c48d; --warn:#f0b429; --bad:#f2545b; --info:#38bdf8;
+  /* Палитра — ровно та же, что в App.xaml: макет показывает программу, а не «похожий на неё»
+     сайт. Совпадение проверяет tools/check_ui_preview.js, сверяя эти значения с темой. */
+  --bg:#070b14; --bg2:#0d1930; --card:#111a2a; --line:#1e2a42; --line2:#24405c;
+  --text:#e9effb; --muted:#8fa1bd; --dim:#7b8fa8;
+  --accent:#4ade80; --accent2:#38bdf8; --ok:#4ade80; --warn:#f2c94c; --bad:#f2545b; --info:#38bdf8;
   --radius:14px;
 }
 *{box-sizing:border-box}
@@ -51,15 +53,15 @@ p{margin:8px 0}
 .g4{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .between{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12.5px;background:#0e1622;border:1px solid var(--line);
+code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12.5px;background:#0b1220;border:1px solid var(--line);
   border-radius:6px;padding:1.5px 6px;color:#bcd3f7;word-break:break-all}
 .metric{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:14px}
 .metric .label{font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
 .metric .value{font-size:23px;font-weight:700;margin-top:6px}
 .metric .value.na{color:var(--dim);font-size:18px;font-weight:600}
-.btn{border:1px solid var(--line2);background:#182234;color:var(--text);font:inherit;font-weight:600;
+.btn{border:1px solid var(--line2);background:#16203a;color:var(--text);font:inherit;font-weight:600;
   padding:11px 18px;border-radius:11px;cursor:pointer;display:inline-block}
-.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#04101f}
+.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#04121d}
 .btn.big{font-size:16px;padding:15px 26px;border-radius:13px}
 .btn.small{padding:7px 12px;font-size:13.5px;border-radius:9px}
 .btn[disabled]{opacity:.55;cursor:not-allowed}
@@ -84,25 +86,30 @@ tr:hover>td{background:#121a29}
 td.num,th.num{text-align:right;font-family:"Cascadia Mono",Consolas,monospace}
 .scroll{overflow-x:auto}
 
-input[type=text],select{font:inherit;color:var(--text);background:#0e1622;border:1px solid var(--line2);
+input[type=text],select{font:inherit;color:var(--text);background:#0b1220;border:1px solid var(--line2);
   border-radius:9px;padding:9px 11px;min-width:180px}
 label.check{display:flex;gap:9px;align-items:flex-start;cursor:pointer}
 input[type=checkbox]{margin-top:3px;width:17px;height:17px;accent-color:var(--accent)}
 
 .callout{border-left:3px solid var(--accent);background:#101a2b;border-radius:0 12px 12px 0;padding:13px 16px;margin:14px 0}
+/* Примеры файлов: то, что программа реально пишет. Цвета — только из темы. */
+.snippet{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0 0;
+  font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.5;color:var(--text);
+  white-space:pre-wrap;word-break:break-word}
+.snippet .dim{color:var(--dim)}
 .callout.warn{border-left-color:var(--warn)}
 .callout.ok{border-left-color:var(--ok)}
 .callout.bad{border-left-color:var(--bad)}
-.callout b{color:#fff}
+.callout b{color:var(--text)}
 
 .window{background:var(--bg2);border:1px solid var(--line2);border-radius:16px;overflow:hidden;margin:14px 0;
   box-shadow:0 18px 50px rgba(0,0,0,.45)}
-.window .titlebar{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#0e1622;border-bottom:1px solid var(--line)}
+.window .titlebar{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#0b1220;border-bottom:1px solid var(--line)}
 .window .dots{display:flex;gap:6px}
 .window .dots i{width:11px;height:11px;border-radius:50%;display:block;background:#31405c}
 .window .body{padding:18px}
 
-.bar{height:9px;border-radius:999px;background:#0e1622;border:1px solid var(--line);overflow:hidden;min-width:110px}
+.bar{height:9px;border-radius:999px;background:#0b1220;border:1px solid var(--line);overflow:hidden;min-width:110px}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
 .bar i.done{background:linear-gradient(90deg,#2f9e6f,var(--ok))}
 .bar i.none{background:#26334a}
@@ -127,7 +134,7 @@ details.tweak[hidden]{display:none}
 
 .calc{display:grid;gap:16px;grid-template-columns:1fr 1fr}
 @media(max-width:820px){.calc{grid-template-columns:1fr}}
-.calc .col{background:#0e1622;border:1px solid var(--line);border-radius:12px;padding:14px}
+.calc .col{background:#0b1220;border:1px solid var(--line);border-radius:12px;padding:14px}
 .calc label{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin:10px 0 2px}
 .calc input[type=range]{width:100%;padding:0}
 .score{font-size:26px;font-weight:700}
@@ -147,14 +154,14 @@ nav.side-nav{display:flex;flex-direction:column;gap:4px}
 nav.side-nav a.step{display:flex;gap:11px;align-items:flex-start;padding:9px 11px;border-radius:11px;
   border:1px solid transparent;color:var(--muted)}
 .stepnum{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;
-  border-radius:7px;background:#182234;border:1px solid var(--line2);font-size:11.5px;font-weight:700;color:var(--muted)}
+  border-radius:7px;background:#16203a;border:1px solid var(--line2);font-size:11.5px;font-weight:700;color:var(--muted)}
 nav.side-nav a.step .steptext{display:flex;flex-direction:column;line-height:1.25}
 nav.side-nav a.step .steptext b{color:var(--text);font-size:14.5px;font-weight:650}
 nav.side-nav a.step .steptext span{font-size:12px;color:var(--dim)}
 nav.side-nav a.step:hover{background:#121a29;border-color:var(--line)}
 nav.side-nav a.step[aria-current="true"]{background:#16223a;border-color:var(--line2)}
 nav.side-nav a.step[aria-current="true"] .stepnum{background:linear-gradient(135deg,var(--accent),var(--accent2));
-  border-color:transparent;color:#04101f}
+  border-color:transparent;color:#04121d}
 .side-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px;
   display:flex;flex-direction:column;gap:9px}
 .side-card .btn{width:100%;text-align:center}
@@ -189,12 +196,12 @@ a.up:hover{color:var(--text)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
 h2.parthead{font-size:20px;margin:22px 0 6px;padding-top:14px;border-top:1px solid var(--line)}
 .simple{border-left:3px solid var(--ok);background:#0f1a17;border-radius:0 12px 12px 0;padding:12px 15px;margin:14px 0}
-.simple b{color:#fff}
+.simple b{color:var(--text)}
 .three{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin:12px 0}
-.three .step{background:#0e1622;border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.three .step{background:#0b1220;border:1px solid var(--line);border-radius:12px;padding:13px 15px}
 .three .step b{display:block;color:var(--text);margin-bottom:4px}
 .three .step .n{display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;
-  border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04101f;
+  border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04121d;
   font-weight:700;font-size:12.5px;margin-bottom:7px}
 .glossary dt{font-weight:700;margin-top:10px}
 .glossary dd{margin:2px 0 0;color:var(--muted);font-size:13.5px}
@@ -225,13 +232,13 @@ nav.side-nav a.step[aria-current="true"]{background:#16223a;border-color:var(--l
 nav.side-nav a.step[aria-current="true"]::before{content:"";position:absolute;left:-9px;top:11px;bottom:11px;
   width:3px;border-radius:3px;background:linear-gradient(180deg,var(--accent),var(--accent2))}
 nav.side-nav a.step .stepnum{flex:0 0 24px;width:24px;height:24px;border-radius:9px;display:grid;place-items:center;
-  font-size:12.5px;font-weight:700;color:var(--muted);background:#0e1622;border:1px solid var(--line);margin-top:1px}
-nav.side-nav a.step[aria-current="true"] .stepnum{color:#04101f;border-color:transparent;
+  font-size:12.5px;font-weight:700;color:var(--muted);background:#0b1220;border:1px solid var(--line);margin-top:1px}
+nav.side-nav a.step[aria-current="true"] .stepnum{color:#04121d;border-color:transparent;
   background:linear-gradient(135deg,var(--accent),var(--accent2))}
 nav.side-nav a.step .steptext{flex:1}
 nav.side-nav a.step .steptext span{color:var(--dim);font-size:11.5px;margin-top:2px}
 nav.side-nav a.step .navbadge{flex:0 0 auto;align-self:flex-start;margin-top:2px;font-size:11px;font-weight:650;
-  color:var(--muted);background:#0e1622;border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+  color:var(--muted);background:#0b1220;border:1px solid var(--line);border-radius:999px;padding:1px 8px}
 nav.side-nav a.step[aria-current="true"] .navbadge{color:var(--text);border-color:var(--line2)}
 
 .side-tip{margin-top:14px;padding:11px 13px;border:1px dashed var(--line2);border-radius:12px;
@@ -248,7 +255,7 @@ a.toc-tile{display:flex;gap:12px;align-items:flex-start;text-decoration:none;col
   transition:border-color .15s,transform .15s,background .15s}
 a.toc-tile:hover{border-color:var(--line2);background:#131c2c;transform:translateY(-2px)}
 a.toc-tile .toc-num{flex:0 0 28px;width:28px;height:28px;border-radius:10px;display:grid;place-items:center;
-  font-weight:700;font-size:13.5px;color:#04101f;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+  font-weight:700;font-size:13.5px;color:#04121d;background:linear-gradient(135deg,var(--accent),var(--accent2))}
 a.toc-tile b{display:block;font-size:14.5px}
 a.toc-tile .toc-desc{display:block;color:var(--muted);font-size:13px;margin-top:3px}
 a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:6px}
@@ -257,7 +264,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .secnav{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:26px 0 8px;padding-top:14px;
   border-top:1px dashed var(--line);font-size:13px}
 .secnav a,.secnav span.end{border:1px solid var(--line);border-radius:10px;padding:7px 12px;color:var(--muted);
-  background:#0e1622}
+  background:#0b1220}
 .secnav a:hover{color:var(--text);border-color:var(--line2)}
 .secnav .secnav-mid{margin:0 auto}
 .secnav span.end{color:var(--dim)}
@@ -268,7 +275,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .toc-mini > summary{cursor:pointer;padding:10px 13px;font-size:13px;font-weight:640;color:var(--text)}
 .toc-mini[open] > summary{border-bottom:1px solid var(--line);background:#101a29}
 .toc-mini-links{display:flex;flex-wrap:wrap;gap:8px;padding:11px 13px}
-.toc-mini-links a{background:#0e1622;border:1px solid var(--line);border-radius:999px;padding:5px 11px;
+.toc-mini-links a{background:#0b1220;border:1px solid var(--line);border-radius:999px;padding:5px 11px;
   font-size:12.5px;color:var(--muted)}
 .toc-mini-links a:hover{border-color:var(--line2);color:var(--text)}
 .whatsnew{border-color:var(--line2)}
@@ -288,7 +295,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .chart{background:#0c1420;border:1px solid var(--line);border-radius:12px;padding:10px 12px 6px}
 .chart h4{margin:2px 0 6px;font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .chart svg{display:block;width:100%;height:auto}
-.chart .axis{fill:#7f8ea8;font-size:9px}
+.chart .axis{fill:#7b8fa8;font-size:9px}
 .chart .grid{stroke:#1c2534;stroke-width:.6}
 .legend{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0 0;font-size:11.5px;color:var(--muted)}
 .legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
@@ -310,16 +317,16 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .switch .slider::before{content:"";position:absolute;width:19px;height:19px;left:4px;top:3px;border-radius:50%;
   background:#93a3bd;transition:.18s}
 .switch input:checked + .slider{background:linear-gradient(135deg,var(--ok),var(--accent));border-color:transparent}
-.switch input:checked + .slider::before{transform:translateX(21px);background:#04101f}
+.switch input:checked + .slider::before{transform:translateX(21px);background:#04121d}
 .switch input:focus-visible + .slider{outline:2px solid var(--accent);outline-offset:2px}
 .switch input:disabled + .slider{opacity:.6}
 .t-state{font-size:12px;color:var(--dim);margin-top:6px;text-align:center}
 .tweak.on .t-state{color:var(--ok)}
 .t-details{border-top:1px solid var(--line)}
-.t-details > summary{cursor:pointer;padding:9px 14px;font-size:13px;color:var(--muted);background:#0e1622}
+.t-details > summary{cursor:pointer;padding:9px 14px;font-size:13px;color:var(--muted);background:#0b1220}
 .t-details > summary:hover{color:var(--text)}
 .t-blocks{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));padding:12px 14px 16px}
-.t-block{background:#0e1622;border:1px solid var(--line);border-radius:12px;padding:12px 14px;max-width:100%;overflow-wrap:anywhere}
+.t-block{background:#0b1220;border:1px solid var(--line);border-radius:12px;padding:12px 14px;max-width:100%;overflow-wrap:anywhere}
 .t-block.wide{grid-column:1/-1}
 .t-block h4{margin:0 0 6px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .t-block p{margin:0;font-size:13.5px;overflow-wrap:anywhere}
@@ -339,8 +346,13 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .presetcard{background:#0f1725;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .presetcard h4{margin:0 0 4px;font-size:14px}
 .presetcard .cnt{color:var(--accent);font-weight:700}
+.scaleopts{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.scaleopts label{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);border:1px solid var(--line2);border-radius:999px;padding:6px 13px;cursor:pointer}
+.scaleopts input{margin:0;accent-color:var(--accent)}
+.scaleopts label:has(input:checked){color:var(--text);border-color:var(--accent);background:#18243c;font-weight:600}
 .chiprow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.chiprow span{background:#0e1622;border:1px solid var(--line);border-radius:8px;padding:2px 7px;font-size:11.5px;color:var(--muted)}
+.chiprow span{background:#0b1220;border:1px solid var(--line);border-radius:8px;padding:2px 7px;font-size:11.5px;color:var(--muted)}
+.chiprow span.on{background:#16223a;border-color:var(--line2);color:var(--text);font-weight:650}
 .overflow-safe{overflow-wrap:anywhere;word-break:break-word}
 </style>
 </head>
@@ -350,7 +362,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
   <div class="appbar-inner">
     <div class="logo">
       <span class="mark">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#04101f" stroke-width="2.6" stroke-linecap="round">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#04121d" stroke-width="2.6" stroke-linecap="round">
           <path d="M3 17l5-7 4 4 4-8 5 6"/>
         </svg>
       </span>
@@ -525,7 +537,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
   </div>
 
   <h2>Что делает кнопка по шагам</h2>
-  <div class="card"><ul class="clean"><li>1. Ищем запущенную игру и её живой сетевой поток (SIO_TCP_INFO для TCP, метки на ответах сервера для UDP).</li><li>2. Меряем «до»: три окна замеров, чтобы исходный пинг был честным числом, а не одним кадром.</li><li>3. Выбираем путь: прямое подключение или POP-узел релея по формуле скоринга.</li><li>4. Применяем действия: маршрут для адреса сервера и политика QoS (DSCP 46) для процесса игры.</li><li>5. Контролируем качество каждые 2 секунды: просадка → переключение пути, восстановление → возврат.</li><li>6. Остановка: снимаем изменения, показываем «до/после» медианами и физический предел пути.</li></ul></div>
+  <div class="card"><ul class="clean"><li>1. Ищем запущенную игру и её живой сетевой поток: статистика уже открытого TCP-соединения для TCP, метки на ответах сервера для UDP — ни одного пакета сверх трафика игры.</li><li>2. Меряем «до»: три окна замеров, чтобы исходный пинг был честным числом, а не одним кадром.</li><li>3. Выбираем путь: прямое подключение или POP-узел релея по формуле скоринга.</li><li>4. Применяем действия: маршрут для адреса сервера и политика QoS (DSCP 46) для процесса игры.</li><li>5. Контролируем качество каждые 2 секунды: просадка → переключение пути, восстановление → возврат.</li><li>6. Остановка: снимаем изменения, показываем «до/после» медианами и физический предел пути.</li></ul></div>
 
   <div class="grid g2">
     <div class="card tight">
@@ -555,6 +567,9 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
   </div>
 
   <h2>Пресеты</h2>
+  <p class="small muted">Состав каждого пресета берётся из того же вызова каталога, которым пользуется служба:
+  число в подписи и список твиков не могут разойтись. Кнопка <b>«Показать состав»</b> отбирает карточки
+  пресета и ничего не применяет — ползунки остаются там, где стояли.</p>
   <div class="grid g3">
         <div class="card tight">
           <div class="between" style="margin-bottom:6px">
@@ -603,6 +618,8 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
   <div class="eyebrow">Раздел 2 из 6: Твики · часть 1 — окно применения</div>
   <h1>Применить твики</h1>
   <p class="muted">Отдельное окно: сначала анализ текущих настроек и предложение точки восстановления, потом изменения.</p>
+  <p class="small muted">Подтверждение называет не только число, но и состав выбора по назначению —
+  «Пинг и сеть — 5 · Кадры — 4 · Ввод — 3»: число правок ввода вместо сетевых человек видит до нажатия «Применить».</p>
 
   <div class="simple">
     <b>Простыми словами.</b> Твик — это одна настройка Windows. Применяются они не молча: сначала программа
@@ -809,6 +826,27 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
   показана на карточке отдельной меткой.</p>
 
   <div class="card tight">
+    <h4>Порядок и поиск</h4>
+    <p class="small muted" style="margin:6px 0 0">Порядок меняет только последовательность карточек,
+    поиск — видимую часть списка. Отметки и пресеты при этом не трогаются: поиск не применяет и не
+    сбрасывает ничего. В заголовке группы стоит «твиков: N · включено M» — M считается по ползункам.</p>
+    <div class="chiprow" style="margin-top:10px">
+      <span class="on">По назначению — выбрано</span>
+      <span>Сначала полезное</span>
+      <span>По алфавиту</span>
+    </div>
+    <p class="small dim" style="margin:12px 0 0">Фильтры — это не порядок и не поиск: они убирают из списка
+    то, что не подходит. Включать можно несколько сразу, и отметки с пресетами они не меняют.</p>
+    <div class="chiprow" style="margin-top:8px">
+      <span>Только рекомендуемое</span>
+      <span>Скрыть «не советуем»</span>
+      <span>Только из пресетов</span>
+    </div>
+    <p class="small dim" style="margin:8px 0 0">Поиск идёт по названию, описанию, коду и назначению —
+    например, «DNS» или «TCP_ACK». Ничего не нашлось — так и написано, а не «показан весь каталог».</p>
+  </div>
+
+  <div class="card tight">
     <h4>Остальные метки на карточке</h4>
     <div class="legendbox">
       <div><span class="tag ok">риск: Low</span> откатывается в один шаг</div>
@@ -923,7 +961,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
     </div>
   </div>
 
-  <div class="grouphd" id="focus-Ping"><h2>Пинг и стабильность сети</h2><span class="cnt">твиков: 12</span></div>
+  <div class="grouphd" id="focus-Ping"><h2>Пинг и стабильность сети</h2><span class="cnt">твиков: 12 · включено 6</span></div>
 <p class="groupnote">Сокращают задержку и джиттер: подтверждения TCP, таймеры, параметры драйвера карты, DNS.</p>
       <article class="tweak on" data-code="TCP_ACK_FREQUENCY"
                data-focus="Ping" data-badge="Recommended"
@@ -1693,7 +1731,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
           </div>
         </details>
       </article>
-<div class="grouphd" id="focus-Speed"><h2>Скорость</h2><span class="cnt">твиков: 7</span></div>
+<div class="grouphd" id="focus-Speed"><h2>Скорость</h2><span class="cnt">твиков: 7 · включено 4</span></div>
 <p class="groupnote">Влияют на пропускную способность: буферы карты, окно приёма, масштабирование приёма.</p>
       <article class="tweak on" data-code="NIC_RECEIVE_BUFFERS"
                data-focus="Speed" data-badge="Recommended"
@@ -2143,7 +2181,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
           </div>
         </details>
       </article>
-<div class="grouphd" id="focus-Fps"><h2>ФПС и ровность кадра</h2><span class="cnt">твиков: 13</span></div>
+<div class="grouphd" id="focus-Fps"><h2>ФПС и ровность кадра</h2><span class="cnt">твиков: 13 · включено 6</span></div>
 <p class="groupnote">Питание, фон Windows, планировщик: чтобы система не отбирала ресурсы в бою.</p>
       <article class="tweak on" data-code="MMCSS_SYSTEM_RESPONSIVENESS"
                data-focus="Fps" data-badge="Recommended"
@@ -2977,7 +3015,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
           </div>
         </details>
       </article>
-<div class="grouphd" id="focus-Input"><h2>Задержка ввода</h2><span class="cnt">твиков: 10</span></div>
+<div class="grouphd" id="focus-Input"><h2>Задержка ввода</h2><span class="cnt">твиков: 10 · включено 7</span></div>
 <p class="groupnote">Между рукой и картинкой: акселерация указателя, «фильтр ввода» клавиатуры, отзывчивость интерфейса.</p>
       <article class="tweak on" data-code="MOUSE_ACCEL_SPEED"
                data-focus="Input" data-badge="Recommended"
@@ -3619,7 +3657,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
           </div>
         </details>
       </article>
-<div class="grouphd" id="focus-System"><h2>Система и служебные правки</h2><span class="cnt">твиков: 5</span></div>
+<div class="grouphd" id="focus-System"><h2>Система и служебные правки</h2><span class="cnt">твиков: 5 · включено 0</span></div>
 <p class="groupnote">Помогают косвенно: шум NetBIOS, кэш DNS, разрешение имён.</p>
       <article class="tweak" data-code="TCP_INITIAL_RTT"
                data-focus="System" data-badge="Caution"
@@ -3986,6 +4024,55 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
   трафика и не трогала всё остальное. Если разработчик портов не публикует, программа работает от факта:
   смотрит, куда реально идёт соединение, и измеряет этот адрес.</p>
 
+  <div class="card tight" style="margin-top:12px">
+    <h3 id="routes-custom-game">Своя игра: подойдёт и файл с рабочего стола</h3>
+    <p class="small muted">«Добавить игру» открывает папку рабочего стола и показывает не только .exe: ярлык игры
+    и файл ссылки тоже подойдут. Из ярлыка программа читает путь к настоящему .exe и говорит, на что именно
+    указывает выбор — «Ярлык ведёт на «MyGame.exe»» — и только потом добавляет игру. Если ярлык ведёт на удалённую
+    игру, на лаунчер, или выбран обычный документ, игра не добавляется, а причина написана словами: что именно
+    не так и что выбрать вместо этого. После добавления программа называет процесс, который будет искать
+    (<code>mygame.exe</code>), и честно говорит, когда служба его увидит: уже запущенную игру — сразу, остальные —
+    когда игра запустится. Регионы, порты и маршрут показываются по тому же правилу, что у встроенных игр;
+    анти-чит у своей игры помечен «не проверялся», а не «безопасно».</p>
+
+    <div class="callout" style="margin-top:12px">
+      <b>Примеры того, что человек увидит</b> — дословно из программы, а не пересказ:
+      <ul class="small" style="margin:8px 0 0 18px;padding:0">
+        <li><span class="tag ok">добавлено</span> «Ярлык ведёт на «MyGame.exe». Своя игра «Моя игра» добавлена. Процесс
+        «mygame.exe» появится в списке, когда игра запустится.»</li>
+        <li><span class="tag ok">добавлено</span> «Процесс «mygame.exe» уже запущен — служба видит его в списке процессов.»</li>
+        <li><span class="tag warn">отказ</span> «Игра не добавлена: «заметки.txt» (.txt) — не программа и не ярлык.
+        Игра запускается .exe; ярлык с рабочего стола подойдёт — программа найдёт .exe по нему.»</li>
+        <li><span class="tag warn">отказ</span> «Игра не добавлена: ярлык ведёт на «…\Deleted\GoneGame.exe», но такого
+        файла на диске нет: игра перемещена или удалена. Укажите сам .exe игры.»</li>
+        <li><span class="tag warn">отказ</span> «Игра не добавлена: «steam.exe» — служебный процесс или лаунчер,
+        а не игра: такие процессы программа игрой не называет.»</li>
+      </ul>
+    </div>
+
+    <h3 style="margin-top:16px">Что будет, если выбрать…</h3>
+    <div class="scroll">
+      <table id="routes-pick-examples">
+        <thead><tr><th>Что выбрали</th><th>Что скажет программа</th><th>Итог</th></tr></thead>
+        <tbody>
+          <tr><td><code>MyGame.exe</code></td><td class="small">«Своя игра «MyGame» добавлена. Процесс «mygame.exe» появится в списке, когда игра запустится.»</td><td><span class="tag ok">добавлено</span></td></tr>
+          <tr><td>ярлык <code>MyGame.lnk</code></td><td class="small">«Ярлык ведёт на «MyGame.exe». Своя игра «MyGame» добавлена…»</td><td><span class="tag ok">добавлено</span></td></tr>
+          <tr><td>ярлык на ярлык</td><td class="small">два ярлыка подряд разбираются: «Ярлык ведёт на «MyGame.lnk». Ярлык ведёт на «MyGame.exe».»</td><td><span class="tag ok">добавлено</span></td></tr>
+          <tr><td>ярлык на <code>steam.exe</code></td><td class="small">«steam.exe» — служебный процесс или лаунчер, а не игра: такие процессы программа игрой не называет.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td>ярлык на <code>start.bat</code></td><td class="small">«Ярлык ведёт на «start.bat» — это скрипт, а не игра: скрипт запускает что-то другое, и процесс игры называется иначе. Укажите сам .exe игры.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td>ярлык на удалённую игру</td><td class="small">«…но такого файла на диске нет: игра перемещена или удалена. Укажите сам .exe игры.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td>круг из ярлыков</td><td class="small">«Цепочка ярлыков начинается с «Второй.lnk» и не доходит до файла игры. Укажите сам .exe игры…»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td><code>MyGame-Setup.msi</code></td><td class="small">«…— установщик, а не игра. Сначала установите игру, потом укажите её .exe.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td><code>MyGame-portable.zip</code></td><td class="small">«…— архив с игрой, а не игра. Распакуйте его и укажите .exe внутри.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td><code>run.cmd</code></td><td class="small">«…— это скрипт, а не игра: скрипт запускает что-то другое, и процесс игры называется иначе.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td>файл ссылки на <code>.exe</code></td><td class="small">«Ссылка ведёт на «MyGame.exe». Своя игра добавлена…»</td><td><span class="tag ok">добавлено</span></td></tr>
+          <tr><td>файл ссылки на сайт</td><td class="small">«Ссылка ведёт не на файл игры, а на «https://example.com/play». Укажите сам .exe игры или её ярлык…»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td><code>заметки.txt</code></td><td class="small">«…— не программа и не ярлык. Игра запускается .exe; ярлык с рабочего стола подойдёт — программа найдёт .exe по нему.»</td><td><span class="tag warn">отказ</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <h3 id="routes-dns">Бесплатные публичные DNS</h3>
   <div class="scroll">
     <table>
@@ -4170,7 +4257,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
   появится новый показатель, он появится и в этом макете. Без подписи «окно наблюдения и число проб»
   любые цифры ничего не значат: на двадцати пробах график красивее, но менее правдив.
   Окно наблюдения: <b>окно наблюдения: 60 с, точек в окне: 360, рядов с данными: 11 из 11</b>.</p>
-  <div class="grid g2" style="margin:12px 0"><div class="chart"><h4>Скорость приёма · Мбит/с</h4><svg viewBox="-26 -6 360 154" role="img" aria-label="Скорость приёма"><line x1="0" y1="0" x2="320" y2="0" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="33" x2="320" y2="33" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="66" x2="320" y2="66" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="99" x2="320" y2="99" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="132" x2="320" y2="132" stroke="#1c2534" stroke-width="1"/><text class="axis" x="2" y="142">120</text><text class="axis" x="2" y="109">90</text><text class="axis" x="2" y="76">60</text><text class="axis" x="2" y="43">30</text><text class="axis" x="2" y="10">0</text><polyline fill="none" stroke="#7f8ea8" stroke-width="2" stroke-linejoin="round" points="0.0,30.8 26.7,35.2 53.3,27.5 80.0,33.0 106.7,37.4 133.3,29.7 160.0,34.1 186.7,31.9 213.3,36.3 240.0,28.6 266.7,33.0 293.3,35.2 320.0,30.8"/><polyline fill="none" stroke="#4ade80" stroke-width="2" stroke-linejoin="round" points="0.0,30.8 26.7,33.0 53.3,27.5 80.0,29.7 106.7,31.9 133.3,28.6 160.0,30.8 186.7,29.7 213.3,33.0 240.0,27.5 266.7,29.7 293.3,30.8 320.0,28.6"/><text class="axis" x="0" y="143" text-anchor="start">0 с</text><text class="axis" x="160" y="143" text-anchor="middle">30 с</text><text class="axis" x="320" y="143" text-anchor="end">60 с</text></svg><div class="legend"><span><i style="background:#7f8ea8"></i>было</span><span><i style="background:#4ade80"></i>стало</span></div></div><div class="chart"><h4>Задержка: средняя · мс</h4><svg viewBox="-26 -6 360 154" role="img" aria-label="Задержка: средняя"><line x1="0" y1="0" x2="320" y2="0" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="33" x2="320" y2="33" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="66" x2="320" y2="66" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="99" x2="320" y2="99" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="132" x2="320" y2="132" stroke="#1c2534" stroke-width="1"/><text class="axis" x="2" y="142">60</text><text class="axis" x="2" y="109">45</text><text class="axis" x="2" y="76">30</text><text class="axis" x="2" y="43">15</text><text class="axis" x="2" y="10">0</text><polyline fill="none" stroke="#7f8ea8" stroke-width="2" stroke-linejoin="round" points="0.0,57.2 26.7,52.8 53.3,59.4 80.0,48.4 106.7,41.8 133.3,55.0 160.0,17.6 186.7,50.6 213.3,57.2 240.0,46.2 266.7,35.2 293.3,52.8 320.0,55.0"/><polyline fill="none" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round" points="0.0,68.2 26.7,66.0 53.3,70.4 80.0,63.8 106.7,61.6 133.3,68.2 160.0,57.2 186.7,66.0 213.3,70.4 240.0,63.8 266.7,59.4 293.3,68.2 320.0,66.0"/><text class="axis" x="0" y="143" text-anchor="start">0 с</text><text class="axis" x="160" y="143" text-anchor="middle">30 с</text><text class="axis" x="320" y="143" text-anchor="end">60 с</text></svg><div class="legend"><span><i style="background:#7f8ea8"></i>было</span><span><i style="background:#38bdf8"></i>стало</span></div></div><div class="chart"><h4>Джиттер (MAD) — разброс задержки · мс</h4><svg viewBox="-26 -6 360 154" role="img" aria-label="Джиттер (MAD) — разброс задержки"><line x1="0" y1="0" x2="320" y2="0" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="33" x2="320" y2="33" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="66" x2="320" y2="66" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="99" x2="320" y2="99" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="132" x2="320" y2="132" stroke="#1c2534" stroke-width="1"/><text class="axis" x="2" y="142">12</text><text class="axis" x="2" y="109">9</text><text class="axis" x="2" y="76">6</text><text class="axis" x="2" y="43">3</text><text class="axis" x="2" y="10">0</text><polyline fill="none" stroke="#7f8ea8" stroke-width="2" stroke-linejoin="round" points="0.0,97.9 26.7,94.6 53.3,99.0 80.0,85.8 106.7,70.4 133.3,92.4 160.0,24.2 186.7,88.0 213.3,96.8 240.0,83.6 266.7,64.9 293.3,90.2 320.0,93.5"/><polyline fill="none" stroke="#a78bfa" stroke-width="2" stroke-linejoin="round" points="0.0,110.0 26.7,108.9 53.3,111.1 80.0,106.7 106.7,103.4 133.3,107.8 160.0,97.9 186.7,105.6 213.3,110.0 240.0,104.5 266.7,101.2 293.3,107.8 320.0,108.9"/><text class="axis" x="0" y="143" text-anchor="start">0 с</text><text class="axis" x="160" y="143" text-anchor="middle">30 с</text><text class="axis" x="320" y="143" text-anchor="end">60 с</text></svg><div class="legend"><span><i style="background:#7f8ea8"></i>было</span><span><i style="background:#a78bfa"></i>стало</span></div></div><div class="chart"><h4>Потери пакетов · %</h4><svg viewBox="-26 -6 360 154" role="img" aria-label="Потери пакетов"><line x1="0" y1="0" x2="320" y2="0" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="33" x2="320" y2="33" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="66" x2="320" y2="66" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="99" x2="320" y2="99" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="132" x2="320" y2="132" stroke="#1c2534" stroke-width="1"/><text class="axis" x="2" y="142">4</text><text class="axis" x="2" y="109">3</text><text class="axis" x="2" y="76">2</text><text class="axis" x="2" y="43">1</text><text class="axis" x="2" y="10">0</text><g fill="#f87171" opacity=".85"><rect x="-3.0" y="132.0" width="6" height="1.0"/><rect x="23.7" y="132.0" width="6" height="1.0"/><rect x="50.3" y="118.8" width="6" height="13.2"/><rect x="77.0" y="132.0" width="6" height="1.0"/><rect x="103.7" y="92.4" width="6" height="39.6"/><rect x="130.3" y="132.0" width="6" height="1.0"/><rect x="157.0" y="19.8" width="6" height="112.2"/><rect x="183.7" y="132.0" width="6" height="1.0"/><rect x="210.3" y="132.0" width="6" height="1.0"/><rect x="237.0" y="112.2" width="6" height="19.8"/><rect x="263.7" y="72.6" width="6" height="59.4"/><rect x="290.3" y="132.0" width="6" height="1.0"/><rect x="317.0" y="132.0" width="6" height="1.0"/></g><g fill="#4ade80" opacity=".85"><rect x="-3.0" y="132.0" width="6" height="1.0"/><rect x="23.7" y="132.0" width="6" height="1.0"/><rect x="50.3" y="132.0" width="6" height="1.0"/><rect x="77.0" y="132.0" width="6" height="1.0"/><rect x="103.7" y="125.4" width="6" height="6.6"/><rect x="130.3" y="132.0" width="6" height="1.0"/><rect x="157.0" y="118.8" width="6" height="13.2"/><rect x="183.7" y="132.0" width="6" height="1.0"/><rect x="210.3" y="132.0" width="6" height="1.0"/><rect x="237.0" y="132.0" width="6" height="1.0"/><rect x="263.7" y="125.4" width="6" height="6.6"/><rect x="290.3" y="132.0" width="6" height="1.0"/><rect x="317.0" y="132.0" width="6" height="1.0"/></g><text class="axis" x="0" y="143" text-anchor="start">0 с</text><text class="axis" x="160" y="143" text-anchor="middle">30 с</text><text class="axis" x="320" y="143" text-anchor="end">60 с</text></svg><div class="legend"><span><i style="background:#f87171"></i>было</span><span><i style="background:#4ade80"></i>стало</span></div></div></div>
+  <div class="grid g2" style="margin:12px 0"><div class="chart"><h4>Скорость приёма · Мбит/с</h4><svg viewBox="-26 -6 360 154" role="img" aria-label="Скорость приёма"><line x1="0" y1="0" x2="320" y2="0" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="33" x2="320" y2="33" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="66" x2="320" y2="66" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="99" x2="320" y2="99" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="132" x2="320" y2="132" stroke="#1c2534" stroke-width="1"/><text class="axis" x="2" y="142">120</text><text class="axis" x="2" y="109">90</text><text class="axis" x="2" y="76">60</text><text class="axis" x="2" y="43">30</text><text class="axis" x="2" y="10">0</text><polyline fill="none" stroke="#7b8fa8" stroke-width="2" stroke-linejoin="round" points="0.0,30.8 26.7,35.2 53.3,27.5 80.0,33.0 106.7,37.4 133.3,29.7 160.0,34.1 186.7,31.9 213.3,36.3 240.0,28.6 266.7,33.0 293.3,35.2 320.0,30.8"/><polyline fill="none" stroke="#4ade80" stroke-width="2" stroke-linejoin="round" points="0.0,30.8 26.7,33.0 53.3,27.5 80.0,29.7 106.7,31.9 133.3,28.6 160.0,30.8 186.7,29.7 213.3,33.0 240.0,27.5 266.7,29.7 293.3,30.8 320.0,28.6"/><text class="axis" x="0" y="143" text-anchor="start">0 с</text><text class="axis" x="160" y="143" text-anchor="middle">30 с</text><text class="axis" x="320" y="143" text-anchor="end">60 с</text></svg><div class="legend"><span><i style="background:#7b8fa8"></i>было</span><span><i style="background:#4ade80"></i>стало</span></div></div><div class="chart"><h4>Задержка: средняя · мс</h4><svg viewBox="-26 -6 360 154" role="img" aria-label="Задержка: средняя"><line x1="0" y1="0" x2="320" y2="0" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="33" x2="320" y2="33" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="66" x2="320" y2="66" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="99" x2="320" y2="99" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="132" x2="320" y2="132" stroke="#1c2534" stroke-width="1"/><text class="axis" x="2" y="142">60</text><text class="axis" x="2" y="109">45</text><text class="axis" x="2" y="76">30</text><text class="axis" x="2" y="43">15</text><text class="axis" x="2" y="10">0</text><polyline fill="none" stroke="#7b8fa8" stroke-width="2" stroke-linejoin="round" points="0.0,57.2 26.7,52.8 53.3,59.4 80.0,48.4 106.7,41.8 133.3,55.0 160.0,17.6 186.7,50.6 213.3,57.2 240.0,46.2 266.7,35.2 293.3,52.8 320.0,55.0"/><polyline fill="none" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round" points="0.0,68.2 26.7,66.0 53.3,70.4 80.0,63.8 106.7,61.6 133.3,68.2 160.0,57.2 186.7,66.0 213.3,70.4 240.0,63.8 266.7,59.4 293.3,68.2 320.0,66.0"/><text class="axis" x="0" y="143" text-anchor="start">0 с</text><text class="axis" x="160" y="143" text-anchor="middle">30 с</text><text class="axis" x="320" y="143" text-anchor="end">60 с</text></svg><div class="legend"><span><i style="background:#7b8fa8"></i>было</span><span><i style="background:#38bdf8"></i>стало</span></div></div><div class="chart"><h4>Джиттер (MAD) — разброс задержки · мс</h4><svg viewBox="-26 -6 360 154" role="img" aria-label="Джиттер (MAD) — разброс задержки"><line x1="0" y1="0" x2="320" y2="0" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="33" x2="320" y2="33" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="66" x2="320" y2="66" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="99" x2="320" y2="99" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="132" x2="320" y2="132" stroke="#1c2534" stroke-width="1"/><text class="axis" x="2" y="142">12</text><text class="axis" x="2" y="109">9</text><text class="axis" x="2" y="76">6</text><text class="axis" x="2" y="43">3</text><text class="axis" x="2" y="10">0</text><polyline fill="none" stroke="#7b8fa8" stroke-width="2" stroke-linejoin="round" points="0.0,97.9 26.7,94.6 53.3,99.0 80.0,85.8 106.7,70.4 133.3,92.4 160.0,24.2 186.7,88.0 213.3,96.8 240.0,83.6 266.7,64.9 293.3,90.2 320.0,93.5"/><polyline fill="none" stroke="#a78bfa" stroke-width="2" stroke-linejoin="round" points="0.0,110.0 26.7,108.9 53.3,111.1 80.0,106.7 106.7,103.4 133.3,107.8 160.0,97.9 186.7,105.6 213.3,110.0 240.0,104.5 266.7,101.2 293.3,107.8 320.0,108.9"/><text class="axis" x="0" y="143" text-anchor="start">0 с</text><text class="axis" x="160" y="143" text-anchor="middle">30 с</text><text class="axis" x="320" y="143" text-anchor="end">60 с</text></svg><div class="legend"><span><i style="background:#7b8fa8"></i>было</span><span><i style="background:#a78bfa"></i>стало</span></div></div><div class="chart"><h4>Потери пакетов · %</h4><svg viewBox="-26 -6 360 154" role="img" aria-label="Потери пакетов"><line x1="0" y1="0" x2="320" y2="0" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="33" x2="320" y2="33" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="66" x2="320" y2="66" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="99" x2="320" y2="99" stroke="#1c2534" stroke-width="1"/><line x1="0" y1="132" x2="320" y2="132" stroke="#1c2534" stroke-width="1"/><text class="axis" x="2" y="142">4</text><text class="axis" x="2" y="109">3</text><text class="axis" x="2" y="76">2</text><text class="axis" x="2" y="43">1</text><text class="axis" x="2" y="10">0</text><g fill="#f87171" opacity=".85"><rect x="-3.0" y="132.0" width="6" height="1.0"/><rect x="23.7" y="132.0" width="6" height="1.0"/><rect x="50.3" y="118.8" width="6" height="13.2"/><rect x="77.0" y="132.0" width="6" height="1.0"/><rect x="103.7" y="92.4" width="6" height="39.6"/><rect x="130.3" y="132.0" width="6" height="1.0"/><rect x="157.0" y="19.8" width="6" height="112.2"/><rect x="183.7" y="132.0" width="6" height="1.0"/><rect x="210.3" y="132.0" width="6" height="1.0"/><rect x="237.0" y="112.2" width="6" height="19.8"/><rect x="263.7" y="72.6" width="6" height="59.4"/><rect x="290.3" y="132.0" width="6" height="1.0"/><rect x="317.0" y="132.0" width="6" height="1.0"/></g><g fill="#4ade80" opacity=".85"><rect x="-3.0" y="132.0" width="6" height="1.0"/><rect x="23.7" y="132.0" width="6" height="1.0"/><rect x="50.3" y="132.0" width="6" height="1.0"/><rect x="77.0" y="132.0" width="6" height="1.0"/><rect x="103.7" y="125.4" width="6" height="6.6"/><rect x="130.3" y="132.0" width="6" height="1.0"/><rect x="157.0" y="118.8" width="6" height="13.2"/><rect x="183.7" y="132.0" width="6" height="1.0"/><rect x="210.3" y="132.0" width="6" height="1.0"/><rect x="237.0" y="132.0" width="6" height="1.0"/><rect x="263.7" y="125.4" width="6" height="6.6"/><rect x="290.3" y="132.0" width="6" height="1.0"/><rect x="317.0" y="132.0" width="6" height="1.0"/></g><text class="axis" x="0" y="143" text-anchor="start">0 с</text><text class="axis" x="160" y="143" text-anchor="middle">30 с</text><text class="axis" x="320" y="143" text-anchor="end">60 с</text></svg><div class="legend"><span><i style="background:#f87171"></i>было</span><span><i style="background:#4ade80"></i>стало</span></div></div></div>
 
   <div class="scroll">
     <table>
@@ -4312,6 +4399,75 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
       «требуется ручная проверка» и появляется кнопка «Починить сеть».</p>
     </div>
   </div>
+
+  <div class="card tight" style="margin-top:12px">
+    <h3>Выгрузка в CSV</h3>
+    <p class="small muted">Кнопка «Экспорт CSV» пишет таблицу целиком во временный файл рядом и подменяет его одним
+    движением: недописанной выгрузки не остаётся. Существующий файл программа не затирает молча — второй экспорт
+    с тем же именем честно скажет, что имя занято. Значения, которые таблица приняла бы за формулу («=», «+», «@»,
+    табуляция, минус перед текстом), помечены апострофом: это текст, а не вычисление. Число строк подписано
+    по-русски — «1 строка», «3 строки», «20 строк».</p>
+  </div>
+
+  <h3 id="journal-files" style="margin-top:16px">Примеры файлов, которые оставляет программа</h3>
+  <p class="small muted">Шесть разных файлов. Ни один из них программа никуда не отправляет — все лежат на вашем диске.</p>
+  <div class="grid g2">
+    <div class="card tight">
+      <b>Журнал с поворотом</b>
+      <pre class="snippet">2026-11-18 12:24:51 Слушаю канал (права администратора: есть)
+2026-11-18 12:25:02 Команда «optimize»: готово — маршрут до 3.4.5.6
+2026-11-18 12:25:34 Клиент отключился
+<span class="dim">service.log      5 МБ — текущий
+service.log.1    5 МБ — предыдущий
+service.log.2    5 МБ — самый старый, следующий поворот его удалит</span></pre>
+      <p class="small muted">Строка не рвётся: поворот идёт до записи, а не посреди неё. Если повернуть не удалось (файл занят),
+      программа дописывает в текущий — лишняя строка лучше потерянной.</p>
+    </div>
+    <div class="card tight">
+      <b>Выгрузка журнала: journal-20261118-122451.csv</b>
+      <pre class="snippet">Дата,Твик,Код,Предыдущее,Применено,Проверено,Статус
+2026-10-16 12:10:00,Отключение алгоритма Нейгла,TCP_NO_DELAY,0,1,1,Применено
+2026-10-16 12:09:00,'=HYPERLINK("http://зло"),DNS_CACHE,0,1,1,Применено</pre>
+      <p class="small muted">Апостроф в начале — защита от формулы: таблица покажет текст, а не вычисление.</p>
+    </div>
+    <div class="card tight">
+      <b>Экспорт настроек: PingForge-настройки.json</b>
+      <pre class="snippet">{{
+  "SchemaVersion": 1,
+  "ExportedUtc": "2026-11-18T12:24:51.208Z",
+  "NoteRu": "Пути к играм проверьте на новом компьютере.",
+  "Settings": { "PerfProfile": "balanced", "CloseToTray": true }
+}}</pre>
+      <p class="small muted">Пишется целиком во временный файл и подменяет прежний: половины копии не остаётся.</p>
+    </div>
+    <div class="card tight">
+      <b>Отчёт о падении: crash-20261118-123456-789.txt</b>
+      <pre class="snippet">Custom Tweak By Doxaiz — отчёт об ошибке
+Этот файл лежит на вашем диске. Программа никуда его не отправляет.
+
+Время: 2026-11-18 12:34:56
+Что случилось: проверка записи отчёта
+── Версии и окружение ──
+Окно: 1.0.0 · Служба: 1.0.0 · Windows 11</pre>
+      <p class="small muted">Два падения в одну миллисекунду не съедают отчёты друг друга: второй так и скажет, что имя занято.</p>
+    </div>
+    <div class="card tight">
+      <b>Пакет для поддержки: PingForge-поддержка-20261118-122451.zip</b>
+      <pre class="snippet">service.log   последние 500 строк из 12 480 — показаны не все
+сводка.txt    версии, права, что проверяла программа
+crash/…txt    отчёт о падении, если он был
+<span class="dim">предел 20 МБ: слишком большой журнал выкидывается,
+и план говорит, почему именно</span></pre>
+      <p class="small muted">Внутри адреса игровых серверов и пути к файлам на этом компьютере — пакет никуда не уходит сам.
+      Собирается рядом и подменяет прежний целиком: сбой не оставит человека без старого пакета.</p>
+    </div>
+    <div class="card tight">
+      <b>Резервная копия при сбросе: settings.json.bak-20261118-122451</b>
+      <pre class="snippet">settings.json                 ← текущие настройки
+settings.json.bak-20261118-122451  ← копия «до сброса»</pre>
+      <p class="small muted">Снапшоты и журнал при сбросе не удаляются — и это написано в вопросе до нажатия.</p>
+    </div>
+  </div>
   <a class="up" href="#top">↑ к списку разделов</a>
 <div class="secnav"><span class="small dim">Журнал и откат — конец части.</span><a href="#diagnostics">← Назад: Анализ сети</a><a class="secnav-mid" href="#top">↑ Оглавление</a><a href="#settings">Далее: Настройки →</a></div></section>
 
@@ -4359,7 +4515,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
         <span class="btn small">Выбрать файл…</span>
         <span class="small dim">или вставьте текст профиля в поле ниже</span>
       </div>
-      <textarea rows="12" spellcheck="false" style="width:100%;font-family:'Cascadia Mono',Consolas,monospace;font-size:12.5px;background:#0e1622;color:var(--text);border:1px solid var(--line2);border-radius:9px;padding:10px">{
+      <textarea rows="12" spellcheck="false" style="width:100%;font-family:'Cascadia Mono',Consolas,monospace;font-size:12.5px;background:#0b1220;color:var(--text);border:1px solid var(--line2);border-radius:9px;padding:10px">{
   &quot;schema&quot;: 1,
   &quot;app&quot;: &quot;Custom Tweak by Doxaiz&quot;,
   &quot;preset&quot;: &quot;LowLatencyGaming&quot;,
@@ -4421,6 +4577,21 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
   <p class="note-inline">Значок в трее не опрашивает компьютер сам по себе: он обновляется на том же такте, что и контроль, а в экономном профиле — раз в 5 секунд. Закрытие окна на крестик не убивает оптимизацию, но выход через меню трея снимает изменения и останавливает замеры.</p>
 
 
+  <!-- Масштаб интерфейса: та же карточка, что в программе (раздел «Настройки»). -->
+  <div class="card">
+    <h3>Масштаб интерфейса</h3>
+    <p class="small muted">Раскладка пересобирается, текст остаётся резким, карточки тянутся.
+    Окно не меньше 860×560 точек при 100 %; при 125 % и 150 % минимум окна растёт вместе с содержимым
+    и не выходит за рабочую область экрана. Выбранный масштаб запоминается в настройках.</p>
+    <div class="scaleopts" role="group" aria-label="Масштаб интерфейса">
+      <label><input type="radio" name="uiscale" checked><span>100 %</span></label>
+      <label><input type="radio" name="uiscale"><span>125 %</span></label>
+      <label><input type="radio" name="uiscale"><span>150 %</span></label>
+    </div>
+    <p class="note-inline">Контраст основного текста #E9EFFB на фоне #070B14 — 17,1:1, подписей #8FA1BD — 7,5:1:
+    выше требования AA (4,5:1) и выше AAA (7:1) для обычного текста.</p>
+  </div>
+
   <h2 id="settings-misc">Прочее</h2>
   <div class="card tight">
     <div class="valset">
@@ -4449,14 +4620,15 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
     <b>Зачем этот раздел.</b> Здесь честно написано, что уже работает, что написано, но не проверено на живых
     Windows-машинах, и чего пока нет. Так вы не примете макет за готовую программу.
   </div>
-  <p class="muted">Оценка по объёму работы до состояния «этим можно пользоваться» (PingForge Lite).
+  <p class="muted">Сколько работы осталось до состояния «этим можно пользоваться». Программа одна:
+  отдельной «Lite»-версии нет — всё, что ниже, относится к ней же.
   «Готово» — честная оценка с учётом того, что проверено автотестами, а что только написано.</p>
   <div class="section-tools"><span class="small dim">Что здесь можно сделать:</span><ul class="dotlist small"><li>строки с весом и процентом готовности</li><li>что покрыто автотестами</li><li>что стоит следующим в очереди</li></ul></div>
 
   <div class="card">
     <div class="between" style="margin-bottom:12px">
-      <b>Готовность PingForge Lite</b>
-      <span class="score">83.0%</span>
+      <b>Готовность программы</b>
+      <span class="score">84.9%</span>
     </div>
     <div class="scroll">
       <table>
@@ -4498,7 +4670,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
                 <td class="small muted">включая восстановление после падения приложения</td>
               </tr>
               <tr>
-                <td>Каталог твиков: 47 штук с честными описаниями, подкатегориями, вердиктами и правилами пресетов</td>
+                <td>Каталог твиков: 47 твиков с честными описаниями, подкатегориями, вердиктами и правилами пресетов</td>
                 <td class="num">9%</td>
                 <td class="num">92%</td>
                 <td><div class="bar"><i class="" style="width:92%"></i></div></td>
@@ -4514,9 +4686,9 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
               <tr>
                 <td>Сетевой слой: детектор игр, маршрут для игры, политика QoS (DSCP 46)</td>
                 <td class="num">7%</td>
-                <td class="num">90%</td>
-                <td><div class="bar"><i class="" style="width:90%"></i></div></td>
-                <td class="small muted">движок собран целиком: поиск игрового потока, настоящие пробы ICMP и TCP, маршрут и QoS, откат и фоновый контроль каждые 2 с по профилю; на живой Windows кнопка отвечает «игра не найдена» — это ответ работающего движка, а не заглушки</td>
+                <td class="num">95%</td>
+                <td><div class="bar"><i class="" style="width:95%"></i></div></td>
+                <td class="small muted">движок собран целиком + UDP-наблюдатель ETW (0.5.5: события 42/43/58/59, 30с/4096, отсечение своих/приватных), решение автовыбора кэшируется по процессу+адресу:порту (DecisionKey); служба считает задержку живого UDP-потока по парам «отправка → ответ» из этих же событий — без лишних пакетов (на синтетических событиях проверено тестами, живой игры в CI не было — поэтому оценка не выросла: код есть, живого подтверждения нет); на живой Windows кнопка отвечает «игра не найдена» — это ответ работающего движка</td>
               </tr>
               <tr>
                 <td>Слой анализа: что применить исходя из состояния сети</td>
@@ -4542,9 +4714,9 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
               <tr>
                 <td>Справочник маршрутов (22 игры, 5 DNS, 8 способов) и график сети</td>
                 <td class="num">3%</td>
-                <td class="num">80%</td>
-                <td><div class="bar"><i class="" style="width:80%"></i></div></td>
-                <td class="small muted">данные в коде и в макете; живой замер для графика появится с интерфейсом</td>
+                <td class="num">92%</td>
+                <td><div class="bar"><i class="" style="width:92%"></i></div></td>
+                <td class="small muted">данные в коде и в макете (0.5.5: регионы/порты в карточке Игры, DNS-карточка в Твиках, один список резолверов на программу); живой замер для графика идёт из статуса оптимизации</td>
               </tr>
               <tr>
                 <td>Чтение состояния Windows и сети (реестр, netsh, электропитание, DNS)</td>
@@ -4556,23 +4728,23 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
               <tr>
                 <td>Служба Windows, права, канал связи с интерфейсом</td>
                 <td class="num">8%</td>
-                <td class="num">70%</td>
-                <td><div class="bar"><i class="" style="width:70%"></i></div></td>
-                <td class="small muted">протокол канала, таблица 12 команд, разборщик, правила доступа и «мозги» службы собраны и покрыты тестами (92 проверки); установка, запуск и живой разговор со службой проверяются на Windows в CI</td>
+                <td class="num">78%</td>
+                <td><div class="bar"><i class="" style="width:78%"></i></div></td>
+                <td class="small muted">протокол канала, таблица команд, разборщик, правила доступа и «мозги» службы собраны и покрыты тестами; установка, запуск и живой разговор со службой проверяются на Windows в CI; журналы с ротацией 5 МБ×3, отчёт о падении в ProgramData\PingForge\crash и пакет для поддержки (задача Q) готовы и проверены самопроверкой</td>
               </tr>
               <tr>
                 <td>Интерфейс WPF (этот макет — его будущий вид)</td>
                 <td class="num">9%</td>
-                <td class="num">88%</td>
-                <td><div class="bar"><i class="" style="width:88%"></i></div></td>
-                <td class="small muted">окно с разделами, карточки твиков, трей, диалоги и файл настроек написаны и собираются; решения интерфейса покрыты тестами моделей представления; на живой Windows проверено при каждой сборке: окно открывается, пять разделов на месте, привязки работают, раскладка не сжимается, тексты переносятся, значок в трее создаётся, снимок окна кладётся в артефакты</td>
+                <td class="num">92%</td>
+                <td><div class="bar"><i class="" style="width:92%"></i></div></td>
+                <td class="small muted">окно с 6 разделами, карточки твиков, регионы/DNS (0.5.5), UDP-наблюдатель ETW, трей, диалоги и файл настроек написаны и собираются; решения интерфейса покрыты тестами моделей представления; на живой Windows проверено при каждой сборке: окно открывается, 6 разделов на месте, привязки работают, раскладка не сжимается, ничего не выходит за правый край окна — на штатной и минимальной ширине, ни одна надпись не обрезана в своей рамке, сокращённое многоточием читается целиком в подсказке, тексты переносятся, у каждого поля ввода и списка есть имя для экранного диктора — без него диктор говорит «поле редактирования» и человек не знает, что вписывать (и разметка проверяется правилами: текст в горизонтальной панели обязан иметь предел ширины, у поля ввода и списка обязано быть имя, а у надписи, которая может сократиться многоточием, — подсказка с полным текстом), значок в трее создаётся, снимок окна кладётся в артефакты; сравнение двух сессий отказывается сравнивать одну и ту же сессию, сессии без известного адреса сервера и разные серверы, а журнал сессий называет способ замера — живой TCP- или UDP-поток, ICMP-эхо, TCP-рукопожатие; задержка живого TCP-потока берётся из статистики уже открытого соединения (сначала UDP-метки, затем она, и только потом пробы), а неизмеренные джиттер и потери называются словами «не измерено», а не нулями; окно и трей показывают выигрыш, разброс, потери и лучший замер сессии из одного ответа службы; регионы/DNS и честный блок «Пакет для поддержки» проверены самопроверкой</td>
               </tr>
               <tr>
                 <td>Проверка на живом железе, установщик, подпись EV</td>
                 <td class="num">4%</td>
-                <td class="num">55%</td>
-                <td><div class="bar"><i class="" style="width:55%"></i></div></td>
-                <td class="small muted">установщик собран и в CI целиком проверен: тихая установка, файлы, ярлыки, запись в списке программ, служба, удаление без следов; программа после установки запускается и находит службу; остались проверка на машинах пользователей и подпись EV</td>
+                <td class="num">60%</td>
+                <td><div class="bar"><i class="" style="width:60%"></i></div></td>
+                <td class="small muted">установщик собран и в CI проверен: тихая установка, файлы, ярлыки, запись в списке программ, служба, удаление без следов; программа после установки запускается и находит службу; живая проверка UDP-игр и пакета поддержки — самое дорогое непроверенное место</td>
               </tr></tbody>
       </table>
     </div>
@@ -4586,10 +4758,11 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 
   <div class="grid g2">
     <div class="card tight">
-      <h3>Проверено тестами прямо сейчас</h3>
-      <p class="small muted">169 автотестов: снапшоты и откат на реальной базе, канонические форматы значений,
+      <h3>Проверено тестами прямо сейчас <span class="chip dim">число — из журнала прогона</span></h3>
+      <p class="small muted">Снапшоты и откат на реальной базе, канонические форматы значений,
       разбор русского вывода netsh, гистерезис маршрутов, MAD-джиттер, DF-MTU, DNS с ловлей подмены,
       аудит запретов в каталоге, советы по MTU/DNS и разбор каталога относительно текущих настроек.</p>
+      <p class="note-inline">Число автотестов здесь не вписано: оно берётся из журнала прогона сборки, а эта страница собрана без него. Список выше — то, что тесты проверяют, и он не зависит от числа.</p>
     </div>
     <div class="card tight">
       <h3>Проверено только компилятором</h3>
@@ -4666,15 +4839,16 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
   нарушений запретов и проблем каталога: 0.<br>
   Страница самодостаточна: без внешних скриптов, шрифтов и картинок. Если скрипты в предпросмотре отключены,
   все разделы показаны подряд — содержимое то же.<br>
-  Продуктовое имя для релиза — <b>Custom Tweak by Doxaiz</b>; в коде и заголовке макета пока рабочее имя
-  PingForge, переименование отложено осознанно (docs/NAMING.md).
+  Программа одна — <b>Custom Tweak by Doxaiz</b>. Отдельной «Lite», «Pro» или второй программы нет и не
+  планируется: всё, что описано на странице, — она же. В коде, в имени службы и в её папке данных осталось
+  рабочее имя PingForge; переименование отложено осознанно — имена службы и базы уже стоят на дисках у людей.
 </footer>
 
 </main>
 </div>
 
 <script type="application/json" id="routingData">{"weights": {"perRttMs": 1, "perJitterMs": 1.5, "perLossPercentSquared": 0.5, "perHop": 0.4, "perNodeLoadOver50": 0.05, "perExtraTrafficPercent": 0.2}, "thresholds": {"maxLossPercent": 5, "maxJitterMs": 40, "maxRttMs": 250}, "failover": {"badSamplesBeforeSwitch": 5, "switchMarginPoints": 4, "goodSamplesBeforeReturn": 20, "minTimeOnRouteSeconds": 30, "degradationJitterMs": 12, "degradationLossPercent": 3}}</script>
-<script type="application/json" id="realtimeData">{"demoGameRu": "Fortnite (пример)", "demoGameProcess": "FortniteClient-Win64-Shipping", "plannerActions": [{"actionId": "route:game-server", "kind": "RouteForGame", "titleRu": "Маршрут для игрового сервера", "detailRu": "Маршрут добавляется только для адреса 3.4.5.6 и снимается сразу после остановки. Это не VPN: чужой трафик идёт как обычно."}, {"actionId": "qos:dscp-46", "kind": "DscpMarking", "titleRu": "Приоритет пакетов игры (DSCP 46)", "detailRu": "Политика QoS помечает пакеты процесса FortniteClient-Win64-Shipping как «сетевое управление». Помогает только если домашний роутер уважает DSCP и канал чем-то нагружен: иначе выигрыша не будет."}], "plannerNoAdminBlockRu": "Программа запущена без прав администратора. Замеры живого потока делать можно, а менять маршруты и политику QoS — нет. Запустите PingForge от имени администратора и нажмите кнопку снова.", "plannerKernelAntiCheatNotes": ["У игры Fortnite ядерный анти-чит. PingForge не внедряется в процесс и не трогает память игры, но перехват пакетов драйвером для такой игры запрещён настройками — работаем только маршрутом и QoS.", "Твики сети этой кнопкой не применяются: для них есть отдельное окно со снапшотом и точкой восстановления."], "monitorIntervalSeconds": 2, "samplesPerWindow": 12, "baselineWindows": 3, "degradedWindowsBeforeSwitch": 3, "goodWindowsBeforeReturn": 12, "degradationRttMarginMs": 6, "degradationJitterMs": 12, "degradationLossPercent": 2, "maxSessionHours": 6, "qualityBands": [{"upperBoundMs": 40, "labelRu": "Отлично", "textRu": "до 40 мс — Отлично"}, {"upperBoundMs": 70, "labelRu": "Хорошо", "textRu": "до 70 мс — Хорошо"}, {"upperBoundMs": 110, "labelRu": "Терпимо", "textRu": "до 110 мс — Терпимо"}, {"upperBoundMs": 180, "labelRu": "Плохо для шутера", "textRu": "до 180 мс — Плохо для шутера"}, {"upperBoundMs": null, "labelRu": "Очень плохо", "textRu": "выше — Очень плохо"}], "rulesRu": ["Оптимизация затрагивает только адрес игрового сервера; чужой трафик идёт как обычно.", "Твики этой кнопкой не применяются — для них есть отдельное окно со снапшотом и точкой восстановления.", "Без прав администратора кнопка работает в режиме «только замеры» и ничего не меняет.", "Для игр с ядерным анти-читом фильтр пакетов не поднимается: только маршрут и политика QoS.", "Выигрыш показывается как разница медиан живого пинга; нет выигрыша — так и пишем.", "При остановке снимается ровно то, что поставили, в обратном порядке."], "stepsRu": ["1. Ищем запущенную игру и её живой сетевой поток (SIO_TCP_INFO для TCP, метки на ответах сервера для UDP).", "2. Меряем «до»: три окна замеров, чтобы исходный пинг был честным числом, а не одним кадром.", "3. Выбираем путь: прямое подключение или POP-узел релея по формуле скоринга.", "4. Применяем действия: маршрут для адреса сервера и политика QoS (DSCP 46) для процесса игры.", "5. Контролируем качество каждые 2 секунды: просадка → переключение пути, восстановление → возврат.", "6. Остановка: снимаем изменения, показываем «до/после» медианами и физический предел пути."]}</script>
+<script type="application/json" id="realtimeData">{"demoGameRu": "Fortnite (пример)", "demoGameProcess": "FortniteClient-Win64-Shipping", "plannerActions": [{"actionId": "route:game-server", "kind": "RouteForGame", "titleRu": "Маршрут для игрового сервера", "detailRu": "Маршрут добавляется только для адреса 3.4.5.6 и снимается сразу после остановки. Это не VPN: чужой трафик идёт как обычно."}, {"actionId": "qos:dscp-46", "kind": "DscpMarking", "titleRu": "Приоритет пакетов игры (DSCP 46)", "detailRu": "Политика QoS помечает пакеты процесса FortniteClient-Win64-Shipping как «сетевое управление». Помогает только если домашний роутер уважает DSCP и канал чем-то нагружен: иначе выигрыша не будет."}], "plannerNoAdminBlockRu": "Программа запущена без прав администратора. Замеры живого потока делать можно, а менять маршруты и политику QoS — нет. Запустите PingForge от имени администратора и нажмите кнопку снова.", "plannerKernelAntiCheatNotes": ["У игры Fortnite ядерный анти-чит. PingForge не внедряется в процесс и не трогает память игры, но перехват пакетов драйвером для такой игры запрещён настройками — работаем только маршрутом и QoS.", "Твики сети этой кнопкой не применяются: для них есть отдельное окно со снапшотом и точкой восстановления."], "monitorIntervalSeconds": 2, "samplesPerWindow": 12, "baselineWindows": 3, "degradedWindowsBeforeSwitch": 3, "goodWindowsBeforeReturn": 12, "degradationRttMarginMs": 6, "degradationJitterMs": 12, "degradationLossPercent": 2, "maxSessionHours": 6, "qualityBands": [{"upperBoundMs": 40, "labelRu": "Отлично", "textRu": "до 40 мс — Отлично"}, {"upperBoundMs": 70, "labelRu": "Хорошо", "textRu": "до 70 мс — Хорошо"}, {"upperBoundMs": 110, "labelRu": "Терпимо", "textRu": "до 110 мс — Терпимо"}, {"upperBoundMs": 180, "labelRu": "Плохо для шутера", "textRu": "до 180 мс — Плохо для шутера"}, {"upperBoundMs": null, "labelRu": "Очень плохо", "textRu": "выше — Очень плохо"}], "rulesRu": ["Оптимизация затрагивает только адрес игрового сервера; чужой трафик идёт как обычно.", "Твики этой кнопкой не применяются — для них есть отдельное окно со снапшотом и точкой восстановления.", "Без прав администратора кнопка работает в режиме «только замеры» и ничего не меняет.", "Для игр с ядерным анти-читом фильтр пакетов не поднимается: только маршрут и политика QoS.", "Выигрыш показывается как разница медиан живого пинга; нет выигрыша — так и пишем.", "При остановке снимается ровно то, что поставили, в обратном порядке."], "stepsRu": ["1. Ищем запущенную игру и её живой сетевой поток: статистика уже открытого TCP-соединения для TCP, метки на ответах сервера для UDP — ни одного пакета сверх трафика игры.", "2. Меряем «до»: три окна замеров, чтобы исходный пинг был честным числом, а не одним кадром.", "3. Выбираем путь: прямое подключение или POP-узел релея по формуле скоринга.", "4. Применяем действия: маршрут для адреса сервера и политика QoS (DSCP 46) для процесса игры.", "5. Контролируем качество каждые 2 секунды: просадка → переключение пути, восстановление → возврат.", "6. Остановка: снимаем изменения, показываем «до/после» медианами и физический предел пути."]}</script>
 <script>
 // Скрипты — только улучшение. Всё содержимое уже есть в разметке.
 document.documentElement.classList.add('js');

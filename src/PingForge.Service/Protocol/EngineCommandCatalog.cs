@@ -169,12 +169,107 @@ public static class EngineCommandCatalog
             "Измерить пути до игрового сервера",
             "Меряет RTT до адреса сервера запущенной игры напрямую и через каждый сохранённый узел: временный " +
             "маршрут /32 на адрес сервера, тот же замер, снятие в любом случае и сверка таблицы с исходной. " +
-            "Побеждает только измеренный выигрыш; без него вердикт «прямой путь не хуже, ничего не меняем».",
+            "Каждый путь мерится двумя сериями вперемешку (прямой → узлы → снова прямой → узлы), чтобы дрейф " +
+            "сети не решал за нас. Побеждает только измеренный выигрыш больше разброса серий; без него вердикт " +
+            "«прямой путь не хуже, ничего не меняем».",
             NeedsElevation: true,
             RequiredArgs: [],
             OptionalArgs: [],
             ExampleRu: """{"id":"14","command":"route-measure"}""",
             TimeoutSeconds: 240),
+
+        new(
+            EngineCommandKind.UninstallCheck,
+            "uninstall-check",
+            "Проверить следы перед удалением",
+            "Считает применённые изменения, незакрытые операции и снапшоты и отвечает, надо ли спрашивать " +
+            "«вернуть настройки как было» до удаления программы. Только чтение: ничего не снимает и не удаляет.",
+            NeedsElevation: false,
+            RequiredArgs: [],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"15","command":"uninstall-check"}""",
+            TimeoutSeconds: 20),
+
+        new(
+            EngineCommandKind.Sessions,
+            "sessions",
+            "История сессий оптимизации",
+            "Список сессий: когда, какая игра и сервер, «до» и «после», действия и пометка «снялось / не снялось». " +
+            "Сессия без измеренного «после» честно называется незавершённой. Только чтение, по умолчанию 50 записей, " +
+            "предел 500.",
+            NeedsElevation: false,
+            RequiredArgs: [],
+            OptionalArgs: ["limit"],
+            ExampleRu: """{"id":"16","command":"sessions","args":{"limit":"50"}}""",
+            TimeoutSeconds: 20),
+
+        new(
+            EngineCommandKind.SessionsClear,
+            "sessions-clear",
+            "Очистить историю сессий",
+            "Удаляет историю замеров сессий. Журнал изменений системы не трогается: «забыть замеры» не значит " +
+            "«забыть, что программа меняла». Действие необратимо, поэтому требует прав администратора.",
+            NeedsElevation: true,
+            RequiredArgs: [],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"17","command":"sessions-clear"}""",
+            TimeoutSeconds: 30),
+
+        new(
+            EngineCommandKind.RollbackSingleTweak,
+            "rollback-tweak",
+            "Вернуть один твик",
+            "Возвращает значение одного твика из снапшота: по имени снапшота и коду твика. Остальные твики из снапшота не трогает.",
+            NeedsElevation: true,
+            RequiredArgs: ["tweak"],
+            OptionalArgs: ["snapshot"],
+            ExampleRu: """{"id":"18","command":"rollback-tweak","args":{"tweak":"TCP_NO_DELAY","snapshot":"snap-2026-10-16-001"}}""",
+            TimeoutSeconds: 60),
+
+        new(
+            EngineCommandKind.ReturnAll,
+            "return-all",
+            "Вернуть всё как было",
+            "Останавливает живую оптимизацию, снимает свои QoS-политики и маршруты, откатывает твики последнего снапшота и проверяет остатки. Чужие настройки не трогает.",
+            NeedsElevation: true,
+            RequiredArgs: [],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"19","command":"return-all"}""",
+            TimeoutSeconds: 300),
+
+        new(
+            EngineCommandKind.StorageInfo,
+            "storage-info",
+            "Сколько занимает база",
+            "Показывает путь к базе, размер файла, число снапшотов и записей журнала. Только чтение.",
+            NeedsElevation: false,
+            RequiredArgs: [],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"20","command":"storage-info"}""",
+            TimeoutSeconds: 10),
+
+        new(
+            EngineCommandKind.CleanupSnapshots,
+            "cleanup-snapshots",
+            "Почистить старые снапшоты",
+            "Удаляет снапшоты старше 30 дней, оставляя последние 10. Снапшоты с незакрытыми операциями не удаляются.",
+            NeedsElevation: true,
+            RequiredArgs: [],
+            OptionalArgs: ["keep", "olderThanDays"],
+            ExampleRu: """{"id":"21","command":"cleanup-snapshots","args":{"keep":"10","olderThanDays":"30"}}""",
+            TimeoutSeconds: 30),
+
+        new(
+            EngineCommandKind.DbRestore,
+            "db-restore",
+            "Восстановить базу из копии",
+            "Ставит на место последнюю резервную копию базы (pingforge.db.bak-…). Журнал и снапшоты, " +
+            "сделанные после этой копии, пропадут — поэтому команда требует явного confirm=yes.",
+            NeedsElevation: true,
+            RequiredArgs: ["confirm"],
+            OptionalArgs: [],
+            ExampleRu: """{"id":"22","command":"db-restore","args":{"confirm":"yes"}}""",
+            TimeoutSeconds: 60),
     ];
 
     /// <summary>Все команды в порядке объявления — он же порядок вывода в интерфейсе.</summary>
@@ -198,6 +293,8 @@ public static class EngineCommandCatalog
         EngineCommandKind.ReadSystemState,
         EngineCommandKind.RouteDiscover,
         EngineCommandKind.RealtimeStop,
+        EngineCommandKind.UninstallCheck,
+        EngineCommandKind.Sessions,
     ];
 
     /// <summary>Имена тех же команд по каналу — для сверки с документами и текстов отказов.</summary>

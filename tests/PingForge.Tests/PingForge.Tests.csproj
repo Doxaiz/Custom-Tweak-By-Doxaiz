@@ -29,9 +29,39 @@
          Как None, а не как Compile: исходник чужого проекта не должен компилироваться здесь. -->
     <None Include="..\..\src\PingForge.App\app.manifest" Link="checked-app.manifest" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\PingForge.App.csproj" Link="checked-PingForge.App.csproj" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Задача F: тест-«сторож» сверяет, что слой анализа подключён к проекту интерфейса. -->
+    <None Include="..\..\src\PingForge.App.ViewModels\PingForge.App.ViewModels.csproj" Link="checked-PingForge.App.ViewModels.csproj" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\Views\AboutView.xaml" Link="checked-AboutView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Задача I: сторожи «кнопка обновлений — в разделе «О программе»» и «фоновой проверки нет». -->
+    <None Include="..\..\src\PingForge.App\App.xaml.cs" Link="checked-App.xaml.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App.ViewModels\UpdateCheckViewModel.cs" Link="checked-UpdateCheckViewModel.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\Views\OptimizeView.xaml" Link="checked-OptimizeView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\Views\TweaksView.xaml" Link="checked-TweaksView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Задача D: «Игры» показывают регионы и порты из справочника — это проверяется по разметке. -->
+    <None Include="..\..\src\PingForge.App\Views\GamesView.xaml" Link="checked-GamesView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\Views\SettingsView.xaml" Link="checked-SettingsView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\App.xaml" Link="checked-App.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\MainWindow.xaml" Link="checked-MainWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Масштаб интерфейса: тест сверяет, что кнопки 100/125/150 % действительно что-то масштабируют. -->
+    <None Include="..\..\src\PingForge.App\MainWindow.xaml.cs" Link="checked-MainWindow.xaml.cs" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Мастер первого запуска: его разметка тоже ссылается на ресурсы темы (опечатка = падение окна). -->
+    <None Include="..\..\src\PingForge.App\Views\OnboardingView.xaml" Link="checked-OnboardingView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\SplashWindow.xaml" Link="checked-SplashWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\Views\JournalView.xaml" Link="checked-JournalView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\ui-walkthrough.ps1" Link="checked-ui-walkthrough.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\.github\workflows\build.yml" Link="checked-build.yml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeAclFactory.cs" Link="checked-PipeAclFactory.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeClientInspector.cs" Link="checked-PipeClientInspector.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.Service.Host\ServiceProgram.cs" Link="checked-ServiceProgram.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\StartupGuard.cs" Link="checked-StartupGuard.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\КАНАЛЫ-СЛУЖБЫ.md" Link="checked-pipes-doc.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\README.md" Link="checked-README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\АРХИТЕКТУРА.md" Link="checked-architecture.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\scripts\install-service.ps1" Link="checked-install-service.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\render_ui_preview.py" Link="checked-render-ui-preview.py" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\check_ui_preview.js" Link="checked-check-ui-preview.js" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.Orchestration\Realtime\RealtimeOptimizer.cs" Link="checked-RealtimeOptimizer.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\scripts\uninstall-service.ps1" Link="checked-uninstall-service.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -155,8 +155,9 @@ def build(data: dict) -> str:
         + "\n".join(tweak_card(t) for t in items)
         for code, title, items in groups)
 
+    free_chip = " <span class='chip tiny'>free</span>"
     games_rows = "\n".join(
-        f'<tr><td>{esc(g["gameRu"])}{" <span class=\'chip tiny\'>free</span>" if g.get("isFreeToPlay") else ""}</td>'
+        f'<tr><td>{esc(g["gameRu"])}{free_chip if g.get("isFreeToPlay") else ""}</td>'
         f'<td class="dim mono">{esc(g["processName"])}</td>'
         f'<td class="dim">{esc(trim(", ".join(g.get("regionsRu") or []), 46))}</td>'
         f'<td class="dim">{esc(trim("; ".join(g.get("portsRu") or []) or "по факту соединения", 44))}</td></tr>'
@@ -167,8 +168,9 @@ def build(data: dict) -> str:
         f'<span class="mono">{esc(d["primary"])}</span><span class="dim">{esc(trim(d["noteRu"], 48))}</span></div>'
         for d in routes["dns"])
 
+    free_price = "<span class='chip tiny free'>0 ₽</span>"
     path_rows = "\n".join(
-        f'<tr><td>{esc(p["kindRu"])}</td><td>{"<span class=\'chip tiny free\'>0 ₽</span>" if p.get("isFree") else esc(p["costRu"])}</td>'
+        f'<tr><td>{esc(p["kindRu"])}</td><td>{free_price if p.get("isFree") else esc(p["costRu"])}</td>'
         f'<td class="dim">{esc(trim(p["safetyRu"], 60))}</td></tr>'
         for p in routes["pathKinds"])
 

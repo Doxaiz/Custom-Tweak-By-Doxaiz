@@ -30,6 +30,10 @@ public sealed class ReadOnlyChannelTests
         { "repair-network", """{"id":"4","command":"repair-network"}""" },
         { "realtime-start", """{"id":"5","command":"realtime-start"}""" },
         { "perf-profile", """{"id":"6","command":"perf-profile","args":{"profile":"economy"}}""" },
+        { "sessions-clear", """{"id":"7","command":"sessions-clear"}""" },
+        { "rollback-tweak", """{"id":"8","command":"rollback-tweak","args":{"tweak":"TCP_NO_DELAY","snapshot":"snap-001"}}""" },
+        { "return-all", """{"id":"9","command":"return-all"}""" },
+        { "cleanup-snapshots", """{"id":"10","command":"cleanup-snapshots","args":{"keep":"10","olderThanDays":"30"}}""" },
     };
 
     [Theory]
@@ -102,6 +106,21 @@ public sealed class ReadOnlyChannelTests
     }
 
     [Fact]
+    public async Task Следы_перед_удалением_видно_в_канале_чтения_без_прав()
+    {
+        // Задача T: скрипт снятия спрашивает службу ДО удаления. Ответ должен приходить и тогда,
+        // когда администратор не в деле, — иначе удаление «не видит» следы и молча их бросает.
+        var ops = new RecordingEngineOperations();
+
+        EngineResponse response = await ReadOnlyDispatcher(ops)
+            .HandleJsonAsync("""{"id":"1","command":"uninstall-check"}""", clientIsAdministrator: false);
+
+        Assert.True(response.Ok, response.MessageRu);
+        Assert.Contains("удалять спокойно", response.MessageRu);
+        Assert.Contains(ops.Calls, call => call == "uninstall-check");
+    }
+
+    [Fact]
     public async Task Основной_канал_работает_как_прежде()
     {
         // Сторож на то, что сужение канала чтения не задело основной: там меняющие команды выполняются
@@ -126,7 +145,7 @@ public sealed class ReadOnlyChannelTests
 
         Assert.Equal(wireNames.Count, wireNames.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.All(wireNames, name => Assert.NotNull(EngineCommandCatalog.Find(name)));
-        Assert.Equal("ping, capabilities, status, journal-tail, system-state, route-discover, realtime-stop",
+        Assert.Equal("ping, capabilities, status, journal-tail, system-state, route-discover, realtime-stop, uninstall-check, sessions",
             EngineCommandCatalog.ReadOnlyChannelWireNamesRu());
     }
 
@@ -208,6 +227,23 @@ public sealed class ReadOnlyChannelTests
 
         public Task<EngineOperationResult> ReadSystemStateAsync(CancellationToken ct = default) =>
             Record("system-state", EngineOperationResult.Success("прочитано"));
+
+        public Task<EngineOperationResult> SessionsAsync(int limit, CancellationToken ct = default) =>
+            Record($"sessions:{limit}", EngineOperationResult.Success("история сессий", """{"count":0,"records":[]}"""));
+
+        public Task<EngineOperationResult> ClearSessionsAsync(CancellationToken ct = default) =>
+            Record("sessions-clear", EngineOperationResult.Success("история сессий очищена"));
+
+        public Task<EngineOperationResult> ReturnAllAsync(CancellationToken ct = default) => Record("return-all", EngineOperationResult.Success("всё возвращено"));
+        public Task<EngineOperationResult> GetStorageInfoAsync(CancellationToken ct = default) => Record("storage-info", EngineOperationResult.Success("база 0 КБ"));
+        public Task<EngineOperationResult> CleanupSnapshotsAsync(int keepLast = 10, int olderThanDays = 30, CancellationToken ct = default) => Record("cleanup-snapshots", EngineOperationResult.Success("почищено"));
+        public Task<EngineOperationResult> RollbackSingleTweakAsync(string tweakCode, string? snapshotId, CancellationToken ct = default) =>
+            Record($"rollback-tweak:{tweakCode}:{snapshotId}", EngineOperationResult.Success($"твик {tweakCode} возвращён"));
+
+        public Task<EngineOperationResult> UninstallCheckAsync(CancellationToken ct = default) =>
+            Record("uninstall-check", EngineOperationResult.Success(
+                "Применённых изменений нет — можно удалять спокойно.",
+                """{"appliedChanges":0,"openOperations":0,"snapshots":0,"optimizationRunning":false,"mustAsk":false,"optionsRu":[],"questionRu":"Применённых изменений нет.","warningRu":""}"""));
 
         private Task<EngineOperationResult> Record(string call, EngineOperationResult result)
         {

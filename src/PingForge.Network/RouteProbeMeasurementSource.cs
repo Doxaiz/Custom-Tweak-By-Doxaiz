@@ -47,10 +47,15 @@ public sealed class RouteProbeMeasurementSource : IRealtimeMeasurementSource
         return new PathMeasurement(
             IsMeasurable: true,
             RttMedianMs: median,
-            JitterMs: statistics.JitterMadMs ?? 0,
-            LossPercent: statistics.PacketLossPercent ?? 0,
+            // Нет числа — нет числа: подставлять ноль значило бы выдумать «разброса нет» и «потерь нет».
+            JitterMs: statistics.JitterMadMs,
+            LossPercent: statistics.PacketLossPercent,
             Samples: statistics.ReceivedCount,
-            MethodRu: DescribeMethod(statistics));
+            MethodRu: DescribeMethod(statistics),
+            RttMinMs: statistics.RttMinMs,
+            RttAvgMs: statistics.RttAvgMs,
+            RttP95Ms: statistics.RttP95Ms,
+            Method: statistics.MethodUsed);
     }
 
     /// <summary>

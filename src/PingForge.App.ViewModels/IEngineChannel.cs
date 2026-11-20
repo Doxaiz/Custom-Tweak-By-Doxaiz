@@ -67,14 +67,17 @@ public sealed record AppSettings(
     bool OfferRestorePoint = true,
     bool StartMinimized = false,
     bool CloseToTray = true,
-    int JournalRowsShown = 20,
+    int JournalRowsShown = 200,
     bool SetupCompleted = false,
     string SetupAnswersRu = "",
     IReadOnlyDictionary<string, string>? GamePaths = null,
     IReadOnlyList<CustomGameEntry>? CustomGames = null,
     IReadOnlyList<RoutingNodeEntry>? RoutingNodes = null,
     string? RoutingDefaultNode = null,
-    bool RoutingAutoSelect = false);
+    bool RoutingAutoSelect = false,
+    bool RoutingMultipathEnabled = false,
+    string? RoutingSecondaryNode = null,
+    double UiScale = 1.0);
 
 /// <summary>Память вместо файла: так проверяются «сохранилось / не сохранилось» без диска.</summary>
 public sealed class InMemorySettingsStore : IAppSettingsStore

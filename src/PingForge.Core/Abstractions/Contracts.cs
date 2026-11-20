@@ -66,6 +66,14 @@ public interface ISnapshotService
     Task<SnapshotRollbackReport> RollbackSnapshotAsync(string snapshotId, CancellationToken ct = default);
 
     Task<IReadOnlyList<SystemSnapshot>> GetAllSnapshotsAsync(CancellationToken ct = default);
+
+    Task<int> DeleteSnapshotAsync(string snapshotId, CancellationToken ct = default) =>
+        Task.FromResult(0);
+
+    Task<long> GetDatabaseFileSizeAsync(CancellationToken ct = default) =>
+        Task.FromResult(0L);
+
+    string DatabasePath => string.Empty;
 }
 
 public interface ITweakCoordinator

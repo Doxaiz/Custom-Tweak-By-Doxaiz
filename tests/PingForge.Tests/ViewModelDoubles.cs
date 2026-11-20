@@ -30,6 +30,14 @@ public sealed class FakeEngineChannel : IEngineChannel
 
     public double? ImprovementMs { get; set; } = 42;
 
+    /// <summary>Лучший замер сессии: null — «ещё не измерено», а не ноль.</summary>
+    public double? FloorRttMs { get; set; }
+
+    /// <summary>Разброс и потери: null — способ замера их не измеряет, а не «идеальная сеть».</summary>
+    public double? CurrentJitterMs { get; set; }
+
+    public double? CurrentLossPercent { get; set; }
+
     /// <summary>Название игры: null — «игра не найдена».</summary>
     public string? GameTitleRu { get; set; } = "Fortnite";
 
@@ -86,11 +94,18 @@ public sealed class FakeEngineChannel : IEngineChannel
 
         EngineCommandKind.ApplyPreset => EngineResponse.Success(
             request.Id,
-            "Низкий пинг: применено 19 из 19, без изменений 0, пропущено 0, ошибок 0."),
+            "Низкий пинг: применено 19 из 19, без изменений 0, пропущено 0, ошибок 0.",
+            """{"snapshotId":"snap-apply-preset-001","total":19,"applied":19,"noOp":0,"skipped":0,"failed":0,"rebootRequired":false,"restorePointStatus":"NotNeeded","failures":[],"rows":[{"code":"TCP_NO_DELAY","titleRu":"Отключение алгоритма Нейгла","previousText":"0","appliedText":"1","verifiedText":"1","outcome":"VerifiedEffective","statusRu":"применён","succeeded":true,"rebootNeeded":false}]}"""),
 
         EngineCommandKind.ApplyTweaks => EngineResponse.Success(
             request.Id,
-            "свой набор: применено 3 из 3, без изменений 0, пропущено 0, ошибок 0."),
+            "свой набор: применено 3 из 3, без изменений 0, пропущено 0, ошибок 0.",
+            """{"snapshotId":"snap-apply-tweaks-001","total":3,"applied":3,"noOp":0,"skipped":0,"failed":0,"rebootRequired":false,"restorePointStatus":"NotNeeded","failures":[],"rows":[{"code":"TCP_NO_DELAY","titleRu":"Отключение алгоритма Нейгла","previousText":"0","appliedText":"1","verifiedText":"1","outcome":"VerifiedEffective","statusRu":"применён","succeeded":true,"rebootNeeded":false}]}"""),
+
+        EngineCommandKind.RollbackSingleTweak => EngineResponse.Success(
+            request.Id,
+            "Твик «TCP_NO_DELAY» возвращён: было «1» → стало «0».",
+            """{"snapshotId":"snap-apply-preset-001","tweakCode":"TCP_NO_DELAY","succeeded":true,"outcome":"RolledBack","reasonRu":""}"""),
 
         EngineCommandKind.RollbackSnapshot => EngineResponse.Success(request.Id, "Прежние настройки возвращены."),
 
@@ -118,7 +133,7 @@ public sealed class FakeEngineChannel : IEngineChannel
             return EngineResponse.Success(
                 request.Id,
                 "Оптимизация не запущена.",
-                $$"""{"realtimeState":"idle","realtimeStateRu":"не запущена","isElevationAvailable":{{Bool(IsElevationAvailable)}},"tweakCount":47,"pendingOperations":0}""");
+                $$"""{"realtimeState":"idle","realtimeStateRu":"не запущена","isElevationAvailable":{{Bool(IsElevationAvailable)}},"tweakCount":47,"pendingOperations":0,"chartSamples":[]}""");
         }
 
         return EngineResponse.Success(
@@ -126,7 +141,13 @@ public sealed class FakeEngineChannel : IEngineChannel
             "Идёт контроль качества.",
             $$"""
             {"realtimeState":"active-monitoring","realtimeStateRu":"идёт контроль качества","isElevationAvailable":{{Bool(IsElevationAvailable)}},"tweakCount":47,"pendingOperations":0,
-             "gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6","baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},"qualityLabelRu":"хорошо"}
+             "gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6","baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},"qualityLabelRu":"хорошо",
+             "floorRttMs":{{Number(FloorRttMs)}},"currentJitterMs":{{Number(CurrentJitterMs)}},"currentLossPercent":{{Number(CurrentLossPercent)}},
+             "chartSamples":[
+               {"atUtc":"2026-10-18T12:00:00.0000000Z","measured":true,"rttMinMs":38,"rttMedianMs":40,"rttP95Ms":44,"jitterMadMs":1.5,"lossPercent":0},
+               {"atUtc":"2026-10-18T12:00:02.0000000Z","measured":false},
+               {"atUtc":"2026-10-18T12:00:04.0000000Z","measured":true,"rttMedianMs":41,"jitterMadMs":2,"lossPercent":0}
+             ]}
             """);
     }
 
@@ -161,6 +182,7 @@ public sealed class FakeEngineChannel : IEngineChannel
             $$"""
             {"state":"active-monitoring","realtimeState":"active-monitoring","gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6",
              "baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},
+             "floorRttMs":{{Number(FloorRttMs)}},"currentJitterMs":{{Number(CurrentJitterMs)}},"currentLossPercent":{{Number(CurrentLossPercent)}},
              "everythingReverted":true,"appliedActionTitles":["Маршрут для игрового сервера"]}
             """);
     }

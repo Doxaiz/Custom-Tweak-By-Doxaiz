@@ -2,14 +2,70 @@ using PingForge.Core.Models;
 
 namespace PingForge.Network;
 
-/// <summary>Известная игра: имя процесса, анти-чит и честный статус его совместимости с сетевым фильтром.</summary>
+/// <summary>
+/// Известная игра: имя процесса, анти-чит и честный статус его совместимости с сетевым фильтром.
+/// <para><c>PortHints</c>/<c>PortRanges</c> — порты, по которым игру можно подтвердить при ранжировании потоков
+/// процесса: игровой UDP-порт часто меняется, одиночным числом его не описать.</para>
+/// <para><c>RequiresPortMatch</c> — процесс общий для многих программ (javaw.exe — это и Minecraft, и любая другая
+/// Java-программа). Тогда игру называем только при совпадении порта с подсказкой, иначе — честный «кандидат,
+/// а не игра».</para>
+/// </summary>
 public sealed record KnownGame(
     string ProcessName,
     string TitleRu,
     string AntiCheatName,
     AntiCheatStatus AntiCheat,
     string NoteRu = "",
-    bool IsCustom = false);
+    bool IsCustom = false,
+    IReadOnlyList<int>? PortHints = null,
+    IReadOnlyList<(int From, int To)>? PortRanges = null,
+    bool RequiresPortMatch = false)
+{
+    /// <summary>Совпал ли удалённый порт с портом/диапазоном этой игры.</summary>
+    public bool MatchesPort(int port)
+    {
+        if (port <= 0)
+        {
+            return false;
+        }
+
+        if (PortHints is not null && PortHints.Contains(port))
+        {
+            return true;
+        }
+
+        if (PortRanges is not null)
+        {
+            foreach ((int from, int to) in PortRanges)
+            {
+                if (port >= from && port <= to)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Текст для человека: какие порты подтверждают именно эту игру.</summary>
+    public string DescribePortsRu()
+    {
+        var parts = new List<string>();
+
+        if (PortHints is { Count: > 0 })
+        {
+            parts.Add(string.Join(", ", PortHints));
+        }
+
+        if (PortRanges is not null)
+        {
+            parts.AddRange(PortRanges.Select(range => $"{range.From}–{range.To}"));
+        }
+
+        return parts.Count == 0 ? "порты не заданы" : string.Join(", ", parts);
+    }
+}
 
 /// <summary>Своя игра человека в общем файле настроек: имя процесса и название, которое он дал.</summary>
 public sealed record CustomGameEntry(string ProcessName, string TitleRu);
@@ -33,14 +89,14 @@ public static class CustomGameValidation
 
         if (string.IsNullOrWhiteSpace(executablePath))
         {
-            errorRu = "Файл игры не выбран. Нажмите «Добавить игру» и укажите .exe файл игры.";
+            errorRu = "Файл игры не выбран. Нажмите «Добавить игру» и укажите .exe игры, её ярлык с рабочего стола или ссылку.";
             return false;
         }
 
         string path = executablePath.Trim();
         if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
         {
-            errorRu = $"«{path}» — не .exe файл. Своей игрой можно добавить только исполняемый файл игры.";
+            errorRu = $"«{path}» — не .exe файл. Своей игрой можно добавить только исполняемый файл игры; ярлык на рабочем столе подойдёт — программа найдёт .exe по нему.";
             return false;
         }
 
@@ -92,37 +148,107 @@ public static class CustomGameValidation
 /// разрешены для всех; фильтр пакетов (WinDivert) не поднимается для игр с ядерным анти-читом,
 /// и это подтверждено тестом каталога.
 /// </summary>
+/// <summary>Дополнительные алиасы Фортнайта: EAC/BE-обёртки и лаунчерные варианты. Проверяется префиксом fortniteclient.</summary>
+public static class FortniteAliases
+{
+    public static readonly IReadOnlyList<string> All = new[]
+    {
+        "fortniteclient-win64-shipping.exe",
+        "fortniteclient-win64-shipping_be.exe",
+        "fortniteclient-win64-shipping_eac.exe",
+        "fortniteclient-win64-shipping-eac.exe",
+        "fortnite_be.exe",
+        "fortnite_eac.exe",
+        "fortnite.exe",
+    };
+}
+
 public sealed class GameProcessCatalog
 {
     public static IReadOnlyList<KnownGame> DefaultGames { get; } = new[]
     {
         new KnownGame("fortniteclient-win64-shipping.exe", "Fortnite", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested,
-            "Оверлеи сторонних программ лучше выключить: часть анти-читов считает их подозрительными."),
+            "Игровой UDP-порт матча у Fortnite заранее неизвестен (5795–5847 и 7000–9100 в разных сезонах), " +
+            "поэтому поток матча опознаётся по процессу, протоколу UDP и собеседнику из трассировки стека. " +
+            "Без трассировки UDP поток матча не виден — это честное «не нашли», а не ошибка. " +
+            "Оверлеи сторонних программ лучше выключить: часть анти-читов считает их подозрительными.",
+            PortHints: [7777, 7778, 9000, 5222],
+            PortRanges: [(5795, 5847), (7000, 9100), (10000, 10100)]),
+        new KnownGame("javaw.exe", "Minecraft (Java)", "анти-чит не проверялся", AntiCheatStatus.Untested,
+            "Клиент Minecraft на Java — это javaw.exe, и точно так же называется любая Java-программа. " +
+            "Игру подтверждает порт соединения: 25565 (а также диапазон 25500–25600 — у серверов и прокси " +
+            "бывают соседние порты). Если порт другой, программа Minecraft не называет и показывает процесс " +
+            "кандидатом: угадывать игру по общему имени файла — значит направить маршрут в чужое соединение. " +
+            "Запускать игру нужно лаунчером Minecraft: javaw.exe — уже запущенный клиент, сам он не стартует.",
+            PortHints: [25565],
+            PortRanges: [(25500, 25600)],
+            RequiresPortMatch: true),
+        new KnownGame("minecraft.windows.exe", "Minecraft (Bedrock)", "анти-чит не проверялся", AntiCheatStatus.Untested,
+            "Bedrock из Microsoft Store — пакет UWP с именем процесса minecraft.windows.exe. Сервер общается " +
+            "по UDP: 19132 (IPv4) и 19133 (IPv6). UDP-собеседник виден только при включённой трассировке " +
+            "сетевого стека; без неё поток не найдётся.",
+            PortHints: [19132, 19133],
+            PortRanges: [(19132, 19133)]),
         new KnownGame("cs2.exe", "Counter-Strike 2", "VAC", AntiCheatStatus.Untested,
-            "VAC работает в пользовательском режиме, но совместимость фильтра мы не проверяли."),
-        new KnownGame("dota2.exe", "Dota 2", "VAC", AntiCheatStatus.Untested),
+            "VAC работает в пользовательском режиме, но совместимость фильтра мы не проверяли.",
+            PortHints: [27015],
+            PortRanges: [(27015, 27050)]),
+        new KnownGame("dota2.exe", "Dota 2", "VAC", AntiCheatStatus.Untested,
+            PortHints: [27015],
+            PortRanges: [(27015, 27030)]),
         new KnownGame("valorant-win64-shipping.exe", "VALORANT", "Vanguard (ядро)", AntiCheatStatus.KnownKernelConflict,
-            "Vanguard — ядерный анти-чит: фильтр пакетов не поднимаем, применяем только маршрут и QoS."),
+            "Vanguard — ядерный анти-чит: фильтр пакетов не поднимаем, применяем только маршрут и QoS. " +
+            "Игровой трафик идёт по UDP 7000–8000 и 8180–8181, голос — 3478–3480 (STUN), поэтому голос " +
+            "здесь не матч.",
+            PortHints: [8393, 8088],
+            PortRanges: [(7000, 8000), (8180, 8181)]),
         new KnownGame("valorant.exe", "VALORANT (лаунчер)", "Vanguard (ядро)", AntiCheatStatus.KnownKernelConflict,
             "Только маршрут и QoS."),
         new KnownGame("league of legends.exe", "League of Legends", "Vanguard (ядро)", AntiCheatStatus.KnownKernelConflict,
-            "С 2024 года игра использует Vanguard: только маршрут и QoS."),
-        new KnownGame("r5apex.exe", "Apex Legends", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested),
-        new KnownGame("rustclient.exe", "Rust", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested),
-        new KnownGame("rainbowsix.exe", "Rainbow Six Siege", "BattlEye", AntiCheatStatus.Untested),
-        new KnownGame("tslgame.exe", "PUBG: Battlegrounds", "BattlEye", AntiCheatStatus.Untested),
+            "С 2024 года игра использует Vanguard: только маршрут и QoS.",
+            PortHints: [2099, 5222, 8393],
+            PortRanges: [(5000, 5500)]),
+        new KnownGame("r5apex.exe", "Apex Legends", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested,
+            "Порт матча у Apex не один: по логам игроков он попадает в 37000–40115 (шаг 100 и +15). " +
+            "Ранжирование учитывает диапазон, а не одно число.",
+            PortRanges: [(37000, 40115)]),
+        new KnownGame("rustclient.exe", "Rust", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested,
+            PortHints: [28015],
+            PortRanges: [(28015, 28017)]),
+        new KnownGame("rainbowsix.exe", "Rainbow Six Siege", "BattlEye", AntiCheatStatus.Untested,
+            PortHints: [6015],
+            PortRanges: [(13000, 14001)]),
+        new KnownGame("tslgame.exe", "PUBG: Battlegrounds", "BattlEye", AntiCheatStatus.Untested,
+            "Порты матча у PUBG меняются сезонно: в сообществах фиксируют 7086–7995 и 12070–12460.",
+            PortHints: [7086],
+            PortRanges: [(7086, 7995), (12070, 12460)]),
         new KnownGame("escapefromtarkov.exe", "Escape from Tarkov", "BattlEye", AntiCheatStatus.Untested),
         new KnownGame("cod.exe", "Call of Duty", "Ricochet (ядро)", AntiCheatStatus.KnownKernelConflict,
-            "Ricochet — ядерный анти-чит: фильтр не поднимаем."),
-        new KnownGame("modernwarfare.exe", "Call of Duty: Modern Warfare", "Ricochet (ядро)", AntiCheatStatus.KnownKernelConflict),
-        new KnownGame("overwatch.exe", "Overwatch 2", "Защита Blizzard", AntiCheatStatus.Untested),
-        new KnownGame("rocketleague.exe", "Rocket League", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested),
+            "Ricochet — ядерный анти-чит: фильтр не поднимаем.",
+            PortHints: [3074],
+            PortRanges: [(27000, 27050)]),
+        new KnownGame("modernwarfare.exe", "Call of Duty: Modern Warfare", "Ricochet (ядро)", AntiCheatStatus.KnownKernelConflict,
+            PortHints: [3074],
+            PortRanges: [(27000, 27050)]),
+        new KnownGame("overwatch.exe", "Overwatch 2", "Защита Blizzard", AntiCheatStatus.Untested,
+            "Battle.net держит TCP 1119/3724/6113 и UDP 3478–3479/5060/6250 — те же порты у голосового чата, " +
+            "поэтому здесь они заданы как порты самой игры, а не как «голос».",
+            PortHints: [1119, 3724, 6113, 3478, 3479, 5060, 6250]),
+        new KnownGame("rocketleague.exe", "Rocket League", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested,
+            PortHints: [7000],
+            PortRanges: [(7000, 9000), (27000, 27031)]),
         new KnownGame("gta5.exe", "GTA Online", "Защита Rockstar", AntiCheatStatus.Untested,
-            "Часть сессий — peer-to-peer: трафик идёт напрямую другим игрокам, а не только на сервер."),
-        new KnownGame("fivem_gtaprocess.exe", "FiveM (GTA V)", "Защита FiveM", AntiCheatStatus.Untested),
+            "Часть сессий — peer-to-peer: трафик идёт напрямую другим игрокам, а не только на сервер. " +
+            "Маршрут до одного адреса помогает только той части сессии, что идёт к нему.",
+            PortHints: [6672],
+            PortRanges: [(61455, 61458)]),
+        new KnownGame("fivem_gtaprocess.exe", "FiveM (GTA V)", "Защита FiveM", AntiCheatStatus.Untested,
+            PortHints: [30120]),
         new KnownGame("destiny2.exe", "Destiny 2", "BattlEye", AntiCheatStatus.Untested,
-            "У игры были блокировки за VPN: релейные пути предлагаем только с вашего явного согласия."),
-        new KnownGame("warframe.x64.exe", "Warframe", "Защита Digital Extremes", AntiCheatStatus.Untested),
+            "У игры были блокировки за VPN: релейные пути предлагаем только с вашего явного согласия.",
+            PortHints: [3074, 3097]),
+        new KnownGame("warframe.x64.exe", "Warframe", "Защита Digital Extremes", AntiCheatStatus.Untested,
+            PortHints: [4950, 4955]),
         new KnownGame("deadbydaylight-win64-shipping.exe", "Dead by Daylight", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested)
     };
 
@@ -158,17 +284,18 @@ public sealed class GameProcessCatalog
 
     public IReadOnlyList<KnownGame> All => _games;
 
-    /// <summary>Только свои игры человека (встроенные 20 так не помечены и не удаляются).</summary>
+    /// <summary>Только свои игры человека (встроенные так не помечены и не удаляются).</summary>
     public IReadOnlyList<KnownGame> CustomGames => _games.Where(game => game.IsCustom).ToList();
 
     /// <summary>
     /// Каталог «встроенные + свои». Битые записи своих игр (пустое имя/название, дубли встроенных)
-    /// пропускаются, а не ломают список: служба обязана работать с 20 известными в любом случае.
+    /// пропускаются, а не ломают список: служба обязана работать со встроенными играми в любом случае.
+    /// Исключение — встроенная запись общего процесса (<see cref="KnownGame.RequiresPortMatch"/>): своя
+    /// игра её заменяет, иначе Minecraft на нестандартном порту не назвать игрой никак.
     /// </summary>
     public static GameProcessCatalog WithCustomGames(IEnumerable<CustomGameEntry>? customGames)
     {
         var games = new List<KnownGame>(DefaultGames);
-        var known = new HashSet<string>(DefaultGames.Select(game => Normalize(game.ProcessName)), StringComparer.OrdinalIgnoreCase);
 
         foreach (CustomGameEntry entry in customGames ?? [])
         {
@@ -178,12 +305,27 @@ public sealed class GameProcessCatalog
             }
 
             string processName = Normalize(entry.ProcessName);
-            if (!known.Add(processName) || IsIgnored(processName))
+            if (IsIgnored(processName))
             {
                 continue;
             }
 
-            games.Add(CustomGameValidation.ToKnownGame(new CustomGameEntry(processName, entry.TitleRu.Trim())));
+            KnownGame custom = CustomGameValidation.ToKnownGame(new CustomGameEntry(processName, entry.TitleRu.Trim()));
+            int existing = games.FindIndex(game => string.Equals(Normalize(game.ProcessName), processName, StringComparison.OrdinalIgnoreCase));
+
+            if (existing < 0)
+            {
+                games.Add(custom);
+                continue;
+            }
+
+            // Общий процесс (javaw.exe) человек вправе назвать своей игрой: без этого сервер на
+            // нестандартном порту не оптимизировать никак. Встроенную однозначную игру не перекрываем:
+            // «cs2.exe = моя игра» — это не уточнение, а подмена.
+            if (games[existing].RequiresPortMatch)
+            {
+                games[existing] = custom;
+            }
         }
 
         return new GameProcessCatalog(games);
@@ -192,7 +334,35 @@ public sealed class GameProcessCatalog
     public bool TryMatch(string? processName, out KnownGame game)
     {
         game = null!;
-        return !string.IsNullOrWhiteSpace(processName) && _byExe.TryGetValue(Normalize(processName), out game!);
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            return false;
+        }
+
+        string norm = Normalize(processName);
+        if (_byExe.TryGetValue(norm, out game!))
+        {
+            return true;
+        }
+
+        // Java: у клиента Minecraft процесс javaw.exe, у серверных сборок и лаунчеров — java.exe.
+        // Это один и тот же общий процесс, поэтому подтверждение идёт портом (см. RequiresPortMatch).
+        if (norm.Equals("java.exe", StringComparison.OrdinalIgnoreCase)
+            || norm.Equals("javaw.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return _byExe.TryGetValue("javaw.exe", out game!);
+        }
+
+        // Фортнайт в творческом/лобби часто запускается обёрткой EAC/BE с суффиксом _be/_eac: ловим префиксом.
+        if (norm.StartsWith("fortniteclient", StringComparison.OrdinalIgnoreCase) ||
+            norm.StartsWith("fortnite_", StringComparison.OrdinalIgnoreCase) ||
+            norm.Equals("fortnite.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            // Всегда есть базовый Фортнайт в каталоге
+            return _byExe.TryGetValue("fortniteclient-win64-shipping.exe", out game!);
+        }
+
+        return false;
     }
 
     public static bool IsIgnored(string? processName) =>

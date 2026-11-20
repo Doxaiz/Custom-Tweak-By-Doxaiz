@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custom Tweak By Doxaiz — витрина интерфейса</title>
+<style>
+  :root {
+    --bg: #12141a;
+    --panel: #1a1e27;
+    --panel-2: #222836;
+    --line: #2f3747;
+    --text: #e8ecf4;
+    --muted: #a3adc0;
+    --accent: #5aa9ff;
+    --accent-2: #7ef0c0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(1200px 600px at 20% -10%, #1d2534, var(--bg)) fixed;
+    color: var(--text);
+    font: 16px/1.55 "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+  main { width: 100%; max-width: 860px; }
+  h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.2px; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  .cards { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 720px) { .cards { grid-template-columns: 1fr 1fr; } }
+  a.card {
+    display: block;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px 22px 20px;
+    color: var(--text);
+    text-decoration: none;
+    transition: border-color .15s ease, transform .15s ease;
+  }
+  a.card:hover, a.card:focus-visible { border-color: var(--accent); transform: translateY(-2px); outline: none; }
+  a.card .tag { display: inline-block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-2); margin-bottom: 10px; }
+  a.card h2 { font-size: 19px; margin: 0 0 8px; }
+  a.card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  footer { margin-top: 30px; color: var(--muted); font-size: 13.5px; }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Custom Tweak By Doxaiz</h1>
+  <p class="sub">Две страницы интерфейса, собранные автоматически из каталога программы при каждой сборке.
+     Ничего не нажимается по-настоящему: это витрина, а не сама программа.</p>
+
+  <div class="cards">
+    <a class="card" href="custom-tweak-by-doxaiz.html">
+      <span class="tag">Витрина</span>
+      <h2>Главный экран и все разделы</h2>
+      <p>Одна кнопка, карточки твиков с вердиктами, маршруты, журнал изменений, настройки, «О программе».</p>
+    </a>
+    <a class="card" href="pingforge-ui-preview.html">
+      <span class="tag">Рабочий документ</span>
+      <h2>Интерфейс подробно</h2>
+      <p>Каждая карточка, каждое состояние, каждая формулировка — то, по чему сверяется окно WPF.</p>
+    </a>
+  </div>
+
+  <footer>
+    Скачать программу — <a href="https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz/releases/latest">Releases</a>.
+    Исходный код и документация — <a href="https://github.com/Doxaiz/Custom-Tweak-By-Doxaiz">GitHub</a>.
+  </footer>
+</main>
+</body>
+</html>

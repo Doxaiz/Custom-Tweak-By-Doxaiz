@@ -3,99 +3,135 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:PingForge.App.Views"
         Title="Custom Tweak By Doxaiz" Height="820" Width="1180"
-        MinHeight="500" MinWidth="800"
+        MinHeight="560" MinWidth="860"
         Background="{StaticResource Bg}"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
         WindowStartupLocation="CenterScreen">
 
-  <Grid>
+  <Grid ClipToBounds="True">
+    <!-- Масштаб интерфейса (100/125/150 %): LayoutTransform пересобирает раскладку, а не растягивает
+         картинку, поэтому текст остаётся резким, а карточки тянутся. При 100 % это тождественное
+         преобразование — обычный вид не меняется. Размер окна под масштаб подгоняет код окна. -->
+    <Grid.LayoutTransform>
+      <ScaleTransform ScaleX="{Binding Settings.UiScale.Scale}" ScaleY="{Binding Settings.UiScale.Scale}" />
+    </Grid.LayoutTransform>
+    <!-- Фон: два мягких свечения (акцент и циан) вместо плоской заливки. Это чистый декор,
+         он не перехватывает мышь и ничего не измеряет. -->
+    <Ellipse Width="720" Height="520" Fill="{StaticResource GlowBrush}" HorizontalAlignment="Left"
+             VerticalAlignment="Top" Margin="-220,-220,0,0" IsHitTestVisible="False" Opacity="0.5" />
+    <Ellipse Width="640" Height="480" Fill="{StaticResource GlowBrush}" HorizontalAlignment="Right"
+             VerticalAlignment="Bottom" Margin="0,0,-200,-220" IsHitTestVisible="False" Opacity="0.28" />
+
     <Grid>
-      <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
-
-    <!-- Шапка: имя программы, состояние и кнопка поддержки автора. -->
-    <Border Grid.Row="0" Background="#0C1220" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="16,11">
       <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-        <Border Grid.Column="0" Width="26" Height="26" CornerRadius="8" Background="#0A1626" BorderBrush="{StaticResource Line}" BorderThickness="1" Margin="0,0,12,0">
-          <Image Source="{StaticResource LogoImage}" Width="19" Height="19" Stretch="Uniform"
-                 VerticalAlignment="Center" HorizontalAlignment="Center" />
+        <!-- Шапка: эмблема, имя программы с подписью, состояние и кнопка поддержки автора. -->
+        <Border Grid.Row="0" Background="{StaticResource HeaderGradient}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="18,13">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Width="38" Height="38" CornerRadius="12" Background="{StaticResource Badge}"
+                    BorderBrush="{StaticResource LineStrong}" BorderThickness="1" Margin="0,0,13,0">
+              <Image Source="{StaticResource LogoImage}" Width="27" Height="27" Stretch="Uniform"
+                     VerticalAlignment="Center" HorizontalAlignment="Center" />
+            </Border>
+
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+              <TextBlock Text="Custom Tweak By Doxaiz" FontWeight="Bold" FontSize="15.5" VerticalAlignment="Center" />
+              <TextBlock Style="{StaticResource Caption}" FontSize="11" Margin="0,1,0,0"
+                         Text="оптимизация соединения для игр" />
+            </StackPanel>
+
+            <!-- Состояние и кнопка поддержки — одна группа у правого края. Группа переносится на
+                 вторую строку, если не влезает: раньше это были две колонки Auto, и в узком окне
+                 длинная фраза о правах выталкивала кнопку за край окна — её просто обрезало.
+                 Проверка «ничего не выходит за правый край» поймала это на ширине 860. -->
+            <WrapPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                       VerticalAlignment="Center" Margin="12,0,0,0">
+              <!-- Строка об игре сокращается многоточием на 300 точках, поэтому полный текст
+                   доступен в подсказке: иначе «Игра: Fortnite — …» не прочитать до конца. -->
+              <TextBlock Text="{Binding GameLineRu}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                         MaxWidth="300" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,12,0"
+                         ToolTip="{Binding GameLineRu}" />
+              <Border Style="{StaticResource Pill}" VerticalAlignment="Center" Margin="0,0,10,0"
+                      ToolTip="{Binding RightsNoteRu}">
+                <StackPanel Orientation="Horizontal">
+                  <Ellipse Width="7" Height="7" Fill="{StaticResource Accent}" VerticalAlignment="Center" Margin="0,0,7,0" />
+                  <!-- Фраза о правах — одна строка с многоточием и полным текстом в подсказке:
+                       без предела она растягивала шапку шире окна. -->
+                  <TextBlock Text="{Binding RightsNoteRu}" FontSize="11.5" Foreground="{StaticResource Muted}"
+                             TextTrimming="CharacterEllipsis" MaxWidth="320" />
+                </StackPanel>
+              </Border>
+              <Button Style="{StaticResource GhostButton}" Padding="13,7" VerticalAlignment="Center"
+                      Content="Поддержать автора ↗" Click="SupportClick" ToolTip="Откроет страницу поддержки автора" />
+            </WrapPanel>
+          </Grid>
         </Border>
 
-        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <TextBlock Text="Custom Tweak By Doxaiz" FontWeight="Bold" FontSize="15" VerticalAlignment="Center" />
-          <Border Background="#131C2C" BorderBrush="#1F4034" BorderThickness="1" CornerRadius="999" Padding="9,3" Margin="12,0,0,0">
-            <StackPanel Orientation="Horizontal">
-              <Ellipse Width="7" Height="7" Fill="{StaticResource Accent}" VerticalAlignment="Center" Margin="0,0,6,0" />
-              <TextBlock Text="{Binding RightsNoteRu}" FontSize="11.5" Foreground="{StaticResource Muted}" />
-            </StackPanel>
+        <!-- Основа: слева разделы, справа содержимое выбранного. -->
+        <Grid Grid.Row="1">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="236" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+
+          <Border Grid.Column="0" Background="{StaticResource Deep}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="14,18">
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Bottom">
+                <!-- Только путь к файлу настроек. Фраза «программа запускается молча» стояла здесь
+                     и в подвале окна сразу — два одинаковых абзаца на одном экране. Осталась одна,
+                     в подвале. -->
+                <Border Style="{StaticResource SunkenPanel}" Padding="11,9" Margin="0,0,0,6">
+                  <TextBlock Style="{StaticResource Caption}" FontSize="10.5" TextWrapping="Wrap"
+                             Foreground="{StaticResource Dim}" Text="{Binding Settings.SettingsFilePath, StringFormat=Настройки: {0}}" />
+                </Border>
+              </StackPanel>
+
+              <StackPanel>
+                <TextBlock Style="{StaticResource StatLabel}" Text="РАЗДЕЛЫ" Margin="14,0,0,10" />
+                <RadioButton x:Name="NavOptimize" Style="{StaticResource NavButton}" Content="Оптимизация" IsChecked="True" Checked="NavChanged" AutomationProperties.Name="Раздел Оптимизация" TabIndex="0" />
+                <RadioButton x:Name="NavGames" Style="{StaticResource NavButton}" Content="Игры" Checked="NavChanged" AutomationProperties.Name="Раздел Игры" TabIndex="1" />
+                <RadioButton x:Name="NavTweaks" Style="{StaticResource NavButton}" Content="Твики" Checked="NavChanged" AutomationProperties.Name="Раздел Твики" TabIndex="2" />
+                <RadioButton x:Name="NavJournal" Style="{StaticResource NavButton}" Content="Журнал" Checked="NavChanged" AutomationProperties.Name="Раздел Журнал" TabIndex="3" />
+                <RadioButton x:Name="NavSettings" Style="{StaticResource NavButton}" Content="Настройки" Checked="NavChanged" AutomationProperties.Name="Раздел Настройки" TabIndex="4" />
+                <RadioButton x:Name="NavAbout" Style="{StaticResource NavButton}" Content="О программе" Checked="NavChanged" AutomationProperties.Name="Раздел О программе" TabIndex="5" />
+              </StackPanel>
+            </DockPanel>
           </Border>
-        </StackPanel>
 
-        <TextBlock Grid.Column="3" Text="{Binding GameLineRu}" VerticalAlignment="Center"
-                   Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,12,0" />
-
-        <Button Grid.Column="4" Style="{StaticResource GhostButton}" Padding="12,6"
-                Content="Поддержать автора ↗" Click="SupportClick" ToolTip="Откроет страницу поддержки автора" />
-      </Grid>
-    </Border>
-
-    <!-- Основа: слева разделы, справа содержимое выбранного. -->
-    <Grid Grid.Row="1">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="228" />
-        <ColumnDefinition Width="*" />
-      </Grid.ColumnDefinitions>
-
-      <Border Grid.Column="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="14,16">
-        <DockPanel>
-          <StackPanel DockPanel.Dock="Bottom">
-            <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,12,0,0"
-                       Text="Программа запускается молча: ничего не меняется, пока вы не нажмёте кнопку." />
-            <TextBlock Style="{StaticResource Caption}" Text="{Binding Settings.SettingsFilePath, StringFormat=Настройки: {0}}"
-                       TextWrapping="Wrap" Margin="0,8,0,0" />
-          </StackPanel>
-
-          <StackPanel>
-            <RadioButton x:Name="NavOptimize" Style="{StaticResource NavButton}" Content="Оптимизация" IsChecked="True" Checked="NavChanged" />
-            <RadioButton x:Name="NavGames" Style="{StaticResource NavButton}" Content="Игры" Checked="NavChanged" />
-            <RadioButton x:Name="NavTweaks" Style="{StaticResource NavButton}" Content="Твики" Checked="NavChanged" />
-            <RadioButton x:Name="NavJournal" Style="{StaticResource NavButton}" Content="Журнал" Checked="NavChanged" />
-            <RadioButton x:Name="NavSettings" Style="{StaticResource NavButton}" Content="Настройки" Checked="NavChanged" />
-            <RadioButton x:Name="NavAbout" Style="{StaticResource NavButton}" Content="О программе" Checked="NavChanged" />
-          </StackPanel>
-        </DockPanel>
-      </Border>
-
-      <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="20,18">
-        <Grid>
-          <views:OptimizeView x:Name="PageOptimize" DataContext="{Binding MainScreen}" />
-          <views:GamesView x:Name="PageGames" Visibility="Collapsed" DataContext="{Binding Games}" />
-          <views:TweaksView x:Name="PageTweaks" Visibility="Collapsed" DataContext="{Binding Tweaks}" />
-          <views:JournalView x:Name="PageJournal" Visibility="Collapsed" DataContext="{Binding Journal}" />
-          <views:SettingsView x:Name="PageSettings" Visibility="Collapsed" DataContext="{Binding Settings}" />
-          <views:AboutView x:Name="PageAbout" Visibility="Collapsed" DataContext="{Binding MainScreen}" />
+          <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="26,22,18,22">
+            <Grid MaxWidth="1040" HorizontalAlignment="Center">
+              <views:OptimizeView x:Name="PageOptimize" DataContext="{Binding MainScreen}" />
+              <views:GamesView x:Name="PageGames" Visibility="Collapsed" DataContext="{Binding Games}" />
+              <views:TweaksView x:Name="PageTweaks" Visibility="Collapsed" DataContext="{Binding Tweaks}" />
+              <views:JournalView x:Name="PageJournal" Visibility="Collapsed" DataContext="{Binding Journal}" />
+              <views:SettingsView x:Name="PageSettings" Visibility="Collapsed" DataContext="{Binding Settings}" />
+              <views:AboutView x:Name="PageAbout" Visibility="Collapsed" DataContext="{Binding MainScreen}" />
+            </Grid>
+          </ScrollViewer>
         </Grid>
-      </ScrollViewer>
-    </Grid>
 
-      <!-- Подвал: честная плашка про макет интерфейса. -->
-      <Border Grid.Row="2" Background="#0C1220" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="16,8">
-        <TextBlock Style="{StaticResource Caption}"
-                   Text="Программа запускается молча: ничего не меняется, пока вы не нажмёте кнопку. Окно, разделы, трей и связь со службой проверяются на живой Windows при каждой сборке." />
-      </Border>
-    </Grid>
+        <!-- Подвал: честная плашка про макет интерфейса. -->
+        <Border Grid.Row="2" Background="{StaticResource Deep}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="18,9">
+          <TextBlock Style="{StaticResource Caption}" FontSize="11.5"
+                     Text="Программа запускается молча: ничего не меняется, пока вы не нажмёте кнопку. Окно, разделы, трей и связь со службой проверяются на живой Windows при каждой сборке." />
+        </Border>
+      </Grid>
 
-    <!-- Мастер первого запуска — поверх всего окна: как в BoosterX, но без единого изменения без согласия. -->
-    <views:OnboardingView x:Name="SetupOverlay" DataContext="{Binding Setup}" />
+      <!-- Мастер первого запуска — поверх всего окна: как в BoosterX, но без единого изменения без согласия. -->
+      <views:OnboardingView x:Name="SetupOverlay" DataContext="{Binding Setup}" />
+    </Grid>
   </Grid>
 </Window>

@@ -6,7 +6,7 @@
   <!-- Мастер первого запуска поверх окна: три шага, как в BoosterX.
        Ничего не применяется само — последний шаг показывает, что именно будет изменено. -->
   <!-- Подложка почти непрозрачная: сквозь мастер не должен просвечивать текст страницы. -->
-  <Grid Background="#F5080D18">
+  <Grid Background="{StaticResource Scrim}">
     <Border MaxWidth="760" Margin="24" VerticalAlignment="Center"
             Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1"
             CornerRadius="14" Padding="26">
@@ -99,6 +99,18 @@
             <Button Style="{StaticResource GhostButton}" Content="Позже" Command="{Binding LaterCommand}" />
           </StackPanel>
         </StackPanel>
+
+        <!-- Что сказать человеку, если выбор не записался. Мастер остаётся на экране, но не держит
+             окно: «Понятно» закрывает его, и работа продолжается. -->
+        <Border Margin="0,18,0,0" Padding="12" CornerRadius="10"
+                Background="{StaticResource Sunken}" BorderBrush="{StaticResource Warn}" BorderThickness="1"
+                Visibility="{Binding HasResultRu, Converter={StaticResource BoolToVisibility}}">
+          <StackPanel>
+            <TextBlock Text="{Binding ResultRu}" TextWrapping="Wrap" Foreground="{StaticResource Text}" />
+            <Button Style="{StaticResource GhostButton}" Content="Понятно"
+                    Command="{Binding DismissProblemCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" />
+          </StackPanel>
+        </Border>
 
       </StackPanel>
     </Border>

@@ -33,7 +33,7 @@ public sealed class EnginePeerIdentityTests
 
         EngineResponse response = await dispatcher.HandleAsync(
             new EngineRequest("peer-1", EngineCommandKind.Ping),
-            peer: AdminPeer);
+            peer: AdminPeer, clientIsAdministrator: true);
 
         Assert.True(response.Ok, response.MessageRu);
         Assert.Equal(AdminPeer, ops.LastPeer);
@@ -58,7 +58,7 @@ public sealed class EnginePeerIdentityTests
         var dispatcher = new EngineDispatcher(ops);
 
         EngineResponse response = await dispatcher.HandleAsync(
-            new EngineRequest("peer-2", EngineCommandKind.Ping));
+            new EngineRequest("peer-2", EngineCommandKind.Ping), clientIsAdministrator: true);
 
         Assert.True(response.Ok, response.MessageRu);
         Assert.Null(ops.LastPeer);
@@ -83,7 +83,7 @@ public sealed class EnginePeerIdentityTests
             new EngineRequest("peer-3", EngineCommandKind.ApplyTweaks,
                 new Dictionary<string, string> { ["tweaks"] = "MENU_SHOW_DELAY_ZERO" }),
             onDenialRu: text => denial = text,
-            peer: UserPeer);
+            peer: UserPeer, clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Contains("прав администратора нет", response.MessageRu);
@@ -100,7 +100,7 @@ public sealed class EnginePeerIdentityTests
         EngineResponse response = await dispatcher.HandleAsync(
             new EngineRequest("peer-4", EngineCommandKind.ApplyTweaks,
                 new Dictionary<string, string> { ["tweaks"] = "MENU_SHOW_DELAY_ZERO" }),
-            peer: AdminPeer);
+            peer: AdminPeer, clientIsAdministrator: true);
 
         Assert.True(response.Ok, response.MessageRu);
         Assert.Equal(new[] { "apply-tweaks" }, ops.Calls);
@@ -115,7 +115,7 @@ public sealed class EnginePeerIdentityTests
         EngineResponse response = await dispatcher.HandleAsync(
             new EngineRequest("peer-5", EngineCommandKind.ApplyTweaks,
                 new Dictionary<string, string> { ["tweaks"] = "MENU_SHOW_DELAY_ZERO" }),
-            peer: EnginePeerIdentity.Unknown("токен процесса клиента не открылся (ошибка 5)"));
+            peer: EnginePeerIdentity.Unknown("токен процесса клиента не открылся (ошибка 5)"), clientIsAdministrator: true);
 
         Assert.False(response.Ok);
         Assert.Contains("прав администратора нет", response.MessageRu);
@@ -179,5 +179,20 @@ public sealed class EnginePeerIdentityTests
 
         public Task<EngineOperationResult> ReadSystemStateAsync(CancellationToken ct = default) =>
             Task.FromResult(EngineOperationResult.Success("Прочитано."));
+    }
+
+    [Fact]
+    public async Task Без_личности_клиента_права_по_умолчанию_не_выдаются()
+    {
+        // Умолчание «администратор: да» было удобством проверок и опасностью в бою: любой новый
+        // вызов без личности клиента молча получал право менять Windows от имени системы.
+        // Теперь забыть про права можно только в сторону отказа.
+        var dispatcher = new EngineDispatcher(new PeerRecordingOperations());
+
+        EngineResponse response = await dispatcher.HandleJsonAsync(
+            """{"id":"1","command":"apply-preset","args":{"preset":"low-latency"}}""");
+
+        Assert.False(response.Ok);
+        Assert.Contains("только для администратора", response.MessageRu, StringComparison.Ordinal);
     }
 }

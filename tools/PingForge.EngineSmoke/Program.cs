@@ -37,10 +37,14 @@ internal static class Program
         var flags = new HashSet<string>(args.Where(a => a.StartsWith("--", StringComparison.Ordinal)), StringComparer.Ordinal);
         string? pipeName = args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
         bool specialMode = flags.Contains("--expect-identity") || flags.Contains("--try-apply")
-            || flags.Contains("--apply-and-rollback") || flags.Contains("--rollback-only");
+            || flags.Contains("--apply-and-rollback") || flags.Contains("--rollback-only")
+            || flags.Contains("--realtime");
         Console.WriteLine("Custom Tweak By Doxaiz — живая проверка службы");
 
-        using var channel = new NamedPipeEngineChannel(pipeName, TimeSpan.FromSeconds(30));
+        // Живая оптимизация ищет поток и меряет «до» — это дольше обычного запроса,
+        // поэтому для неё предел канала поднят до двух минут сверх срока самой команды.
+        TimeSpan channelTimeout = flags.Contains("--realtime") ? TimeSpan.FromSeconds(200) : TimeSpan.FromSeconds(30);
+        using var channel = new NamedPipeEngineChannel(pipeName, channelTimeout);
         // Печатаем имя канала, к которому ПОДКЛЮЧИЛИСЬ: без аргумента клиент сам выбирает канал
         // по своим правам (основной от администратора, иначе чтение), и прежний текст мог соврать.
         Console.WriteLine(pipeName is null
@@ -58,7 +62,7 @@ internal static class Program
         {
             // 1. Служба вообще на связи?
             (bool pingOk, string pingMessage) = await client.PingAsync();
-            Console.WriteLine($"[1/6] Связь: {pingMessage}");
+            Console.WriteLine($"[1/7] Связь: {pingMessage}");
             if (!pingOk)
             {
                 Console.WriteLine("Служба ответила отказом на «проверить связь» — дальше спрашивать нечего.");
@@ -71,7 +75,7 @@ internal static class Program
             // а какие именно: счётчик совпадёт и тогда, когда одну команду переименовали, а другую потеряли.
             string capabilities = await client.GetCapabilitiesAsync();
             (bool commandsMatch, string commandsNote) = CompareCommands(capabilities);
-            Console.WriteLine($"[2/6] Список команд: {commandsNote}");
+            Console.WriteLine($"[2/7] Список команд: {commandsNote}");
             if (!commandsMatch)
             {
                 Console.WriteLine("      Служба и утилита собраны из разных версий — это отказ версий, а не мелочь.");
@@ -81,7 +85,7 @@ internal static class Program
 
             // 3. Состояние.
             EngineResponse status = await client.SendAsync(EngineCommandKind.Status);
-            Console.WriteLine($"[3/6] Состояние: {(status.Ok ? status.MessageRu : "ОТКАЗ: " + status.MessageRu)}");
+            Console.WriteLine($"[3/7] Состояние: {(status.Ok ? status.MessageRu : "ОТКАЗ: " + status.MessageRu)}");
             if (!status.Ok)
             {
                 return 2;
@@ -89,7 +93,7 @@ internal static class Program
 
             // 4. Чтение состояния системы — самое интересное: тут служба трогает настоящую Windows.
             EngineResponse state = await client.SendAsync(EngineCommandKind.ReadSystemState);
-            Console.WriteLine($"[4/6] Чтение состояния системы: {(state.Ok ? "прочитано" : "ОТКАЗ: " + state.MessageRu)}");
+            Console.WriteLine($"[4/7] Чтение состояния системы: {(state.Ok ? "прочитано" : "ОТКАЗ: " + state.MessageRu)}");
             if (!state.Ok)
             {
                 return 2;
@@ -109,7 +113,7 @@ internal static class Program
 
             // 5. Журнал.
             EngineResponse journal = await client.SendAsync(EngineCommandKind.JournalTail);
-            Console.WriteLine($"[5/6] Хвост журнала: {(journal.Ok ? journal.MessageRu : "ОТКАЗ: " + journal.MessageRu)}");
+            Console.WriteLine($"[5/7] Хвост журнала: {(journal.Ok ? journal.MessageRu : "ОТКАЗ: " + journal.MessageRu)}");
             if (!journal.Ok)
             {
                 return 2;
@@ -119,7 +123,7 @@ internal static class Program
             // Проверка принципиально честная: если на машине нет второго канала или VPN, служба обязана
             // сказать «кандидатов кроме текущего шлюза нет», а не показать выдуманный список.
             EngineResponse routes = await client.SendAsync(EngineCommandKind.RouteDiscover);
-            Console.WriteLine($"[6/6] Узлы маршрутизации: {(routes.Ok ? routes.MessageRu : "ОТКАЗ: " + routes.MessageRu)}");
+            Console.WriteLine($"[6/7] Узлы маршрутизации: {(routes.Ok ? routes.MessageRu : "ОТКАЗ: " + routes.MessageRu)}");
             if (!routes.Ok)
             {
                 return 2;
@@ -132,8 +136,17 @@ internal static class Program
                 return 3;
             }
 
+            // 7. Следы перед удалением (задача T): команда обязана отвечать числами из журнала и
+            // снапшотов. Отказ здесь — это сломанное удаление, а не мелочь: скрипт снятия опирается на неё.
+            EngineResponse traces = await client.SendAsync(EngineCommandKind.UninstallCheck);
+            Console.WriteLine($"[7/7] Следы перед удалением: {(traces.Ok ? traces.MessageRu : "ОТКАЗ: " + traces.MessageRu)}");
+            if (!traces.Ok)
+            {
+                return 2;
+            }
+
             Console.WriteLine();
-            Console.WriteLine("Итог: служба отвечает, состояние читается, список команд совпадает, узлы маршрутизации честные. Ничего не изменено.");
+            Console.WriteLine("Итог: служба отвечает, состояние читается, список команд совпадает, узлы маршрутизации честные, следы перед удалением названы. Ничего не изменено.");
             return 0;
         }
         catch (EngineUnavailableException ex)
@@ -241,6 +254,32 @@ internal static class Program
                         : "канал/ACL (подключение или диспетчер)";
                 Console.WriteLine($"Итог: отказ пришёл до применения, слой: {layer}. Ничего не изменено.");
                 return 0;
+            }
+
+            if (flags.Contains("--realtime"))
+            {
+                // Живая проверка распознавания игрового потока на настоящей Windows: служба ищет игру
+                // по живой таблице соединений и трассировке UDP, называет игру и адрес сервера,
+                // а затем мы сразу останавливаем оптимизацию, чтобы ничего не осталось в системе.
+                EngineResponse start = await client.SendAsync(EngineCommandKind.RealtimeStart);
+                Console.WriteLine($"Старт: {(start.Ok ? start.MessageRu : "ОТКАЗ: " + start.MessageRu)}");
+                Console.WriteLine($"StartData: {start.DataJson ?? "нет"}");
+
+                EngineResponse stop;
+                try
+                {
+                    stop = await client.SendAsync(EngineCommandKind.RealtimeStop);
+                }
+                catch (EngineUnavailableException)
+                {
+                    Console.WriteLine("Остановка не удалась: служба недоступна. Проверьте службу перед повторным запуском.");
+                    return 2;
+                }
+
+                Console.WriteLine($"Остановка: {(stop.Ok ? stop.MessageRu : "ОТКАЗ: " + stop.MessageRu)}");
+                Console.WriteLine($"StopData: {stop.DataJson ?? "нет"}");
+
+                return start.Ok && stop.Ok ? 0 : 2;
             }
 
             if (flags.Contains("--apply-and-rollback"))

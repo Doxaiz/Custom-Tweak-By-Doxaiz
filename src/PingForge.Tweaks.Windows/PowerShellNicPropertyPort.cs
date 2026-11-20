@@ -203,9 +203,28 @@ public sealed class PowerShellNicPropertyPort : INicPropertyPort
 
     private static AdvancedPropertyEntry? FindProperty(string json, string propertyKeyword)
     {
-        using JsonDocument document = JsonDocument.Parse(json);
+        // Драйвер (или сама оболочка) может ответить не JSON — например, предупреждением перед
+        // выводом. Раньше это исключение уходило наверх, и «свойство не прочитано» выглядело
+        // как ошибка программы, а не как «драйвер не сообщил параметр».
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
 
-        foreach (JsonElement element in EnumerateObjects(document.RootElement))
+        using (document)
+        {
+            return FindProperty(document.RootElement, propertyKeyword);
+        }
+    }
+
+    private static AdvancedPropertyEntry? FindProperty(JsonElement root, string propertyKeyword)
+    {
+        foreach (JsonElement element in EnumerateObjects(root))
         {
             string registryKeyword = ReadString(element, "RegistryKeyword");
             string displayName = ReadString(element, "DisplayName");

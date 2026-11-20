@@ -11,7 +11,7 @@ namespace PingForge.Tests;
 ///
 /// Проверяется вся цепочка, а не одна кнопка: запись в общий файл настроек, каталог
 /// «встроенные + свои», детектор (своя — игра с неизвестным анти-читом, удалённая — снова
-/// «кандидат, а не игра»), отказы на плохом пути и то, что встроенные 20 незыблемы.
+/// «кандидат, а не игра»), отказы на плохом пути и то, что встроенные игры незыблемы.
 /// </summary>
 public sealed class CustomGamesTests
 {
@@ -67,7 +67,43 @@ public sealed class CustomGamesTests
 
         Assert.Equal(GameProcessCatalog.DefaultGames.Count + 1, catalog.All.Count);
         Assert.Single(catalog.CustomGames);
-        Assert.Equal(20, GameProcessCatalog.DefaultGames.Count);
+        Assert.Equal(22, GameProcessCatalog.DefaultGames.Count);
+    }
+
+    [Fact]
+    public void Своя_игра_заменяет_встроенную_запись_общего_процесса()
+    {
+        // javaw.exe — общее имя: встроенная запись требует совпадения порта. Своя игра поверх неё —
+        // единственный способ оптимизировать сервер на нестандартном порту, и это осознанный выбор человека.
+        var catalog = GameProcessCatalog.WithCustomGames([new CustomGameEntry("javaw.exe", "Мой сервер")]);
+
+        Assert.Equal(GameProcessCatalog.DefaultGames.Count, catalog.All.Count); // замена, а не вторая запись
+        Assert.True(catalog.TryMatch("javaw.exe", out KnownGame minecraft));
+        Assert.Equal("Мой сервер", minecraft.TitleRu);
+        Assert.True(minecraft.IsCustom);
+        Assert.False(minecraft.RequiresPortMatch);
+
+        var rows = new List<RawConnectionRow>
+        {
+            new(ConnectionProtocol.Tcp, 6412, "192.168.1.50", 51234, "34.16.1.5", 30000, "Established")
+        };
+
+        GameFlowDetectionReport report = new GameFlowDetector(catalog)
+            .Detect(rows, new Dictionary<int, string> { [6412] = "javaw.exe" });
+
+        Assert.Equal("Мой сервер", Assert.Single(report.Games).GameTitleRu);
+    }
+
+    [Fact]
+    public void Своя_игра_не_перекрывает_встроенную_игру_с_однозначным_именем()
+    {
+        // «cs2.exe = моя игра» — это не уточнение, а подмена: такая запись пропускается.
+        var catalog = GameProcessCatalog.WithCustomGames([new CustomGameEntry("cs2.exe", "Моя игра")]);
+
+        Assert.Equal(GameProcessCatalog.DefaultGames.Count, catalog.All.Count);
+        Assert.True(catalog.TryMatch("cs2.exe", out KnownGame cs2));
+        Assert.Equal("Counter-Strike 2", cs2.TitleRu);
+        Assert.False(cs2.IsCustom);
     }
 
     // ── валидация добавления ──────────────────────────────────────────────────────────────

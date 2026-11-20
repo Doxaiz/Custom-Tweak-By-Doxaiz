@@ -72,6 +72,37 @@ public class ViewModelTests
     }
 
     [Fact]
+    public async Task Окно_читает_из_ответа_службы_выигрыш_разброс_потери_и_предел_пути()
+    {
+        // Раньше служба отдавала окну только «до» и «сейчас»: выигрыш, разброс, потери и предел пути
+        // оставались внутри снапшота, и окно писало «заметного выигрыша нет» при измеренном выигрыше.
+        var channel = new FakeEngineChannel
+        {
+            BaselineRttMs = 120,
+            CurrentRttMs = 78,
+            ImprovementMs = 42,
+            FloorRttMs = 74,
+            CurrentJitterMs = 2,
+            CurrentLossPercent = null,
+        };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Equal(42.0, main.ImprovementMs!.Value, 3);
+        Assert.Equal(74.0, main.FloorRttMs!.Value, 3);
+        Assert.Equal(2.0, main.CurrentJitterMs!.Value, 3);
+        Assert.Null(main.CurrentLossPercent);
+
+        Assert.Contains("стало лучше на 42 мс", main.RttLineRu);
+        Assert.Contains("разброс 2 мс", main.RttLineRu);
+        Assert.Contains("лучший замер 74 мс", main.RttLineRu);
+        // Живой замер потерь не измеряет — так и написано, нуля нет.
+        Assert.Contains("потери не измерены", main.RttLineRu);
+        Assert.DoesNotContain("потери 0", main.RttLineRu);
+    }
+
+    [Fact]
     public async Task Выигрыша_нет_так_и_написано()
     {
         // Двойник называет одни и те же числа и в ответе на запуск, и в состоянии — как настоящая служба.
@@ -377,7 +408,7 @@ public class ViewModelTests
 
         Assert.Equal(21, tweaks.CheckedCount);
         Assert.All(tweaks.Rows.Where(row => !row.IsRecommended), row => Assert.False(row.IsOn));
-        Assert.Contains("21 твиков из 47", tweaks.StatusRu);
+        Assert.Contains("21 твик из 47", tweaks.StatusRu);
     }
 
     [Fact]
@@ -390,7 +421,8 @@ public class ViewModelTests
         Assert.Equal(44, tweaks.CheckedCount);
         Assert.All(tweaks.Rows.Where(row => row.IsDangerous), row => Assert.False(row.IsOn));
         Assert.Contains("не советуем", tweaks.StatusRu);
-        Assert.Contains("3 штуки", tweaks.StatusRu);
+        // Число опасных названо числом, а не «3 штуки»: форма одна на все числа.
+        Assert.Contains("«не советуем»: 3", tweaks.StatusRu);
     }
 
     [Fact]
@@ -461,7 +493,7 @@ public class ViewModelTests
 
         await tweaks.ApplySelectedCommand.ExecuteAsync();
 
-        Assert.Contains("3 твиков", dialogs.Confirmations[0].Title);
+        Assert.Contains("3 твика", dialogs.Confirmations[0].Title);
         Assert.Contains("1 с вердиктом «не советуем»", dialogs.Confirmations[0].Message);
 
         EngineRequest request = channel.Requests.Single(r => r.Command == EngineCommandKind.ApplyTweaks);
@@ -710,5 +742,29 @@ public class ViewModelTests
         public void Dispose()
         {
         }
+    }
+    // ── ответ программы: тон, а не один цвет на всё ─────────────────────────────────────────────
+
+    [Fact]
+    public void Отказ_предупреждение_и_сообщение_различаются_тоном()
+    {
+        // Раньше «Оптимизация не запустилась» и «Починка сети прошла» рисовались одним циановым:
+        // отказ читался как успех. Теперь тон задаётся тем, чем закончилось действие.
+        (MainViewModel main, _, _) = BuildMain();
+
+        main.ShowNotice("Оптимизация не запустилась", "Запущенная игра не найдена.");
+        Assert.True(main.NoticeIsProblem);
+        Assert.False(main.NoticeIsWarning);
+
+        main.ShowNotice("Починка сети", "Снято остатков: 2.", NoticeTone.Info);
+        Assert.False(main.NoticeIsProblem);
+        Assert.False(main.NoticeIsWarning);
+
+        main.ShowNotice("Версии различаются", "Окно 1.0.0, служба 1.0.1.", NoticeTone.Warning);
+        Assert.True(main.NoticeIsWarning);
+        Assert.False(main.NoticeIsProblem);
+
+        main.DismissNoticeCommand.Execute(null);
+        Assert.False(main.IsNoticeVisible);
     }
 }

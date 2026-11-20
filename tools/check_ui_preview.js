@@ -1,5 +1,6 @@
 /*
- Проверка макета интерфейса: переходы по меню, оглавление, переходы «назад/далее» и чтение без скриптов.
+ Проверка макета интерфейса: переходы по меню, оглавление, переходы «назад/далее», чтение без скриптов,
+ а также тема: палитра макета сверяется с App.xaml, а контраст текста — по WCAG 2.1.
  Запуск (нужен jsdom):
      npm install jsdom            # или NODE_PATH=/путь/к/node_modules
      node tools/check_ui_preview.js docs/pingforge-ui-preview.html
@@ -298,6 +299,202 @@ setTimeout(async () => {
     }));
   check('в карточках есть блок «Зачем для игры и чего это стоит» с пометкой стоит ли включать',
     cards.every(c => /Зачем для игры/.test(c.textContent)));
+
+  // ── порядок и поиск в разделе «Твики» ───────────────────────────────────────────────────────────
+  const tweaksSection = d.getElementById('tweaks');
+  const orderTitles = ['По назначению', 'Сначала полезное', 'По алфавиту'];
+  const orderChips = tweaksSection ? [...tweaksSection.querySelectorAll('.chiprow span')].map(node => node.textContent.trim()) : [];
+  check('в разделе «Твики» есть три режима порядка, как в программе',
+    orderTitles.every(title => orderChips.some(chip => chip.startsWith(title))),
+    `найдено: ${orderChips.join(' | ') || 'ничего'}`);
+  check('выбранный порядок видно на экране',
+    tweaksSection !== null && tweaksSection.querySelector('.chiprow span.on') !== null,
+    'ни одна пилюля порядка не помечена выбранной');
+
+  const filterTitles = ['Только рекомендуемое', 'Скрыть «не советуем»', 'Только из пресетов'];
+  const filterChips = tweaksSection ? [...tweaksSection.querySelectorAll('.chiprow span')].map(n => n.textContent.trim()) : [];
+  check('в разделе «Твики» есть три быстрых фильтра, как в программе',
+    filterTitles.every(title => filterChips.some(chip => chip === title)),
+    `найдено: ${filterChips.filter(chip => filterTitles.includes(chip)).join(' | ') || 'ничего'}`);
+
+  check('подтверждение применения называет состав выбора по назначению',
+    /Пинг и сеть — \d+ · Кадры — \d+/.test(html),
+    'в макете нет подписи состава выбора');
+
+  check('у выгрузки CSV описано, что файл не затирается молча и числа склоняются',
+    /Выгрузка в CSV/.test(html) && /не затирает молча/.test(html) && /«1 строка»/.test(html),
+    'в макете нет абзаца про CSV');
+
+  check('у пресетов описан показ состава без применения',
+    /«Показать состав»/.test(html),
+    'в макете нет кнопки состава пресета');
+
+  check('у своих игр описано, что подойдёт ярлык с рабочего стола',
+    /Своя игра: подойдёт и файл с рабочего стола/.test(html) &&
+      /Ярлык ведёт на/.test(html) &&
+      /когда игра запустится/.test(html),
+    'в макете нет абзаца про выбор ярлыка вместо .exe');
+
+  check('таблица «Что будет, если выбрать…» показывает не меньше 12 разных случаев',
+    (() => {
+      const table = d.getElementById('routes-pick-examples');
+      return !!table && table.querySelectorAll('tbody tr').length >= 12;
+    })(),
+    (() => {
+      const table = d.getElementById('routes-pick-examples');
+      return 'строк: ' + (table ? table.querySelectorAll('tbody tr').length : 0);
+    })());
+
+  check('у своих игр в макете есть дословные примеры ответов — удача и отказы',
+    /Примеры того, что человек увидит/.test(html) &&
+      (html.match(/Игра не добавлена:/g) || []).length >= 3 &&
+      /служба видит его в списке процессов/.test(html),
+    'в макете нет примеров ответов для своих игр');
+
+  const groupHeaders = html.match(/твиков:\s*\d+\s*·\s*включено\s*\d+/g) || [];
+  check('в заголовках групп стоит и число твиков, и число включённых',
+    groupHeaders.length >= 5,
+    `таких заголовков: ${groupHeaders.length}`);
+
+  // ── тема: палитра макета совпадает с программой, и текст на ней читается ─────────────────────
+  const rootBlock = (html.match(/:root\{([\s\S]*?)\}/) || [])[1] || '';
+  const vars = {};
+  for (const m of rootBlock.matchAll(/--([a-z0-9]+)\s*:\s*(#[0-9a-fA-F]{6})/g)) vars[m[1]] = m[2].toLowerCase();
+
+  const appXamlPath = path.resolve(path.dirname(FILE), '..', 'src', 'PingForge.App', 'App.xaml');
+  let appXaml = '';
+  try { appXaml = fs.readFileSync(appXamlPath, 'utf8'); } catch { appXaml = ''; }
+  const appColor = key => {
+    const found = appXaml.match(new RegExp('<Color x:Key="' + key + '">(#[0-9A-Fa-f]{6})</Color>'));
+    return found ? found[1].toLowerCase() : '';
+  };
+
+  // Макет — это витрина программы, а не «похожий на неё» сайт: фон, панели, линии, текст и
+  // акценты обязаны совпадать с темой. Иначе по макету нельзя судить, как выглядит программа.
+  const themePairs = [
+    ['bg', 'BgColor'], ['card', 'PanelColor'], ['line', 'LineColor'], ['line2', 'LineStrongColor'],
+    ['text', 'TextColor'], ['muted', 'MutedColor'], ['dim', 'DimColor'],
+    ['accent', 'AccentColor'], ['accent2', 'Accent2Color'], ['warn', 'WarnColor'], ['bad', 'DangerColor']
+  ];
+  const misplaced = themePairs
+    .filter(([v, k]) => vars[v] !== appColor(k))
+    .map(([v, k]) => `--${v}=${vars[v] || '—'}, в теме ${appColor(k) || '—'}`);
+  check('палитра макета совпадает с темой программы (App.xaml)', appXaml.length > 0 && misplaced.length === 0,
+    misplaced.join('; '));
+
+  // Контраст по WCAG 2.1: (L1 + 0,05) / (L2 + 0,05). Требование AA для обычного текста — 4,5:1.
+  const channel = part => {
+    const value = parseInt(part, 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+  };
+  const luminance = hex => 0.2126 * channel(hex.slice(1, 3)) + 0.7152 * channel(hex.slice(3, 5)) + 0.0722 * channel(hex.slice(5, 7));
+  const contrast = (first, second) => {
+    const a = luminance(first);
+    const b = luminance(second);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  };
+
+  const contrastPairs = [
+    ['основной текст на фоне', vars.text, vars.bg],
+    ['основной текст на панели', vars.text, vars.card],
+    ['подписи на панели', vars.muted, vars.card],
+    ['третий уровень текста на панели', vars.dim, vars.card],
+    // Карточка — градиент: верхняя кромка светлее панели, и именно на ней текст слабее всего.
+    ['третий уровень текста на верхней кромке карточки', vars.dim, appColor('PanelTopColor')],
+    ['ссылка (accent) на панели', vars.accent, vars.card],
+    ['accent2 на панели', vars.accent2, vars.card]
+  ];
+  contrastPairs.forEach(([name, fg, bg]) => {
+    const ratio = fg && bg ? contrast(fg, bg) : 0;
+    check(`контраст: ${name} не ниже 4,5:1`, ratio >= 4.5, `${ratio.toFixed(2)}:1`);
+  });
+
+  const primaryText = '#04121d';
+  check('тёмный текст основной кнопки читается на обоих концах градиента',
+    contrast(primaryText, vars.accent) >= 4.5 && contrast(primaryText, vars.accent2) >= 4.5,
+    `${contrast(primaryText, vars.accent).toFixed(2)}:1 и ${contrast(primaryText, vars.accent2).toFixed(2)}:1`);
+
+  // Подпись о контрасте — обещание, а не украшение: её числа обязаны совпадать с расчётом по палитре
+  // самой страницы. В программе эта подпись считается тем же способом (PingForge.Core.Ui.PaletteNote).
+  const note = html.match(
+    /Контраст основного текста #([0-9A-Fa-f]{6}) на фоне #([0-9A-Fa-f]{6}) — (\d+,\d):1, подписей #([0-9A-Fa-f]{6}) — (\d+,\d):1/);
+  const ru = value => value.toFixed(1).replace('.', ',') + ':1';
+  check('числа в подписи о контрасте совпадают с палитрой макета',
+    !!note && `#${note[1]}`.toLowerCase() === vars.text && `#${note[2]}`.toLowerCase() === vars.bg
+      && `#${note[4]}`.toLowerCase() === vars.muted
+      && `${note[3]}:1` === ru(contrast(vars.text, vars.bg))
+      && `${note[5]}:1` === ru(contrast(vars.muted, vars.bg)),
+    note
+      ? `в тексте ${note[3]}:1 и ${note[5]}:1, по палитре ${ru(contrast(vars.text, vars.bg))} и ${ru(contrast(vars.muted, vars.bg))}`
+      : 'фразы о контрасте в макете нет');
+
+  const snippetNames = ['service.log.2', 'Дата,Твик,Код', '"SchemaVersion"', 'отчёт об ошибке', 'PingForge-поддержка', 'settings.json.bak-'];
+  const snippets = [...d.querySelectorAll('.snippet')];
+  check('в примерах файлов шесть разных выгрузок программы',
+    !!d.getElementById('journal-files') && snippets.length >= 6 && snippetNames.every(name => html.includes(name)),
+    `блок: ${!!d.getElementById('journal-files')}, примеров: ${snippets.length}, не хватает: ` +
+      snippetNames.filter(name => !html.includes(name)).join(', '));
+
+  // Многоточие без подсказки — потерянный текст: макет обязан сказать, что это проверяется.
+  const trimProse = 'сокращённое многоточием читается целиком в подсказке';
+  check('в макете сказано, что сокращённое многоточием читается в подсказке', html.includes(trimProse),
+    `нет фразы «${trimProse}»`);
+
+  // Сравнение сессий: макет называет случаи, в которых программа честно отказывается сравнивать.
+  const comparisonProse = 'отказывается сравнивать одну и ту же сессию';
+  check('в макете сказано, что одну и ту же сессию не сравнивают', html.includes(comparisonProse),
+    `нет фразы «${comparisonProse}»`);
+
+  // Имена для экранного диктора — обещание программы, и макет обязан говорить о нём прямо.
+  const accessibleProse = 'у каждого поля ввода и списка есть имя для экранного диктора';
+  check('в макете сказано про имена для экранного диктора', html.includes(accessibleProse),
+    `нет фразы «${accessibleProse}»`);
+
+  // Одна программа: макет не должен выдавать за отдельный продукт ни «Lite», ни «Pro»,
+  // иначе человек читает страницу как две программы и ждёт вторую.
+  const oneProgram = 'Программа одна —';
+  const liteHitsInPage = (html.match(/PingForge\s+Lite/g) || []).length;
+  check('в макете сказано, что программа одна, а не две',
+    html.includes(oneProgram) && html.includes('второй программы нет') && liteHitsInPage === 0,
+    `фраза «${oneProgram}»: ${html.includes(oneProgram)}, ` +
+      `«второй программы нет»: ${html.includes('второй программы нет')}, «PingForge Lite»: ${liteHitsInPage}`);
+  check('готовность подписана как готовность программы, без второго имени',
+    html.includes('Готовность программы') && !/Готовность\s+PingForge/.test(html),
+    `подпись «Готовность программы»: ${html.includes('Готовность программы')}`);
+
+  // «Сумма весов ровно 100 %, итог считается по весам» — это утверждение, а не украшение: считаем его
+  // по самой таблице страницы. Если кто-то поправит процент руками, подпись с цифрой разойдутся.
+  const progressTable = [...d.querySelectorAll('#progress table')].find(t => /Готово/.test(t.textContent));
+  const progressRows = progressTable ? [...progressTable.querySelectorAll('tbody tr')] : [];
+  const rowNumbers = progressRows.map(tr => ({
+    weight: parseInt(tr.children[1].textContent, 10),
+    done: parseInt(tr.children[2].textContent, 10),
+  }));
+  const weightsTotal = rowNumbers.reduce((sum, row) => sum + row.weight, 0);
+  const byFormula = weightsTotal > 0
+    ? rowNumbers.reduce((sum, row) => sum + row.weight * row.done, 0) / weightsTotal
+    : 0;
+  const scoreCell = d.querySelector('#progress .score');
+  const scoreOnPage = scoreCell ? parseFloat(scoreCell.textContent.replace(',', '.')) : NaN;
+  check('итог готовности на странице сходится с весами и процентами таблицы',
+    progressRows.length >= 10 && weightsTotal === 100 && Math.abs(byFormula - scoreOnPage) < 0.05,
+    `строк: ${progressRows.length}, сумма весов: ${weightsTotal}, по формуле: ${byFormula.toFixed(1)}, ` +
+      `на странице: ${Number.isNaN(scoreOnPage) ? 'нет числа' : scoreOnPage}`);
+
+  // Число автотестов: либо оно пришло из журнала прогона и совпадает с подписью, либо страница честно
+  // говорит, что числа нет. Вписанная руками цифра — это то, как «169» прожило полтора года при 1147.
+  const testsChip = d.querySelector('[data-tests]');
+  const testsHonest = 'Число автотестов здесь не вписано: оно берётся из журнала прогона';
+  const testsAttr = testsChip ? testsChip.getAttribute('data-tests') : '';
+  const testsFromRun = !!testsChip
+    && /^\d+$/.test(testsAttr)
+    && Number(testsAttr) >= 100
+    && testsChip.textContent.includes(testsAttr);
+  check('число автотестов взято из журнала прогона, а не вписано руками',
+    testsChip ? testsFromRun : html.includes(testsHonest),
+    testsChip
+      ? `подпись «${testsChip.textContent.trim()}», атрибут ${testsAttr}`
+      : `нет подписи с числом и нет фразы «${testsHonest}»`);
 
   console.log(`Файл: ${path.resolve(FILE)} (${(html.length / 1024).toFixed(0)} КБ)`);
   console.log('порядок разделов:', ids.join(' → '));

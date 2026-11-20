@@ -1,4 +1,4 @@
--- PingForge: схема локального хранилища. Версия 3.
+-- PingForge: схема локального хранилища. Версия 5.
 -- ВАЖНО: PRAGMA journal_mode сохраняется в файле БД, остальные прагмы (foreign_keys,
 -- busy_timeout, synchronous) — уровня соединения и выставляются в SqliteDatabaseInitializer.
 
@@ -191,11 +191,14 @@ CREATE TABLE IF NOT EXISTS relay_node_health_history (
 
 CREATE INDEX IF NOT EXISTS ix_relay_health_node_time ON relay_node_health_history(node_id, checked_utc DESC);
 
--- Сессии оптимизации: базовые метрики «до» и метрики «после» + честный вердикт.
+-- Сессии оптимизации (задача J): базовые метрики «до» и метрики «после», действия сессии,
+-- честный вердикт и пометка «снялось / не снялось». Незавершённая сессия остаётся с
+-- is_completed = 0 и outcome = 'NotFinished': выдуманного улучшения у неё нет.
 CREATE TABLE IF NOT EXISTS route_optimization_sessions (
     session_id TEXT PRIMARY KEY NOT NULL,
     game_session_id TEXT NULL,
     process_exe_name TEXT NOT NULL,
+    game_title_ru TEXT NOT NULL DEFAULT '',
     remote_game_endpoint TEXT NOT NULL,
     selected_mode TEXT NOT NULL,
     relay_node_id TEXT NULL,
@@ -215,10 +218,17 @@ CREATE TABLE IF NOT EXISTS route_optimization_sessions (
     optimized_stability REAL NULL,
     is_measurable INTEGER NOT NULL DEFAULT 1 CHECK (is_measurable IN (0, 1)),
     degradation_alert_triggered INTEGER NOT NULL DEFAULT 0 CHECK (degradation_alert_triggered IN (0, 1)),
+    applied_actions_json TEXT NOT NULL DEFAULT '[]',
+    rollback_state TEXT NOT NULL DEFAULT 'Unknown' CHECK (rollback_state IN (
+        'EverythingReverted', 'PartiallyReverted', 'NotReverted', 'Unknown'
+    )),
+    outcome TEXT NOT NULL DEFAULT 'NotFinished' CHECK (outcome IN ('Completed', 'NotFinished', 'NoGame')),
+    is_completed INTEGER NOT NULL DEFAULT 0 CHECK (is_completed IN (0, 1)),
     verdict_comment TEXT NULL
 );
 
 CREATE INDEX IF NOT EXISTS ix_route_sessions_exe ON route_optimization_sessions(process_exe_name);
+CREATE INDEX IF NOT EXISTS ix_route_sessions_endpoint ON route_optimization_sessions(remote_game_endpoint, started_utc DESC);
 
 CREATE TABLE IF NOT EXISTS route_probe_timeseries (
     point_id INTEGER PRIMARY KEY AUTOINCREMENT,

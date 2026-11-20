@@ -13,18 +13,22 @@ public sealed class RoutingNodeRowViewModel : ObservableObject
 {
     private string _name;
     private bool _isDefault;
+    private bool _isSecondary;
 
-    public RoutingNodeRowViewModel(RoutingNodeEntry entry, Action makeDefault, Action remove)
+    public RoutingNodeRowViewModel(RoutingNodeEntry entry, Action makeDefault, Action makeSecondary, Action remove)
     {
         Entry = entry ?? throw new ArgumentNullException(nameof(entry));
         _name = entry.Name;
 
-        // Кнопки строки делают то, что скажет родитель: выбор по умолчанию и удаление — его решения.
+        // Кнопки строки делают то, что скажет родитель: выбор по умолчанию/резерва и удаление — его решения.
         MakeDefaultCommand = new RelayCommand(makeDefault);
+        MakeSecondaryCommand = new RelayCommand(makeSecondary);
         RemoveCommand = new RelayCommand(remove);
     }
 
     public RelayCommand MakeDefaultCommand { get; }
+
+    public RelayCommand MakeSecondaryCommand { get; }
 
     public RelayCommand RemoveCommand { get; }
 
@@ -60,6 +64,14 @@ public sealed class RoutingNodeRowViewModel : ObservableObject
         get => _isDefault;
         set => Set(ref _isDefault, value);
     }
+
+    public bool IsSecondary
+    {
+        get => _isSecondary;
+        set => Set(ref _isSecondary, value);
+    }
+
+    public string RoleRu => IsDefault ? "основной" : IsSecondary ? "резерв" : string.Empty;
 
     public void ApplyMeasurement(double? medianMs, double? jitterMs, double? lossPercent, string? nameRu)
     {
@@ -119,12 +131,22 @@ public sealed class RoutingSettingsViewModel : ObservableObject
         }
 
         _autoSelectBest = settings.RoutingAutoSelect;
+        _multipathEnabled = settings.RoutingMultipathEnabled;
         if (settings.RoutingDefaultNode is { Length: > 0 } address)
         {
             foreach (RoutingNodeRowViewModel row in Rows.Where(row =>
                          row.Address.Equals(address, StringComparison.OrdinalIgnoreCase)))
             {
                 row.IsDefault = true;
+                break;
+            }
+        }
+        if (settings.RoutingSecondaryNode is { Length: > 0 } sec)
+        {
+            foreach (RoutingNodeRowViewModel row in Rows.Where(row =>
+                         row.Address.Equals(sec, StringComparison.OrdinalIgnoreCase)))
+            {
+                row.IsSecondary = true;
                 break;
             }
         }
@@ -189,6 +211,25 @@ public sealed class RoutingSettingsViewModel : ObservableObject
             }
         }
     }
+
+    private bool _multipathEnabled;
+    public bool MultipathEnabled
+    {
+        get => _multipathEnabled;
+        set
+        {
+            if (Set(ref _multipathEnabled, value))
+            {
+                Persist();
+                StatusRu = value
+                    ? "Мультипуть включён: держим основной и горячий резерв. Без своей сети дублировать пакеты нельзя — при подтверждённой просадке основного трафик уходит на второй шлюз: после трёх подряд плохих окон контроля (около 6 с при замере раз в 2 с), а не в тот же миг."
+                    : "Мультипуть выключен: используется один узел. Второй шлюз остаётся в списке, но в оптимизации не участвует.";
+            }
+        }
+    }
+
+    public string MultipathNoteRu => "Мультипуть на своих линиях: работает только с двумя шлюзами у вас дома (Ethernet + Wi-Fi/модем). Программа меряет оба пути к серверу игры и держит лучший основным, второй — горячим резервом. Без своей сети пакеты не дублируются по интернету: переключение — сменой маршрута /32, и только после трёх подряд плохих окон контроля (около 6 с при замере раз в 2 с) и только на путь, который сам выигрывает у прямого. Честно: если второго шлюза нет — мультипуть не включается.";
+
 
     public string StatusRu
     {
@@ -277,10 +318,12 @@ public sealed class RoutingSettingsViewModel : ObservableObject
         }
 
         bool wasDefault = row.IsDefault;
+        bool wasSecondary = row.IsSecondary;
         Rows.Remove(row);
         Persist();
         StatusRu = $"Узел {row.Address} убран из списка. " +
                    (wasDefault ? "Узел по умолчанию сброшен: оптимизация честно откажет, пока не выберете другой." :
+                    wasSecondary ? "Резерв сброшен: мультипуть остался без второго шлюза." :
                     "Маршруты в системе не менялись — удаление из списка их не снимает.");
     }
 
@@ -300,11 +343,33 @@ public sealed class RoutingSettingsViewModel : ObservableObject
         }
 
         row.IsDefault = !already;
+        if (row.IsDefault && row.IsSecondary) row.IsSecondary = false;
         Persist();
         StatusRu = row.IsDefault
             ? $"Узел по умолчанию: {row.Name} ({row.Address}). Оптимизация поведёт игру через него — только /32 на адрес " +
               "сервера и только по кнопке «Оптимизировать»."
             : "Узел по умолчанию снят: без автовыбора оптимизация маршрут менять не будет.";
+    }
+
+    public void MakeSecondary(RoutingNodeRowViewModel? row)
+    {
+        if (row is null)
+        {
+            StatusRu = "Резерв не изменён: строка не выбрана.";
+            return;
+        }
+        if (row.IsDefault)
+        {
+            StatusRu = "Основной узел нельзя сделать резервом одновременно — выберите другой шлюз.";
+            return;
+        }
+        bool already = row.IsSecondary;
+        foreach (RoutingNodeRowViewModel candidate in Rows) candidate.IsSecondary = false;
+        row.IsSecondary = !already;
+        Persist();
+        StatusRu = row.IsSecondary
+            ? $"Резерв: {row.Name} ({row.Address}). При мультипути переключение на него — после подтверждённой просадки основного (три плохих окна контроля подряд)."
+            : "Резерв снят: мультипуть будет без ручного резерва (автовыбор возьмёт второй лучший по замерам).";
     }
 
     /// <summary>
@@ -322,7 +387,8 @@ public sealed class RoutingSettingsViewModel : ObservableObject
         bool confirmed = await _dialogs.ConfirmAsync(
             "Измерить пути",
             "Замер делает временный маршрут /32 только на адрес сервера запущенной игры, измеряет путь через каждый " +
-            "узел и сразу снимает его. Постоянных изменений не остаётся. Запустить замер?",
+            "узел и сразу снимает его. Каждый путь мерится двумя сериями вперемешку, поэтому замер идёт дольше — " +
+            "зато дрейф сети не выдаётся за выигрыш узла. Постоянных изменений не остаётся. Запустить замер?",
             "Измерить",
             "Отмена").ConfigureAwait(true);
 
@@ -357,6 +423,7 @@ public sealed class RoutingSettingsViewModel : ObservableObject
 
             if (report is not null && report.WinnerAddress is { Length: > 0 } winner)
             {
+                foreach (RoutingNodeRowViewModel row in Rows) row.IsDefault = false;
                 foreach (RoutingNodeRowViewModel row in Rows.Where(row =>
                              row.Address.Equals(winner, StringComparison.OrdinalIgnoreCase)))
                 {
@@ -364,7 +431,20 @@ public sealed class RoutingSettingsViewModel : ObservableObject
                     break;
                 }
 
-                StatusRu += " Лучший помечен узлом по умолчанию — применять его или нет, решает кнопка «Оптимизировать».";
+                if (report.RunnerUpAddress is { Length: > 0 } runner && MultipathEnabled)
+                {
+                    foreach (RoutingNodeRowViewModel row in Rows) row.IsSecondary = false;
+                    foreach (RoutingNodeRowViewModel row in Rows.Where(row => row.Address.Equals(runner, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        row.IsSecondary = true;
+                        break;
+                    }
+                    StatusRu += $" Лучший — {winner}, резерв — {runner}: мультипуть горячий. Применять — только «Оптимизировать».";
+                }
+                else
+                {
+                    StatusRu += " Лучший помечен узлом по умолчанию — применять его или нет, решает кнопка «Оптимизировать».";
+                }
                 Persist();
             }
         }
@@ -382,10 +462,8 @@ public sealed class RoutingSettingsViewModel : ObservableObject
 
     private RoutingNodeRowViewModel AddRow(RoutingNodeEntry entry)
     {
-        // Команды строки читают переменную после завершения конструктора — так ссылка попадает
-        // в замыкание без «используй себя же» на этапе инициализации.
         RoutingNodeRowViewModel? bound = null;
-        var row = new RoutingNodeRowViewModel(entry, () => MakeDefault(bound), () => RemoveNode(bound));
+        var row = new RoutingNodeRowViewModel(entry, () => MakeDefault(bound), () => MakeSecondary(bound), () => RemoveNode(bound));
         bound = row;
         Rows.Add(row);
         return row;
@@ -438,6 +516,8 @@ public sealed class RoutingSettingsViewModel : ObservableObject
                 RoutingNodes = Rows.Select(row => row.ToEntry()).ToList(),
                 RoutingDefaultNode = Rows.FirstOrDefault(row => row.IsDefault)?.Address,
                 RoutingAutoSelect = AutoSelectBest,
+                RoutingMultipathEnabled = MultipathEnabled,
+                RoutingSecondaryNode = Rows.FirstOrDefault(row => row.IsSecondary)?.Address,
             });
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

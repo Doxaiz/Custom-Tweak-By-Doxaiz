@@ -67,10 +67,11 @@ public class LiveEngineTests
 
         Assert.True(window.IsMeasurable);
         Assert.Equal(78.4, window.RttMedianMs, 3);
-        Assert.Equal(2.5, window.JitterMs, 3);
-        Assert.Equal(0, window.LossPercent, 3);
+        Assert.Equal(2.5, window.JitterMs!.Value, 3);
+        Assert.Equal(0, window.LossPercent!.Value, 3);
         Assert.Equal(12, window.Samples);
         Assert.Contains("ICMP", window.MethodRu);
+        Assert.Equal(ProbeMethodUsed.ActiveIcmpEcho, window.Method);
         Assert.Equal("1.2.3.4", probes.LastEndpoint);
         Assert.Equal(7777, probes.LastPort);
         Assert.Equal(12, probes.LastSampleCount);
@@ -148,8 +149,19 @@ public class LiveEngineTests
         await optimizer.StartAsync();
         Assert.True(monitor.IsActive);
 
-        using var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
-        await monitor.RunAsync(stop.Token);
+        // Ждём до трёх окон, а не «сколько успеется за 300 мс»: на загруженном раннере этого
+        // хватало ровно на одно окно (прогон 44079925781: «окон контроля было 1»), и тест
+        // говорил «контроль не идёт» про работающий контроль. Предел в пять секунд остаётся:
+        // если контроль действительно стоит, тест падает, а не висит.
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task loop = monitor.RunAsync(stop.Token);
+        while (monitor.Ticks < 3 && !loop.IsCompleted)
+        {
+            await Task.Delay(10);
+        }
+
+        stop.Cancel();
+        await loop;
 
         Assert.True(monitor.Ticks >= 3, $"окон контроля было {monitor.Ticks} — контроль не идёт");
     }

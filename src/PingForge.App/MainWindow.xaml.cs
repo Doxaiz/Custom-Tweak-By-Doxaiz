@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using PingForge.Core.Ui;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using PingForge.App.ViewModels;
 
 namespace PingForge.App;
@@ -22,6 +24,30 @@ public partial class MainWindow : Window
 
         DataContext = new ShellViewModel(app);
 
+        // Масштаб интерфейса: раскладка тянется LayoutTransform'ом из разметки, а минимальный размер
+        // окна обязан расти вместе с ней — иначе при 150 % окно «не пускает» содержимое и правый
+        // край обрезается. При 100 % это ровно 860×560, прежние значения.
+        ApplyUiScale();
+
+        // Подпись о контрасте считает себя по настоящим цветам темы: цвета берутся из ресурсов окна,
+        // а не вписываются в модель представления. Сменится палитра — сменится и число в подписи.
+        if (DataContext is ShellViewModel settingsShell)
+        {
+            ApplyThemeColors(settingsShell.Settings.UiScale);
+        }
+
+        if (DataContext is ShellViewModel shell)
+        {
+            shell.Settings.UiScale.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(UiScaleViewModel.Scale))
+                {
+                    ApplyUiScale();
+                    FitToScreen();
+                }
+            };
+        }
+
         Closing += (_, e) => _app.OnWindowClosing(e);
 
         // Первый пункт меню отмечен прямо в разметке (IsChecked="True"), поэтому событие
@@ -34,6 +60,54 @@ public partial class MainWindow : Window
             FitToScreen();
             ApplySection();
         };
+    }
+
+    /// <summary>
+    /// Минимальный размер окна под текущий масштаб. Ширина и высота содержимого при 150 %
+    /// в полтора раза больше, поэтому и минимум окна в полтора раза больше: иначе окно можно
+    /// ужать так, что разделы и кнопки окажутся за краем.
+    /// </summary>
+    /// <summary>
+    /// Передать модели представления цвета настоящей темы. Ключи — из <c>App.xaml</c>; если темы нет
+    /// (например, окно собрали без ресурсов), остаются значения по умолчанию из <see cref="PaletteNote"/>.
+    /// </summary>
+    private void ApplyThemeColors(UiScaleViewModel scale)
+    {
+        string? text = HexOf("TextColor");
+        string? muted = HexOf("MutedColor");
+        string? background = HexOf("BgColor");
+        if (text is not null && muted is not null && background is not null)
+        {
+            scale.ApplyTheme(text, muted, background);
+        }
+    }
+
+    /// <summary>Цвет ресурса темы в виде <c>#RRGGBB</c>: в этом виде его понимает расчёт контраста.</summary>
+    private string? HexOf(string key) =>
+        TryFindResource(key) is Color color ? $"#{color.R:X2}{color.G:X2}{color.B:X2}" : null;
+
+    private void ApplyUiScale()
+    {
+        if (DataContext is not ShellViewModel shell)
+        {
+            return;
+        }
+
+        double scale = shell.Settings.UiScale.Scale;
+        Rect work = SystemParameters.WorkArea;
+
+        // На маленьком экране 150 % не должны выталкивать окно за край: минимум растёт вместе
+        // с содержимым, но не больше рабочей области. Внутри есть прокрутка, поэтому ужать окно
+        // до экрана безопаснее, чем потерять правый и нижний край.
+        MinWidth = Math.Min(
+            UiScaleViewModel.MinWidthAt100 * scale,
+            Math.Max(UiScaleViewModel.MinWidthAt100, work.Width - 16));
+        MinHeight = Math.Min(
+            UiScaleViewModel.MinHeightAt100 * scale,
+            Math.Max(UiScaleViewModel.MinHeightAt100, work.Height - 16));
+
+        Width = Math.Max(Width, MinWidth);
+        Height = Math.Max(Height, MinHeight);
     }
 
     /// <summary>
@@ -77,6 +151,13 @@ public partial class MainWindow : Window
     }
 
     private void NavChanged(object sender, RoutedEventArgs e) => ApplySection();
+
+    /// <summary>
+    /// Задача F: перейти в раздел «Твики» из кода — так работает кнопка «Показать в твиках»
+    /// блока проверки настроек. Отмечаем пункт меню: <see cref="NavChanged"/> сам применит раздел,
+    /// то есть путь ровно тот же, что и клик человека по меню.
+    /// </summary>
+    public void ShowTweaksSection() => NavTweaks.IsChecked = true;
 
     /// <summary>
     /// Показать выбранный раздел. Вызывается и обработчиком меню, и после загрузки окна:

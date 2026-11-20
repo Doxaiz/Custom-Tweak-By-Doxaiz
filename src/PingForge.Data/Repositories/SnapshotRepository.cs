@@ -135,6 +135,33 @@ public sealed class SnapshotRepository
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
+    public async Task<int> DeleteAsync(string snapshotId, CancellationToken ct = default)
+    {
+        await using SqliteConnection connection = await _database.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM tweak_snapshots WHERE snapshot_id = $id; DELETE FROM tweak_snapshot_items WHERE snapshot_id = $id2;";
+        cmd.Parameters.AddWithValue("$id", snapshotId);
+        cmd.Parameters.AddWithValue("$id2", snapshotId);
+        return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    public string DatabasePathViaInitializer => _database.DatabasePath;
+
+    /// <summary>
+    /// Размер файла базы. Если файл не читается — исключение, а не 0: ноль означает пустую базу,
+    /// и «не смогли прочитать» не должно выглядеть как «база пуста». Вызывающий решает, что сказать.
+    /// </summary>
+    public Task<long> GetDatabaseFileSizeAsync(CancellationToken ct = default)
+    {
+        string? path = _database.DatabasePath;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return Task.FromResult(0L);
+        }
+
+        return Task.FromResult(new FileInfo(path).Length);
+    }
+
     /// <summary>Снапшоты, по которым ещё не был выполнен полный откат — используются при старте службы.</summary>
     public async Task<IReadOnlyList<string>> GetSnapshotIdsWithPendingRollbackAsync(CancellationToken ct = default)
     {

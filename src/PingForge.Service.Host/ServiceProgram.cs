@@ -1,4 +1,6 @@
 using PingForge.Core.Abstractions;
+using PingForge.Core.Security;
+using PingForge.Core.Diagnostics;
 using PingForge.Core.Tweaks;
 using PingForge.Data;
 using PingForge.Data.Repositories;
@@ -38,6 +40,12 @@ public static class ServiceProgram
         "PingForge");
 
     private static string LogPath => Path.Combine(DataDirectory, "service.log");
+
+    /// <summary>
+    /// Журнал службы: 5 МБ и три файла (текущий плюс две копии). Прежний поворот держал одну копию,
+    /// то есть после второго поворота исчезала история первого — а нужна она как раз при разборе жалобы.
+    /// </summary>
+    private static readonly Lazy<RollingLogFile> LogFile = new(() => new RollingLogFile(LogPath));
 
     public static int Main(string[] args)
     {
@@ -94,17 +102,73 @@ public static class ServiceProgram
         var systemState = new SystemStateReader(
             catalog, platform.Registry, platform.Command, platform.NicProperties, platform.ActiveAdapter);
 
+        // ── Целостность базы (задача U) ─────────────────────────────────────────────────────────
+        // Проверка идёт ДО DDL: испорченный файл не должен ронять службу в цикле рестартов. Если
+        // база повреждена, файл не удаляется, а откладывается рядом; читаемая копия ставится на
+        // место. Копия снимается средствами SQLite, а не копированием файла.
         var database = new SqliteDatabaseInitializer(Path.Combine(DataDirectory, "pingforge.db"));
-        await database.EnsureInitializedAsync(ct).ConfigureAwait(false);
+        var backups = new DatabaseBackupService(database);
+
+        // ── Кому принадлежит каталог данных ────────────────────────────────────────────────────
+        // Откат снапшота пишет прежние значения в реестр от имени системы, а снапшоты лежат в базе
+        // в этом каталоге. Значит подмена файла базы — это подмена того, что система применит.
+        // Права не переписываем (чужой ACL молча ломать нельзя), но и молчать не имеем права.
+        DataTrustReport directoryTrust = WindowsDataDirectoryTrust.InspectDirectory(DataDirectory);
+        Log(directoryTrust.MessageRu);
+
+        // Общий файл настроек: его пишут и окно, и служба. Если писать в него может любой пользователь,
+        // чужие правки приходят сюда как «настройки человека» (профиль, узлы, свои игры), и заметить
+        // это иначе негде — права каталога не всегда говорят о правах файла.
+        // «Файла ещё нет» или «права не прочитали» — не повод шуметь на каждом старте: говорим,
+        // только когда писать в файл действительно может кто угодно.
+        DataTrustReport settingsTrust = WindowsDataDirectoryTrust.InspectFile(ServiceSettings.FilePath(DataDirectory));
+        if (settingsTrust.NeedsAttention)
+        {
+            Log(settingsTrust.MessageRu);
+        }
+        DatabaseStartupReport databaseReport = await backups.PrepareForStartAsync(ct: ct).ConfigureAwait(false);
+        Log(databaseReport.DescribeRu());
+
+        try
+        {
+            await database.EnsureInitializedAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // quick_check прошёл, а схема не применилась — файл всё равно непригоден. Один повтор
+            // с чистой базой; старый файл сохраняется для разбора, а не затирается.
+            Log($"База не инициализировалась: {ex.Message}. Начинаю с чистой базы, прежний файл сохраняю.");
+            string? quarantined = backups.QuarantineCorruptFile();
+            databaseReport = new DatabaseStartupReport(
+                DatabaseStartupOutcome.StartedCleanAfterCorruption,
+                null,
+                quarantined,
+                ex.Message);
+            Log(databaseReport.DescribeRu());
+            await database.EnsureInitializedAsync(ct).ConfigureAwait(false);
+        }
+
+        // Права у файла свои: каталог может быть закрыт, а база — открыта на запись всем.
+        DataTrustReport databaseTrust = WindowsDataDirectoryTrust.InspectFile(database.DatabasePath);
+        if (!databaseTrust.IsTrusted)
+        {
+            Log(databaseTrust.MessageRu);
+        }
 
         var snapshotRepository = new SnapshotRepository(database);
         var journal = new AuditJournalRepository(database);
+
+        // История сессий (задача J) — в той же базе, что снапшоты и журнал изменений.
+        var sessions = new OptimizationSessionRepository(database);
         var snapshotService = new SnapshotService(
             snapshotRepository,
             catalog,
             new TargetValueResolver(),
             restorePoints);
         var coordinator = new TweakCoordinator(snapshotService, journal, catalog);
+
+        // Задача U: копия базы — до снапшота и до первого изменения системы.
+        ITweakCoordinator guardedCoordinator = new BackupBeforeApplyCoordinator(coordinator, backups, Log);
 
         // ── Сетевой слой: живая оптимизация уже запущенной игры ────────────────────────────────
         // Раньше здесь был null, и кнопка честно отвечала «движок не подключён». Теперь собраны
@@ -122,7 +186,36 @@ public static class ServiceProgram
             Log($"Свои игры из настроек: {customGames.Count} (анти-чит у них неизвестен).");
         }
 
-        using var network = new WindowsGameNetworkPlatform(platform, GameProcessCatalog.WithCustomGames(customGames));
+        // UDP-собеседники игры: таблица соединений удалённую сторону у UDP не знает, поэтому
+        // наблюдение идёт из событий сетевого стека Windows (ETW, только чтение). Сбой наблюдения
+        // не роняет службу: без него UDP-игры просто не находятся, как и до этой части.
+        // Пассивная задержка живого UDP-потока: пары «отправка → ответ» из тех же событий.
+        // Пока пар нет — замер идёт пробами, и программа говорит об этом прямо.
+        var udpRtt = new PassiveUdpRttTracker();
+        using var udpPeers = new EtwUdpPeerListener(Log, onObservation: observation =>
+        {
+            udpRtt.Observe(observation);
+        });
+        udpPeers.Start();
+        Log(udpPeers.IsRunning
+            ? "UDP-собеседники: наблюдение идёт, служба увидит UDP-поток игры."
+            : $"UDP-собеседники: наблюдение не идёт — {udpPeers.ProblemRu ?? "причина не названа"}. Остальное работает.");
+        Log("Живой UDP-поток: задержка считается по парам «отправка → ответ» из этих событий; " +
+            "живой TCP-поток — из статистики уже открытого соединения (ни одного лишнего пакета). " +
+            "Пока ни один живой способ не дал чисел — замер идёт пробами, и способ замера называется рядом с числом.");
+
+        // IPv6 читаем: у Minecraft Bedrock и IPv6-only серверов поток иначе невидим вовсе. Маршрут по IPv6
+        // продукт не ставит, поэтому такие потоки попадают в отчёт с пояснением, а не в оптимизацию.
+        using var network = new WindowsGameNetworkPlatform(
+            platform,
+            GameProcessCatalog.WithCustomGames(customGames),
+            peerTracker: udpPeers,
+            includeIpv6: true);
+
+        // Статистика уже открытого TCP-соединения: второй живой способ, без единого лишнего пакета.
+        // Права администратора у службы есть; если система откажет — причина будет названа, а замер
+        // уйдёт к пробам, а не выдумает числа.
+        var tcpEstats = new WindowsTcpEstatsReader();
 
         // Настоящие транспорты: ICMP-эхо, время TCP-рукопожатия, системный DNS.
         var icmp = new SystemNetIcmpProbe();
@@ -130,7 +223,10 @@ public static class ServiceProgram
             icmp,
             new SocketTcpHandshakeProbe(),
             new SystemHostResolver(),
-            new HopTracerouteEngine(icmp));
+            new HopTracerouteEngine(icmp),
+            liveFlowProvider: new ChainedLiveFlowRttProvider(
+                new UdpObservationsLiveFlowRttProvider(udpRtt),
+                new TcpEstatsLiveFlowRttProvider(tcpEstats)));
         var measurement = new RouteProbeMeasurementSource(probes, samplesPerWindow: 12);
 
         // ── Сервер маршрутизации (задача B) ──────────────────────────────────────────────────
@@ -212,14 +308,17 @@ public static class ServiceProgram
         var operations = new LiveEngineOperations(
             catalog,
             snapshotService,
-            coordinator,
+            guardedCoordinator,
             isElevationAvailable: true,
             journal: journal,
             realtime: realtime,
             readProfile: readProfile,
             applyProfile: writeProfile,
             stateReader: systemState,
-            routing: routingService);
+            routing: routingService,
+            sessions: sessions,
+            databaseNote: databaseReport.NeedsAttention ? databaseReport.DescribeRu() : null,
+            backups: backups);
 
         var dispatcher = new EngineDispatcher(operations);
         var server = new EnginePipeServer(dispatcher, Log);
@@ -243,8 +342,8 @@ public static class ServiceProgram
 
     /// <summary>
     /// Журнал службы. Пишем и в файл, и в консоль: файл нужен, когда служба работает без окна,
-    /// консоль — при отладочном запуске. Ротация простая: файл больше мегабайта — начинаем заново,
-    /// чтобы он не рос бесконечно на чужом диске.
+    /// консоль — при отладочном запуске. Ротация — <see cref="RollingLogFile"/>: 5 МБ, три файла,
+    /// строка никогда не обрезается, старые копии удаляются по одной.
     /// </summary>
     private static void Log(string messageRu)
     {
@@ -252,12 +351,7 @@ public static class ServiceProgram
 
         try
         {
-            if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 1024 * 1024)
-            {
-                File.Move(LogPath, LogPath + ".old", overwrite: true);
-            }
-
-            File.AppendAllText(LogPath, line + Environment.NewLine);
+            LogFile.Value.Append(line);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -271,10 +365,12 @@ public static class ServiceProgram
     /// <summary>Краткая справка: что это за программа и как её запускать.</summary>
     public static string HelpRu() =>
         $"""
-        Custom Tweak By Doxaiz — служба PingForge.
+        Custom Tweak By Doxaiz — служба программы.
 
         Это служебная часть программы: она меняет настройки Windows от имени LocalSystem и принимает
-        команды от окна программы по каналу {EngineProtocol.PipeName}.
+        команды от окна программы по каналу {EngineProtocol.PipeName}. Отдельной программы нет: техническое
+        имя службы и её папки данных — PingForge, оно осталось от первых версий и не меняется, чтобы
+        обновление не потеряло журнал изменений и снапшоты.
 
         Запуск диспетчером служб (обычный режим):
             sc create {ServiceName} binPath= "C:\путь\PingForge.Service.exe" start= auto

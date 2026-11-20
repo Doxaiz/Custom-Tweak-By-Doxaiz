@@ -108,7 +108,7 @@ public static class TrayMenuBuilder
         {
             isRunning
                 ? new TrayMenuItem(TrayCommand.StopOptimization, "Остановить оптимизацию",
-                    true, $"Снять маршрут и политику QoS, вернуть сеть как было ({pingText})")
+                    true, $"Снять маршрут и политику QoS, вернуть сеть как было ({pingText}; {SpreadRu(snapshot)})")
                 : new TrayMenuItem(TrayCommand.StartOptimization, "Оптимизировать соединение",
                     isAdministrator ? snapshot.State != RealtimeOptimizationState.FindingGame : true,
                     isAdministrator
@@ -130,6 +130,24 @@ public static class TrayMenuBuilder
             "Закрыть программу. Изменения будут сняты: без работающего приложения маршрут и политика QoS не нужны"));
 
         return items;
+    }
+
+    /// <summary>
+    /// Разброс и потери словами для меню значка. Неизмеренное — «не измерено», а не «0 мс»:
+    /// живой замер потерь не измеряет вовсе, и ноль здесь был бы выдумкой.
+    /// </summary>
+    public static string SpreadRu(RealtimeSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        string jitter = snapshot.CurrentJitterMs is { } jitterMs
+            ? $"разброс {jitterMs:0.#} мс"
+            : "разброс не измерен";
+        string loss = snapshot.CurrentLossPercent is { } lossPercent
+            ? $"потери {lossPercent:0.#} %"
+            : "потери не измерены";
+
+        return $"{jitter}, {loss}";
     }
 
     /// <summary>
