@@ -164,7 +164,7 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
         }
     }
 
-    private static bool TryReadPathStats(ref MibTcpRow row, out TcpEstatsPathRod rod, out string? problem)
+    private bool TryReadPathStats(ref MibTcpRow row, out TcpEstatsPathRod rod, out string? problem)
     {
         rod = default;
         problem = null;
