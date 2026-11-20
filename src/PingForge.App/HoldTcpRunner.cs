@@ -36,7 +36,7 @@ internal static class HoldTcpRunner
                 {
                     stream.Write(payload, 0, payload.Length);
                 }
-                catch (IOException)
+                catch (System.IO.IOException)
                 {
                     // Сервер закрыл соединение — держать больше нечего, и врать об этом не надо.
                     return 3;
@@ -53,7 +53,7 @@ internal static class HoldTcpRunner
 #pragma warning restore CA2022
                     }
                 }
-                catch (IOException)
+                catch (System.IO.IOException)
                 {
                     return 3;
                 }
@@ -61,7 +61,7 @@ internal static class HoldTcpRunner
 
             return 0;
         }
-        catch (Exception ex) when (ex is SocketException or IOException or OperationCanceledException)
+        catch (Exception ex) when (ex is SocketException or System.IO.IOException or OperationCanceledException)
         {
             return 3;
         }
