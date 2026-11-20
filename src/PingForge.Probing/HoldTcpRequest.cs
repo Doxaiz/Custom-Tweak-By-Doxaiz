@@ -56,7 +56,15 @@ public sealed record HoldTcpRequest(string Address, int Port, int Seconds)
             return false;
         }
 
-        request = new HoldTcpRequest(args[index + 1], port, seconds);
-        return request.IsComplete;
+        // Отказ не оставляет «полуразобранного» запроса: снаружи false значит «режима нет»,
+        // и вызывающий не должен получить объект, с которым непонятно что делать.
+        var candidate = new HoldTcpRequest(args[index + 1], port, seconds);
+        if (!candidate.IsComplete)
+        {
+            return false;
+        }
+
+        request = candidate;
+        return true;
     }
 }
