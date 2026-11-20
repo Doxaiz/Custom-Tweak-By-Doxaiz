@@ -5,9 +5,12 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using PingForge.App.ViewModels;
 using PingForge.App.Views;
+using System.Net;
+using System.Net.Sockets;
 using PingForge.Core.Models;
 using PingForge.Core.Layout;
 using PingForge.Core.Ui;
+using PingForge.Network.Windows;
 using PingForge.Orchestration.Realtime;
 using PingForge.Probing;
 using PingForge.Routing;
@@ -80,6 +83,7 @@ internal static class SelfCheck
         CheckTray(app, problems);
         CheckLiveTcpFlow(problems);
         CheckUnmeasuredNumbers(problems);
+        CheckLiveNetwork(problems);
         CheckService(problems);
 
         // Если окно построилось, но раскладка или привязки плохи — это тот же отказ, что и «окно не собралось»:
@@ -1125,6 +1129,106 @@ internal static class SelfCheck
         {
             problems.Add($"история сессий (задача J): проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ИСТОРИЯ СЕССИЙ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Живой замер на настоящей сети: те самые пробы, которыми программа меряет задержку, отправляются
+    /// в настоящий адрес. Здесь проверяется то, чего не видно в юнит-тестах с нарисованными ответами:
+    /// что проба вообще возвращает числа, и что эти числа похожи на правду.
+    ///
+    /// Сети нет или ICMP запрещён — это не поломка программы, а условие машины: тогда в журнале стоит
+    /// «пропущен» с причиной, а не зелёная галочка. Ноль вместо задержки — поломка, и она называется.
+    /// </summary>
+    private static void CheckLiveNetwork(List<string> problems)
+    {
+        const string Target = "1.1.1.1";
+        const int Port = 443;
+        const int Attempts = 5;
+
+        try
+        {
+            IPAddress address = IPAddress.Parse(Target);
+            var icmp = new SystemNetIcmpProbe();
+
+            var icmpRtts = new List<double>();
+            string? refusal = null;
+
+            for (int attempt = 0; attempt < Attempts; attempt++)
+            {
+                IcmpProbeReply reply = icmp
+                    .SendAsync(address, payloadBytes: 32, dontFragment: false, ttl: 64, TimeSpan.FromSeconds(2))
+                    .GetAwaiter().GetResult();
+
+                if (reply.Status == IcmpProbeStatus.Success && reply.RoundTripMs > 0)
+                {
+                    icmpRtts.Add(reply.RoundTripMs);
+                }
+                else
+                {
+                    refusal = reply.Status == IcmpProbeStatus.PermissionDenied
+                        ? "ICMP-эху не дали прав"
+                        : $"ICMP-эхо не вернулось ({reply.Status})";
+                }
+            }
+
+            LiveProbeVerdict verdict;
+            if (icmpRtts.Count > 0)
+            {
+                verdict = LiveProbeVerdict.FromReplies($"{Target}:{Port} (ICMP)", "ICMP-эхо", icmpRtts);
+            }
+            else
+            {
+                // ICMP часто закрыт: тогда меряем тем же, чем меряет программа в этом случае — TCP-рукопожатием.
+                var tcp = new SocketTcpHandshakeProbe();
+                var tcpRtts = new List<double>();
+
+                for (int attempt = 0; attempt < Attempts; attempt++)
+                {
+                    TcpProbeReply reply = tcp
+                        .TryConnectAsync(new IPEndPoint(address, Port), TimeSpan.FromSeconds(2))
+                        .GetAwaiter().GetResult();
+
+                    if ((reply.Status is TcpProbeStatus.Established or TcpProbeStatus.ConnectionRefused)
+                        && reply.RoundTripMs > 0)
+                    {
+                        tcpRtts.Add(reply.RoundTripMs);
+                    }
+                    else
+                    {
+                        refusal = $"{refusal ?? "ответа нет"} и TCP-рукопожатие не удалось ({reply.Status})";
+                    }
+                }
+
+                verdict = LiveProbeVerdict.FromReplies($"{Target}:{Port} (TCP)", "TCP-рукопожатие", tcpRtts, refusal);
+            }
+
+            if (verdict.Verified)
+            {
+                StartupLog.Note($"ЖИВОЙ ЗАМЕР: {verdict.TextRu}");
+                return;
+            }
+
+            if (verdict.Skipped)
+            {
+                StartupLog.Note($"ЖИВОЙ ЗАМЕР: пропущен. {verdict.TextRu}");
+                return;
+            }
+
+            problems.Add($"живой замер на настоящей сети: {verdict.TextRu}");
+            StartupLog.Note($"ЖИВОЙ ЗАМЕР: НЕ работает — {verdict.TextRu}");
+        }
+        // Условия машины — не поломка программы: нет сети, нет прав, проба не поддерживается.
+        // Это «пропущено» с причиной. Всё остальное — ошибка в самой проверке, и она называется.
+        catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException
+            or NotSupportedException or TimeoutException or OperationCanceledException)
+        {
+            StartupLog.Note($"ЖИВОЙ ЗАМЕР: пропущен. Сеть не дала ответа: {ex.GetType().Name}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"живой замер на настоящей сети: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ЖИВОЙ ЗАМЕР: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 
