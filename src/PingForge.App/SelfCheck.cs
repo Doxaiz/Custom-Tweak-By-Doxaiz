@@ -1183,41 +1183,55 @@ internal static class SelfCheck
                 return;
             }
 
-            // Обмен по соединению: без трафика стек не собирает замеры задержки. Соединение держим
-            // открытым (keep-alive), иначе оно уйдёт из таблицы раньше, чем появится статистика.
+            var reader = new WindowsTcpEstatsReader();
+            var drain = new byte[2048];
             NetworkStream stream = client.GetStream();
+
+            // Сбор статистики включаем до трафика: стек считает замеры только по данным, прошедшим
+            // при включённом сборе. Первое чтение таблицы как раз и включает его — и больше не трогает,
+            // иначе каждый опрос обнулял бы накопленное и «0 измерений» было бы нашей же виной.
+            reader.ReadEstablishedConnections(Environment.ProcessId);
+
+            if (reader.ProblemRu.Length > 0)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. {endpoint}:{Port}: {reader.ProblemRu}");
+                return;
+            }
+
             byte[] request = Encoding.ASCII.GetBytes(
                 $"GET / HTTP/1.1\r\nHost: {Host}\r\nConnection: keep-alive\r\n\r\n");
-            stream.Write(request, 0, request.Length);
 
-            var reader = new WindowsTcpEstatsReader();
             LiveTcpEstatsVerdict verdict = LiveTcpEstatsVerdict.Evaluate(
                 endpoint, Port, [], "соединение ещё не попало в таблицу");
 
-            var drain = new byte[2048];
-
-            for (int attempt = 0; attempt < 12; attempt++)
+            for (int attempt = 0; attempt < 15; attempt++)
             {
+                // Обмен по соединению: без трафика при включённом сборе стек не даст ни одного замера.
+                // Ответ обязательно забираем — иначе окно переполняется и сервер отвечает сбросом.
+                if (attempt < 2)
+                {
+                    try
+                    {
+                        stream.Write(request, 0, request.Length);
+                        Thread.Sleep(400);
+
+                        while (stream.DataAvailable)
+                        {
+                            stream.Read(drain, 0, drain.Length);
+                        }
+                    }
+                    catch (IOException)
+                    {
+                        // Сервер закрыл соединение — ниже об этом скажет вердикт, а не догадка.
+                    }
+                }
+
                 IReadOnlyList<LiveTcpConnectionStats> connections = reader.ReadEstablishedConnections(Environment.ProcessId);
                 verdict = LiveTcpEstatsVerdict.Evaluate(endpoint, Port, connections, reader.ProblemRu);
 
-                if (verdict.Verified || verdict.Outcome == LiveProbeOutcome.Broken)
+                if (verdict.Verified)
                 {
                     break;
-                }
-
-                // Забираем ответ: подтверждения на него дают стеку новые замеры задержки, а соединение
-                // остаётся живым (keep-alive) — иначе оно уйдёт из таблицы раньше, чем появится статистика.
-                try
-                {
-                    if (stream.DataAvailable)
-                    {
-                        stream.Read(drain, 0, drain.Length);
-                    }
-                }
-                catch (IOException)
-                {
-                    // Сервер закрыл соединение — решение всё равно примет вердикт ниже.
                 }
 
                 Thread.Sleep(300);

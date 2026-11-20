@@ -36,6 +36,10 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
     private const uint ErrorInsufficientBuffer = 122;
     private const uint MibTcpStateEstablished = 5;
 
+    // Соединения, на которых сбор уже включён. Повторный Set сбрасывает накопленные замеры, поэтому
+    // включаем один раз и дальше только читаем — иначе «0 измерений» окажется нашей же виной.
+    private readonly HashSet<string> _collectionEnabled = [];
+
     public string ProblemRu { get; private set; } = string.Empty;
 
     public IReadOnlyList<LiveTcpConnectionStats> ReadEstablishedConnections(int processId)
@@ -165,20 +169,29 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
         rod = default;
         problem = null;
 
-        // Сбор включаем сами: без этого Windows прямо говорит, что значения в снимке не определены.
-        var enable = new TcpEstatsPathRw { EnableCollection = 1 };
-        uint status = SetPerTcpConnectionEStats(
-            ref row, TcpConnectionEstatsPath,
-            ref enable, 0, (uint)Marshal.SizeOf<TcpEstatsPathRw>(),
-            IntPtr.Zero, 0, 0,
-            IntPtr.Zero, 0, 0);
+        // Сбор включаем сами (без этого Windows прямо говорит, что значения не определены), но только
+        // один раз на соединение: повторный Set обнуляет накопленные замеры.
+        string key = $"{row.LocalAddr}:{row.LocalPort}-{row.RemoteAddr}:{row.RemotePort}";
+        uint status = NoError;
 
-        if (status != NoError)
+        if (!_collectionEnabled.Contains(key))
         {
-            problem = status == 5
-                ? "Сбор статистики TCP-соединения запрещён: нужны права администратора."
-                : $"Включить сбор статистики TCP-соединения не удалось: система вернула код {status}.";
-            return false;
+            var enable = new TcpEstatsPathRw { EnableCollection = 1 };
+            status = SetPerTcpConnectionEStats(
+                ref row, TcpConnectionEstatsPath,
+                ref enable, 0, (uint)Marshal.SizeOf<TcpEstatsPathRw>(),
+                IntPtr.Zero, 0, 0,
+                IntPtr.Zero, 0, 0);
+
+            if (status != NoError)
+            {
+                problem = status == 5
+                    ? "Сбор статистики TCP-соединения запрещён: нужны права администратора."
+                    : $"Включить сбор статистики TCP-соединения не удалось: система вернула код {status}.";
+                return false;
+            }
+
+            _collectionEnabled.Add(key);
         }
 
         int rwBytes = Marshal.SizeOf<TcpEstatsPathRw>();
