@@ -165,6 +165,7 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
         rod = default;
         problem = null;
 
+        // Сбор включаем сами: без этого Windows прямо говорит, что значения в снимке не определены.
         var enable = new TcpEstatsPathRw { EnableCollection = 1 };
         uint status = SetPerTcpConnectionEStats(
             ref row, TcpConnectionEstatsPath,
@@ -180,87 +181,96 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
             return false;
         }
 
-        // Порядок важен: сначала читаем RW — там лежит EnableCollection, — потом снимок ROD. Буферы
-        // передаём указателями, а не структурами: так видно, какой именно буфер система не приняла,
-        // и код 1784 («NULL при ненулевом размере») не возникает из-за маршалинга одной структуры.
-        int rwBytes = Marshal.SizeOf<TcpEstatsPathRw>();
-        IntPtr rwBuffer = Marshal.AllocHGlobal(rwBytes);
+        // Снимок читаем несколькими способами: разные сборки Windows по-разному отвечают на размер
+        // RW-буфера и на пустой ROD. Первый удавшийся способ и берём, а коды отказов складываем
+        // в причину — иначе «не прочиталось» ничего не объясняет ни человеку, ни сборке.
+        int exactRod = Marshal.SizeOf<TcpEstatsPathRod>();
+        (string Name, uint RwSize, int RodBytes)[] variants =
+        [
+            ("RW 1 + ROD", (uint)Marshal.SizeOf<TcpEstatsPathRw>(), Math.Max(exactRod * 2, 512)),
+            ("RW 4 + ROD", 4, Math.Max(exactRod * 2, 512)),
+            ("RW 1 + ROD точно", (uint)Marshal.SizeOf<TcpEstatsPathRw>(), exactRod),
+            ("только ROD", 0, Math.Max(exactRod * 2, 512)),
+        ];
+
+        var codes = new List<string>();
+        byte enabled = 0;
+
+        foreach ((string name, uint rwSize, int rodBytes) in variants)
+        {
+            if (TryReadRod(ref row, rwSize, rodBytes, out rod, out enabled, out uint code))
+            {
+                if (enabled == 0)
+                {
+                    problem = "Сбор статистики TCP-соединения не включён: числа не определены.";
+                    return false;
+                }
+
+                return true;
+            }
+
+            codes.Add($"{name}: {code}");
+        }
+
+        problem = codes.Any(text => text.EndsWith(": 1168", StringComparison.Ordinal))
+            ? "Статистика TCP-соединения не прочитана: система не нашла это соединение — оно могло закрыться " +
+              $"({string.Join(", ", codes)})."
+            : $"Статистика TCP-соединения не прочитана ({string.Join(", ", codes)}).";
+        return false;
+    }
+
+    /// <summary>
+    /// Одна попытка чтения снимка пути. <paramref name="rwSize"/> = 0 — RW не запрашивается.
+    /// Возвращает код системы как есть: по нему видно, что именно не устроило Windows.
+    /// </summary>
+    private static bool TryReadRod(
+        ref MibTcpRow row,
+        uint rwSize,
+        int rodBytes,
+        out TcpEstatsPathRod rod,
+        out byte enabled,
+        out uint code)
+    {
+        rod = default;
+        enabled = 0;
+
+        IntPtr rwBuffer = rwSize > 0 ? Marshal.AllocHGlobal((int)rwSize) : IntPtr.Zero;
+        IntPtr rodBuffer = Marshal.AllocHGlobal(rodBytes);
+
         try
         {
-            Marshal.WriteByte(rwBuffer, 0, 0);
-            uint noBuffer = 0;
+            if (rwBuffer != IntPtr.Zero)
+            {
+                Marshal.WriteByte(rwBuffer, 0, 0);
+            }
 
-            status = GetPerTcpConnectionEStatsRaw(
+            uint rodSize = (uint)rodBytes;
+            code = GetPerTcpConnectionEStatsRaw(
                 ref row, TcpConnectionEstatsPath,
-                rwBuffer, 0, (uint)rwBytes,
+                rwBuffer, 0, rwSize,
                 IntPtr.Zero, 0, 0,
-                IntPtr.Zero, 0, ref noBuffer);
+                rodBuffer, 0, ref rodSize);
 
-            if (status != NoError)
+            if (code != NoError)
             {
-                problem = DescribeReadFailure(status, "RW");
                 return false;
             }
 
-            if (Marshal.ReadByte(rwBuffer) == 0)
-            {
-                // Windows: если сбор не включён, значения в снимке не определены — брать их нельзя.
-                problem = "Сбор статистики TCP-соединения не включён: числа не определены.";
-                return false;
-            }
+            // 2 — «RW не запрашивали»: сбор включён нашим же Set, но прочитать флаг нечем.
+            enabled = rwBuffer != IntPtr.Zero ? Marshal.ReadByte(rwBuffer) : (byte)2;
+            rod = Marshal.PtrToStructure<TcpEstatsPathRod>(rodBuffer);
+            return true;
         }
         finally
         {
-            Marshal.FreeHGlobal(rwBuffer);
-        }
-
-        // Буфер под снимок выделяем с запасом и пробуем два размера: система на разных сборках отвечает
-        // по-разному. Читаем всегда только известные поля v0 — запас не влияет на то, что попадёт в отчёт.
-        int exact = Marshal.SizeOf<TcpEstatsPathRod>();
-        uint failedStatus = NoError;
-
-        foreach (uint size in new[] { (uint)Math.Max(exact * 2, 512), (uint)exact })
-        {
-            IntPtr buffer = Marshal.AllocHGlobal((int)size);
-            try
+            if (rwBuffer != IntPtr.Zero)
             {
-                uint rodSize = size;
-                status = GetPerTcpConnectionEStatsRaw(
-                    ref row, TcpConnectionEstatsPath,
-                    IntPtr.Zero, 0, 0,
-                    IntPtr.Zero, 0, 0,
-                    buffer, 0, ref rodSize);
-
-                if (status == NoError)
-                {
-                    rod = Marshal.PtrToStructure<TcpEstatsPathRod>(buffer);
-                    break;
-                }
-
-                failedStatus = status;
+                Marshal.FreeHGlobal(rwBuffer);
             }
-            finally
-            {
-                Marshal.FreeHGlobal(buffer);
-            }
-        }
 
-        if (status != NoError)
-        {
-            problem = DescribeReadFailure(failedStatus, "ROD");
-            return false;
+            Marshal.FreeHGlobal(rodBuffer);
         }
-
-        return true;
     }
-
-    /// <summary>Отказ чтения называется по коду: «не нашёл соединение» и «не принял буфер» — разные вещи.</summary>
-    private static string DescribeReadFailure(uint status, string part) => status switch
-    {
-        1784 => $"Статистика TCP-соединения не прочитана: система не приняла буфер ({part}), код 1784.",
-        1168 => "Статистика TCP-соединения не прочитана: система не нашла это соединение (код 1168) — оно могло закрыться.",
-        _ => $"Статистика TCP-соединения не прочитана: система вернула код {status}."
-    };
 
     /// <summary>Порт в структурах iphlpapi лежит в младших 16 битах и в сетевом порядке.</summary>
     private static int NetworkPort(uint port) => (int)(((port & 0xFF) << 8) | ((port >> 8) & 0xFF));
