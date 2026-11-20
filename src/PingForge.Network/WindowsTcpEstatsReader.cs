@@ -180,24 +180,54 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
             return false;
         }
 
-        var rw = new TcpEstatsPathRw();
+        // Порядок важен: сначала читаем RW — там лежит EnableCollection, — потом снимок ROD. Буферы
+        // передаём указателями, а не структурами: так видно, какой именно буфер система не приняла,
+        // и код 1784 («NULL при ненулевом размере») не возникает из-за маршалинга одной структуры.
+        int rwBytes = Marshal.SizeOf<TcpEstatsPathRw>();
+        IntPtr rwBuffer = Marshal.AllocHGlobal(rwBytes);
+        try
+        {
+            Marshal.WriteByte(rwBuffer, 0, 0);
+            uint noBuffer = 0;
 
-        // Буфер под снимок выделяем с запасом и пробуем два размера: система на разных сборках
-        // отвечает по-разному, а «Invalid user buffer» (1784) означает, что размер буфера её не устроил.
-        // Читаем всегда только известные поля v0 — запас не влияет на то, что попадёт в отчёт.
+            status = GetPerTcpConnectionEStatsRaw(
+                ref row, TcpConnectionEstatsPath,
+                rwBuffer, 0, (uint)rwBytes,
+                IntPtr.Zero, 0, 0,
+                IntPtr.Zero, 0, ref noBuffer);
+
+            if (status != NoError)
+            {
+                problem = DescribeReadFailure(status, "RW");
+                return false;
+            }
+
+            if (Marshal.ReadByte(rwBuffer) == 0)
+            {
+                // Windows: если сбор не включён, значения в снимке не определены — брать их нельзя.
+                problem = "Сбор статистики TCP-соединения не включён: числа не определены.";
+                return false;
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(rwBuffer);
+        }
+
+        // Буфер под снимок выделяем с запасом и пробуем два размера: система на разных сборках отвечает
+        // по-разному. Читаем всегда только известные поля v0 — запас не влияет на то, что попадёт в отчёт.
         int exact = Marshal.SizeOf<TcpEstatsPathRod>();
-        uint[] sizes = [(uint)Math.Max(exact * 2, 512), (uint)exact];
         uint failedStatus = NoError;
 
-        foreach (uint size in sizes)
+        foreach (uint size in new[] { (uint)Math.Max(exact * 2, 512), (uint)exact })
         {
             IntPtr buffer = Marshal.AllocHGlobal((int)size);
             try
             {
                 uint rodSize = size;
-                status = GetPerTcpConnectionEStats(
+                status = GetPerTcpConnectionEStatsRaw(
                     ref row, TcpConnectionEstatsPath,
-                    ref rw, 0, (uint)Marshal.SizeOf<TcpEstatsPathRw>(),
+                    IntPtr.Zero, 0, 0,
                     IntPtr.Zero, 0, 0,
                     buffer, 0, ref rodSize);
 
@@ -217,21 +247,20 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
 
         if (status != NoError)
         {
-            problem = failedStatus == 1784
-                ? "Статистика TCP-соединения не прочитана: система не приняла буфер снимка (код 1784)."
-                : $"Статистика TCP-соединения не прочитана: система вернула код {status}.";
-            return false;
-        }
-
-        if (rw.EnableCollection == 0)
-        {
-            // Windows: если сбор не включён, значения в снимке не определены — брать их нельзя.
-            problem = "Сбор статистики TCP-соединения не включён: числа не определены.";
+            problem = DescribeReadFailure(failedStatus, "ROD");
             return false;
         }
 
         return true;
     }
+
+    /// <summary>Отказ чтения называется по коду: «не нашёл соединение» и «не принял буфер» — разные вещи.</summary>
+    private static string DescribeReadFailure(uint status, string part) => status switch
+    {
+        1784 => $"Статистика TCP-соединения не прочитана: система не приняла буфер ({part}), код 1784.",
+        1168 => "Статистика TCP-соединения не прочитана: система не нашла это соединение (код 1168) — оно могло закрыться.",
+        _ => $"Статистика TCP-соединения не прочитана: система вернула код {status}."
+    };
 
     /// <summary>Порт в структурах iphlpapi лежит в младших 16 битах и в сетевом порядке.</summary>
     private static int NetworkPort(uint port) => (int)(((port & 0xFF) << 8) | ((port >> 8) & 0xFF));
@@ -327,9 +356,9 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
         IntPtr rod, uint rodVersion, uint rodSize);
 
     [DllImport("iphlpapi.dll", SetLastError = true, EntryPoint = "GetPerTcpConnectionEStats")]
-    private static extern uint GetPerTcpConnectionEStats(
+    private static extern uint GetPerTcpConnectionEStatsRaw(
         ref MibTcpRow row, int estatsType,
-        ref TcpEstatsPathRw rw, uint rwVersion, uint rwSize,
+        IntPtr rw, uint rwVersion, uint rwSize,
         IntPtr ros, uint rosVersion, uint rosSize,
         IntPtr rod, uint rodVersion, ref uint rodSize);
 }
