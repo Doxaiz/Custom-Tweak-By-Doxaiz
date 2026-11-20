@@ -181,18 +181,45 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
         }
 
         var rw = new TcpEstatsPathRw();
-        rod = new TcpEstatsPathRod();
-        uint rodSize = (uint)Marshal.SizeOf<TcpEstatsPathRod>();
 
-        status = GetPerTcpConnectionEStats(
-            ref row, TcpConnectionEstatsPath,
-            ref rw, 0, (uint)Marshal.SizeOf<TcpEstatsPathRw>(),
-            IntPtr.Zero, 0, 0,
-            ref rod, 0, ref rodSize);
+        // Буфер под снимок выделяем с запасом и пробуем два размера: система на разных сборках
+        // отвечает по-разному, а «Invalid user buffer» (1784) означает, что размер буфера её не устроил.
+        // Читаем всегда только известные поля v0 — запас не влияет на то, что попадёт в отчёт.
+        int exact = Marshal.SizeOf<TcpEstatsPathRod>();
+        uint[] sizes = [(uint)Math.Max(exact * 2, 512), (uint)exact];
+        uint failedStatus = NoError;
+
+        foreach (uint size in sizes)
+        {
+            IntPtr buffer = Marshal.AllocHGlobal((int)size);
+            try
+            {
+                uint rodSize = size;
+                status = GetPerTcpConnectionEStats(
+                    ref row, TcpConnectionEstatsPath,
+                    ref rw, 0, (uint)Marshal.SizeOf<TcpEstatsPathRw>(),
+                    IntPtr.Zero, 0, 0,
+                    buffer, 0, ref rodSize);
+
+                if (status == NoError)
+                {
+                    rod = Marshal.PtrToStructure<TcpEstatsPathRod>(buffer);
+                    break;
+                }
+
+                failedStatus = status;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
 
         if (status != NoError)
         {
-            problem = $"Статистика TCP-соединения не прочитана: система вернула код {status}.";
+            problem = failedStatus == 1784
+                ? "Статистика TCP-соединения не прочитана: система не приняла буфер снимка (код 1784)."
+                : $"Статистика TCP-соединения не прочитана: система вернула код {status}.";
             return false;
         }
 
@@ -304,5 +331,5 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
         ref MibTcpRow row, int estatsType,
         ref TcpEstatsPathRw rw, uint rwVersion, uint rwSize,
         IntPtr ros, uint rosVersion, uint rosSize,
-        ref TcpEstatsPathRod rod, uint rodVersion, ref uint rodSize);
+        IntPtr rod, uint rodVersion, ref uint rodSize);
 }
