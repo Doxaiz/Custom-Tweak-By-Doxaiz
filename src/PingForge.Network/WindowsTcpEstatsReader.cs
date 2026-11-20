@@ -18,8 +18,8 @@ namespace PingForge.Network;
 ///   4. если в прочитанной структуре <c>EnableCollection</c> не TRUE, снимок не используется:
 ///      Windows прямо пишет, что тогда значения не определены.
 ///
-/// Числа стека — микросекунды; перевод в миллисекунды в <see cref="TcpEstatsMath"/>, чтобы его
-/// можно было проверить тестом без Windows.
+/// Время снимка пути уже в миллисекундах (микросекунды — только у снимка точной задержки); единица
+/// названа в <see cref="TcpEstatsMath"/>, чтобы её нельзя было перепутать и проверить тестом без Windows.
 ///
 /// Чего здесь нет и почему: потерь и джиттера «средним отклонением» по отдельным замерам. Стек
 /// отдаёт сглаженный разброс RTT (RttVar), а не выборку замеров, поэтому медиану и MAD взять неоткуда;
@@ -96,8 +96,8 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
             result.Add(new LiveTcpConnectionStats(
                 new IPAddress(row.RemoteAddr).ToString(),
                 NetworkPort(row.RemotePort),
-                TcpEstatsMath.MicrosecondsToMilliseconds(rod.SmoothedRtt),
-                TcpEstatsMath.MicrosecondsToMilliseconds(rod.RttVar),
+                TcpEstatsMath.PathMilliseconds(rod.SmoothedRtt),
+                TcpEstatsMath.PathMilliseconds(rod.RttVar),
                 (int)Math.Min(rod.CountRtt, (uint)int.MaxValue),
                 (int)Math.Min(rod.PktsRetrans, (uint)int.MaxValue)));
         }

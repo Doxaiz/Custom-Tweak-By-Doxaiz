@@ -66,12 +66,16 @@ public sealed class LiveTcpEstatsVerdictTests
     }
 
     [Fact]
-    public void Измерения_есть_а_задержки_нет_тоже_поломка()
+    public void Ноль_при_живых_измерениях_это_меньше_миллисекунды()
     {
+        // Снимок пути считает целыми миллисекундами: на быстром канале честный ответ — «меньше 1 мс»,
+        // а не выдуманное число и не ложная поломка.
         LiveTcpEstatsVerdict verdict = LiveTcpEstatsVerdict.Evaluate(
             "1.1.1.1", 443, [Stats(rtt: 0, samples: 12)]);
 
-        Assert.Equal(LiveProbeOutcome.Broken, verdict.Outcome);
+        Assert.True(verdict.Verified);
+        Assert.Contains("меньше 1 мс", verdict.TextRu, StringComparison.Ordinal);
+        Assert.Contains("измерений стека 12", verdict.TextRu, StringComparison.Ordinal);
     }
 
     [Fact]

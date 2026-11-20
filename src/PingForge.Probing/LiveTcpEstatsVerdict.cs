@@ -42,12 +42,23 @@ public sealed record LiveTcpEstatsVerdict(LiveProbeOutcome Outcome, string TextR
                 "включают только администраторы, и система может его не поддерживать.");
         }
 
-        if (match.SmoothedRttMs <= 0 || match.Samples <= 0)
+        if (match.Samples <= 0)
         {
             return new LiveTcpEstatsVerdict(
                 LiveProbeOutcome.Broken,
                 $"{host}:{port}: стек назвал задержку {Milliseconds(match.SmoothedRttMs)} при " +
-                $"{match.Samples} измерениях — это не замер, а подстановка нуля.");
+                "0 измерениях — это не замер, а подстановка нуля.");
+        }
+
+        if (match.SmoothedRttMs <= 0)
+        {
+            // Снимок пути считает время целыми миллисекундами: ноль при живых измерениях значит «меньше
+            // миллисекунды». Подставлять вместо него красивое число нельзя, но и поломкой это не является.
+            return new LiveTcpEstatsVerdict(
+                LiveProbeOutcome.Measured,
+                $"{host}:{port}: задержка меньше 1 мс (стек считает целыми миллисекундами), измерений стека " +
+                $"{match.Samples}, повторных пакетов {match.Retransmissions} — числа взяты у iphlpapi, " +
+                "ни одного пакета не отправлено.");
         }
 
         if (match.SmoothedRttMs > ImplausibleRttMs)

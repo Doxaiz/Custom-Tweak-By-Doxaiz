@@ -101,11 +101,13 @@ public sealed class TcpEstatsLiveFlowTests
     }
 
     [Fact]
-    public void Микросекунды_становятся_миллисекундами()
+    public void Время_пути_уже_в_миллисекундах()
     {
-        Assert.Equal(21.5, TcpEstatsMath.MicrosecondsToMilliseconds(21_500), 3);
-        Assert.Equal(1.234, TcpEstatsMath.MicrosecondsToMilliseconds(1_234), 3);
-        Assert.Equal(0.0, TcpEstatsMath.MicrosecondsToMilliseconds(0), 3);
+        // Живой замер на github.com:80 дал 5 мс в снимке пути. Если бы это были микросекунды,
+        // отчёт показал бы 0,0 мс — то есть занизил бы задержку в тысячу раз.
+        Assert.Equal(5.0, TcpEstatsMath.PathMilliseconds(5), 3);
+        Assert.Equal(21.0, TcpEstatsMath.PathMilliseconds(21), 3);
+        Assert.Equal(0.0, TcpEstatsMath.PathMilliseconds(0), 3);
     }
 
     [Fact]
