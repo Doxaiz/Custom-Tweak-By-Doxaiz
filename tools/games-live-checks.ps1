@@ -84,9 +84,15 @@ foreach ($name in $hosts) {
         $task = $client.ConnectAsync($name, $Port)
         if ($task.Wait(8000) -and $client.Connected) {
             Set-Content -Path $Marker -Value "connected $name $Port" -Encoding ascii
+            # Игровой клиент всё время шлёт данные, и статистика задержки считается только по сегментам,
+            # отправленным после включения сбора. Молчащая розетка дала бы «стек ещё не собрал измерений» —
+            # это свойство стенда, а не игры, поэтому эмулятор тоже шлёт по байту в секунду.
+            $stream = $client.GetStream()
+            $payload = [byte[]](0x00)
             $deadline = (Get-Date).AddSeconds($HoldSeconds)
             while ((Get-Date) -lt $deadline) {
                 if (-not $client.Connected) { break }
+                try { $stream.Write($payload, 0, $payload.Length) } catch { break }
                 Start-Sleep -Seconds 1
             }
             exit 0
@@ -182,7 +188,22 @@ if (-not $mcState.StartsWith('connected')) {
     Write-Host "Поток javaw.exe: $mcState"
     Start-Sleep -Seconds 3
 
-    $result = Invoke-RealtimeCheck 'Minecraft (Java), порт 25565'
+    # Замер повторяется: сбор статистики включается на первом чтении таблицы соединений, и первое окно
+    # может прийти до того, как стек накопил замеры. Три попытки — это то, что сделал бы человек:
+    # остановить и запустить снова. Зачитывается попытка, где задержку дала статистика соединения.
+    $result = $null
+    $tries = 0
+    while ($tries -lt 3) {
+        $tries++
+        $result = Invoke-RealtimeCheck "Minecraft (Java), порт 25565" -Quiet
+        if ($result.Game -eq 'Minecraft (Java)' -and $result.Method -match 'TCP-статистика') { break }
+        Start-Sleep -Seconds 3
+    }
+
+    $summary = "попыток $tries, игра «$($result.Game)», адрес «$($result.Endpoint)», способ «$($result.Method)», exit $($result.Code)"
+    Write-Host "Замер: $summary"
+    Ann 'notice' "G Minecraft: $summary"
+
     if ($result.Game -ne 'Minecraft (Java)') {
         $failures += "Minecraft не назван: игра «$($result.Game)», адрес «$($result.Endpoint)»"
     } elseif ($result.Endpoint -notmatch ':25565$') {
@@ -194,7 +215,7 @@ if (-not $mcState.StartsWith('connected')) {
         $failures += "G iphlpapi на игровом потоке не подтверждён: способ «$($result.Method)»"
     } else {
         Write-Host "Способ замера: $($result.Method)"
-        Ann 'notice' "G Minecraft OK: $($result.Game) $($result.Endpoint); способ — $($result.Method) (iphlpapi читает соединение чужого процесса, пакетов не отправлено)"
+        Ann 'notice' "G Minecraft OK (попыток $tries): $($result.Game) $($result.Endpoint); способ — $($result.Method) (iphlpapi читает соединение чужого процесса, пакетов не отправлено)"
     }
 }
 
