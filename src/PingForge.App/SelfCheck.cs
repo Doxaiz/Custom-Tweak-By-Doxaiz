@@ -7,9 +7,11 @@ using PingForge.App.ViewModels;
 using PingForge.App.Views;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using PingForge.Core.Models;
 using PingForge.Core.Layout;
 using PingForge.Core.Ui;
+using PingForge.Network;
 using PingForge.Network.Windows;
 using PingForge.Orchestration.Realtime;
 using PingForge.Probing;
@@ -84,6 +86,7 @@ internal static class SelfCheck
         CheckLiveTcpFlow(problems);
         CheckUnmeasuredNumbers(problems);
         CheckLiveNetwork(problems);
+        CheckLiveTcpEstats(problems);
         CheckService(problems);
 
         // Если окно построилось, но раскладка или привязки плохи — это тот же отказ, что и «окно не собралось»:
@@ -1129,6 +1132,135 @@ internal static class SelfCheck
         {
             problems.Add($"история сессий (задача J): проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ИСТОРИЯ СЕССИЙ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Живая проверка iphlpapi: статистика уже открытого TCP-соединения. Долг был записан прямо в коде —
+    /// вызов читателя проверен структурно, но ни разу не подтверждён на живом соединении.
+    ///
+    /// Проверка открывает настоящее соединение, шлёт один запрос (стеку нужен трафик, иначе измерений нет),
+    /// включает сбор статистики пути и читает его. Соединение закрывается тут же: настройка сбора живёт
+    /// вместе с соединением, в системе ничего не остаётся.
+    ///
+    /// Нет прав или система не поддерживает сбор — «пропущено» с причиной, названной читателем.
+    /// Стек назвал ноль при нуле измерений — поломка, и она называется.
+    /// </summary>
+    private static void CheckLiveTcpEstats(List<string> problems)
+    {
+        const string Host = "github.com";
+        const int Port = 80;
+
+        try
+        {
+            // Адрес, а не имя: сравнивать прочитанное соединение нужно с тем адресом, куда мы правда
+            // подключились, иначе проверка ничего не докажет.
+            IReadOnlyList<System.Net.IPAddress> addresses = new SystemHostResolver()
+                .ResolveAsync(Host).GetAwaiter().GetResult();
+            System.Net.IPAddress? target = addresses
+                .FirstOrDefault(item => item.AddressFamily == AddressFamily.InterNetwork);
+
+            if (target is null)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. Имя {Host} не разрешилось в IPv4-адрес — " +
+                    "проверять статистику не на чем.");
+                return;
+            }
+
+            string endpoint = target.ToString();
+
+            using var client = new TcpClient();
+            using var connectTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            try
+            {
+                client.ConnectAsync(endpoint, Port, connectTimeout.Token).GetAwaiter().GetResult();
+            }
+            catch (Exception ex) when (ex is SocketException or OperationCanceledException)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. Соединение с {endpoint}:{Port} не установилось " +
+                    $"({ex.GetType().Name}) — проверять статистику не на чем.");
+                return;
+            }
+
+            var reader = new WindowsTcpEstatsReader();
+            var drain = new byte[2048];
+            NetworkStream stream = client.GetStream();
+
+            // Сбор статистики включаем до трафика: стек считает замеры только по данным, прошедшим
+            // при включённом сборе. Первое чтение таблицы как раз и включает его — и больше не трогает,
+            // иначе каждый опрос обнулял бы накопленное и «0 измерений» было бы нашей же виной.
+            reader.ReadEstablishedConnections(Environment.ProcessId);
+
+            if (reader.ProblemRu.Length > 0)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. {endpoint}:{Port}: {reader.ProblemRu}");
+                return;
+            }
+
+            byte[] request = Encoding.ASCII.GetBytes(
+                $"GET / HTTP/1.1\r\nHost: {Host}\r\nConnection: keep-alive\r\n\r\n");
+
+            LiveTcpEstatsVerdict verdict = LiveTcpEstatsVerdict.Evaluate(
+                endpoint, Port, [], "соединение ещё не попало в таблицу");
+
+            for (int attempt = 0; attempt < 15; attempt++)
+            {
+                // Обмен по соединению: без трафика при включённом сборе стек не даст ни одного замера.
+                // Ответ обязательно забираем — иначе окно переполняется и сервер отвечает сбросом.
+                if (attempt < 2)
+                {
+                    try
+                    {
+                        stream.Write(request, 0, request.Length);
+                        Thread.Sleep(400);
+
+                        while (stream.DataAvailable)
+                        {
+                            stream.Read(drain, 0, drain.Length);
+                        }
+                    }
+                    catch (IOException)
+                    {
+                        // Сервер закрыл соединение — ниже об этом скажет вердикт, а не догадка.
+                    }
+                }
+
+                IReadOnlyList<LiveTcpConnectionStats> connections = reader.ReadEstablishedConnections(Environment.ProcessId);
+                verdict = LiveTcpEstatsVerdict.Evaluate(endpoint, Port, connections, reader.ProblemRu);
+
+                if (verdict.Verified)
+                {
+                    break;
+                }
+
+                Thread.Sleep(300);
+            }
+
+            if (verdict.Verified)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (iphlpapi): {verdict.TextRu}");
+                return;
+            }
+
+            if (verdict.Skipped)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. {verdict.TextRu}");
+                return;
+            }
+
+            problems.Add($"живой TCP-замер через iphlpapi: {verdict.TextRu}");
+            StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: НЕ работает — {verdict.TextRu}");
+        }
+        catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException
+            or NotSupportedException or TimeoutException or OperationCanceledException)
+        {
+            StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. Сеть не дала ответа: {ex.GetType().Name}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"живой TCP-замер через iphlpapi: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 

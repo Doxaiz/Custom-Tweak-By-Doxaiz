@@ -18,8 +18,8 @@ namespace PingForge.Network;
 ///   4. если в прочитанной структуре <c>EnableCollection</c> не TRUE, снимок не используется:
 ///      Windows прямо пишет, что тогда значения не определены.
 ///
-/// Числа стека — микросекунды; перевод в миллисекунды в <see cref="TcpEstatsMath"/>, чтобы его
-/// можно было проверить тестом без Windows.
+/// Время снимка пути уже в миллисекундах (микросекунды — только у снимка точной задержки); единица
+/// названа в <see cref="TcpEstatsMath"/>, чтобы её нельзя было перепутать и проверить тестом без Windows.
 ///
 /// Чего здесь нет и почему: потерь и джиттера «средним отклонением» по отдельным замерам. Стек
 /// отдаёт сглаженный разброс RTT (RttVar), а не выборку замеров, поэтому медиану и MAD взять неоткуда;
@@ -35,6 +35,10 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
     private const uint NoError = 0;
     private const uint ErrorInsufficientBuffer = 122;
     private const uint MibTcpStateEstablished = 5;
+
+    // Соединения, на которых сбор уже включён. Повторный Set сбрасывает накопленные замеры, поэтому
+    // включаем один раз и дальше только читаем — иначе «0 измерений» окажется нашей же виной.
+    private readonly HashSet<string> _collectionEnabled = [];
 
     public string ProblemRu { get; private set; } = string.Empty;
 
@@ -92,8 +96,8 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
             result.Add(new LiveTcpConnectionStats(
                 new IPAddress(row.RemoteAddr).ToString(),
                 NetworkPort(row.RemotePort),
-                TcpEstatsMath.MicrosecondsToMilliseconds(rod.SmoothedRtt),
-                TcpEstatsMath.MicrosecondsToMilliseconds(rod.RttVar),
+                TcpEstatsMath.PathMilliseconds(rod.SmoothedRtt),
+                TcpEstatsMath.PathMilliseconds(rod.RttVar),
                 (int)Math.Min(rod.CountRtt, (uint)int.MaxValue),
                 (int)Math.Min(rod.PktsRetrans, (uint)int.MaxValue)));
         }
@@ -160,51 +164,86 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
         }
     }
 
-    private static bool TryReadPathStats(ref MibTcpRow row, out TcpEstatsPathRod rod, out string? problem)
+    private bool TryReadPathStats(ref MibTcpRow row, out TcpEstatsPathRod rod, out string? problem)
     {
         rod = default;
         problem = null;
 
-        var enable = new TcpEstatsPathRw { EnableCollection = 1 };
-        uint status = SetPerTcpConnectionEStats(
-            ref row, TcpConnectionEstatsPath,
-            ref enable, 0, (uint)Marshal.SizeOf<TcpEstatsPathRw>(),
-            IntPtr.Zero, 0, 0,
-            IntPtr.Zero, 0, 0);
+        // Сбор включаем сами (без этого Windows прямо говорит, что значения не определены), но только
+        // один раз на соединение: повторный Set обнуляет накопленные замеры.
+        string key = $"{row.LocalAddr}:{row.LocalPort}-{row.RemoteAddr}:{row.RemotePort}";
+        uint status = NoError;
+
+        if (!_collectionEnabled.Contains(key))
+        {
+            var enable = new TcpEstatsPathRw { EnableCollection = 1 };
+            status = SetPerTcpConnectionEStats(
+                ref row, TcpConnectionEstatsPath,
+                ref enable, 0, (uint)Marshal.SizeOf<TcpEstatsPathRw>(),
+                IntPtr.Zero, 0, 0,
+                IntPtr.Zero, 0, 0);
+
+            if (status != NoError)
+            {
+                problem = status == 5
+                    ? "Сбор статистики TCP-соединения запрещён: нужны права администратора."
+                    : $"Включить сбор статистики TCP-соединения не удалось: система вернула код {status}.";
+                return false;
+            }
+
+            _collectionEnabled.Add(key);
+        }
+
+        int rwBytes = Marshal.SizeOf<TcpEstatsPathRw>();
+        int rodBytes = Marshal.SizeOf<TcpEstatsPathRod>();
+        IntPtr rwBuffer = Marshal.AllocHGlobal(rwBytes);
+        IntPtr rodBuffer = Marshal.AllocHGlobal(rodBytes);
+        byte enabled;
+        TcpEstatsPathRod snapshot;
+
+        try
+        {
+            Marshal.WriteByte(rwBuffer, 0, 0);
+
+            status = GetPerTcpConnectionEStatsRaw(
+                ref row, TcpConnectionEstatsPath,
+                rwBuffer, 0, (uint)rwBytes,
+                IntPtr.Zero, 0, 0,
+                rodBuffer, 0, (uint)rodBytes);
+
+            enabled = status == NoError ? Marshal.ReadByte(rwBuffer) : (byte)0;
+            snapshot = status == NoError ? Marshal.PtrToStructure<TcpEstatsPathRod>(rodBuffer) : default;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(rwBuffer);
+            Marshal.FreeHGlobal(rodBuffer);
+        }
 
         if (status != NoError)
         {
-            problem = status == 5
-                ? "Сбор статистики TCP-соединения запрещён: нужны права администратора."
-                : $"Включить сбор статистики TCP-соединения не удалось: система вернула код {status}.";
+            problem = DescribeReadFailure(status);
             return false;
         }
 
-        var rw = new TcpEstatsPathRw();
-        rod = new TcpEstatsPathRod();
-        uint rodSize = (uint)Marshal.SizeOf<TcpEstatsPathRod>();
-
-        status = GetPerTcpConnectionEStats(
-            ref row, TcpConnectionEstatsPath,
-            ref rw, 0, (uint)Marshal.SizeOf<TcpEstatsPathRw>(),
-            IntPtr.Zero, 0, 0,
-            ref rod, 0, ref rodSize);
-
-        if (status != NoError)
+        if (enabled == 0)
         {
-            problem = $"Статистика TCP-соединения не прочитана: система вернула код {status}.";
-            return false;
-        }
-
-        if (rw.EnableCollection == 0)
-        {
-            // Windows: если сбор не включён, значения в снимке не определены — брать их нельзя.
             problem = "Сбор статистики TCP-соединения не включён: числа не определены.";
             return false;
         }
 
+        rod = snapshot;
         return true;
     }
+
+    /// <summary>Отказ чтения называется по коду: «не нашёл соединение» и «не принял буфер» — разные вещи.</summary>
+    private static string DescribeReadFailure(uint status) => status switch
+    {
+        1168 => "Статистика TCP-соединения не прочитана: система не нашла это соединение (код 1168) — оно могло закрыться.",
+        1784 => "Статистика TCP-соединения не прочитана: система не приняла буфер (код 1784).",
+        5 => "Статистика TCP-соединения не прочитана: нет прав администратора (код 5).",
+        _ => $"Статистика TCP-соединения не прочитана: система вернула код {status}."
+    };
 
     /// <summary>Порт в структурах iphlpapi лежит в младших 16 битах и в сетевом порядке.</summary>
     private static int NetworkPort(uint port) => (int)(((port & 0xFF) << 8) | ((port >> 8) & 0xFF));
@@ -299,10 +338,12 @@ public sealed class WindowsTcpEstatsReader : ITcpConnectionStatsReader
         IntPtr ros, uint rosVersion, uint rosSize,
         IntPtr rod, uint rodVersion, uint rodSize);
 
+    // Размеры буферов у этой функции передаются значением (ULONG), а не указателем: если передать
+    // указатель, iphlpapi увидит в нём длину в миллиарды байт и ответит «Invalid user buffer» (1784).
     [DllImport("iphlpapi.dll", SetLastError = true, EntryPoint = "GetPerTcpConnectionEStats")]
-    private static extern uint GetPerTcpConnectionEStats(
+    private static extern uint GetPerTcpConnectionEStatsRaw(
         ref MibTcpRow row, int estatsType,
-        ref TcpEstatsPathRw rw, uint rwVersion, uint rwSize,
+        IntPtr rw, uint rwVersion, uint rwSize,
         IntPtr ros, uint rosVersion, uint rosSize,
-        ref TcpEstatsPathRod rod, uint rodVersion, ref uint rodSize);
+        IntPtr rod, uint rodVersion, uint rodSize);
 }

@@ -36,10 +36,15 @@ public interface ITcpConnectionStatsReader
     IReadOnlyList<LiveTcpConnectionStats> ReadEstablishedConnections(int processId);
 }
 
-/// <summary>Перевод чисел сетевого стека в миллисекунды — в одном месте, чтобы это можно было проверить тестом.</summary>
+/// <summary>
+/// Единицы чисел сетевого стека — в одном месте, чтобы это можно было проверить тестом.
+///
+/// Снимок пути (<c>TCP_ESTATS_PATH_ROD_v0</c>) отдаёт время в миллисекундах; микросекунды — только
+/// у снимка точной задержки (<c>TCP_ESTATS_FINE_RTT_ROD_v0</c>). Здесь читается снимок пути, поэтому
+/// перевода нет: деление на тысячу занижало бы задержку в тысячу раз и показывало 0,0 мс на живой сети.
+/// </summary>
 public static class TcpEstatsMath
 {
-    /// <summary>Стек Windows отдаёт микросекунды; в отчёте миллисекунды.</summary>
-    public static double MicrosecondsToMilliseconds(uint microseconds) =>
-        Math.Round(microseconds / 1000.0, 3);
+    /// <summary>Время пути уже в миллисекундах: единица названа явно, чтобы её не перепутали с точной задержкой.</summary>
+    public static double PathMilliseconds(uint milliseconds) => milliseconds;
 }
