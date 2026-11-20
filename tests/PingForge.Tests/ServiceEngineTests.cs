@@ -222,7 +222,8 @@ public sealed class ServiceEngineTests : IDisposable
         LiveEngineOperations ops = Build(realtime: optimizer);
         EngineOperationResult result = await ops.StatusAsync();
 
-        using JsonDocument document = JsonDocument.Parse(result.DataJson);
+        Assert.False(string.IsNullOrEmpty(result.DataJson));
+        using JsonDocument document = JsonDocument.Parse(result.DataJson!);
         JsonElement root = document.RootElement;
 
         Assert.Equal(40.0, root.GetProperty("improvementMs").GetDouble(), 3);
@@ -255,7 +256,8 @@ public sealed class ServiceEngineTests : IDisposable
         LiveEngineOperations ops = Build(realtime: optimizer);
         EngineOperationResult result = await ops.StatusAsync();
 
-        using JsonDocument document = JsonDocument.Parse(result.DataJson);
+        Assert.False(string.IsNullOrEmpty(result.DataJson));
+        using JsonDocument document = JsonDocument.Parse(result.DataJson!);
         JsonElement root = document.RootElement;
 
         // Поле, которого нет, окно читает как «не измерено»: ноль в провод не попадает вовсе.
@@ -263,6 +265,61 @@ public sealed class ServiceEngineTests : IDisposable
         Assert.False(root.TryGetProperty("currentLossPercent", out _));
         Assert.DoesNotContain("\"currentJitterMs\"", result.DataJson, StringComparison.Ordinal);
         Assert.DoesNotContain("\"currentLossPercent\"", result.DataJson, StringComparison.Ordinal);
+    }
+
+    // ── способ замера в ответе живой оптимизации ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task Живая_оптимизация_называет_способ_замера_вместе_с_числом()
+    {
+        // Число без способа ничего не доказывает: «12 мс» от статистики соединения и «12 мс» от проб —
+        // разные утверждения. Ответ службы обязан называть способ, иначе окно и проверка догадываются.
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "javaw.exe",
+                GameTitleRu: "Minecraft (Java)",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 25565,
+                Transport: "TCP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(
+                new PathMeasurement(true, 120, 2, null, 12, "Замер живого TCP-потока игры.", Method: ProbeMethodUsed.LiveTcpEstats),
+                new PathMeasurement(true, 96, 2, null, 12, "Замер живого TCP-потока игры.", Method: ProbeMethodUsed.LiveTcpEstats)),
+            new NoopActionRunner());
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+        EngineOperationResult started = await ops.SetRealtimeAsync(start: true);
+
+        Assert.Contains("\"methodRu\":\"живой поток игры (TCP-статистика)\"", started.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"baselineMethodRu\":\"живой поток игры (TCP-статистика)\"", started.DataJson, StringComparison.Ordinal);
+
+        EngineOperationResult stopped = await ops.SetRealtimeAsync(start: false);
+
+        Assert.Contains("\"methodRu\":\"живой поток игры (TCP-статистика)\"", stopped.DataJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Без_замера_способ_не_подставляется()
+    {
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "javaw.exe",
+                GameTitleRu: "Minecraft (Java)",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 25565,
+                Transport: "TCP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(PathMeasurement.Unmeasurable("поток игры пропал")),
+            new NoopActionRunner());
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+        EngineOperationResult result = await ops.SetRealtimeAsync(start: true);
+
+        // Поля нет вовсе: «способ замера не записан» — это не способ, и придумывать его нельзя.
+        Assert.DoesNotContain("\"methodRu\"", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"baselineMethodRu\"", result.DataJson, StringComparison.Ordinal);
     }
 
     private sealed class SingleGameWatcher(GameFlowInfo flow) : IGameFlowWatcher

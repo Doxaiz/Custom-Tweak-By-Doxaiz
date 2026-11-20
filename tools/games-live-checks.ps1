@@ -84,6 +84,10 @@ foreach ($name in $hosts) {
         $task = $client.ConnectAsync($name, $Port)
         if ($task.Wait(8000) -and $client.Connected) {
             Set-Content -Path $Marker -Value "connected $name $Port" -Encoding ascii
+            # Соединение держится молча: здесь проверяется НАЗЫВАНИЕ игры по живому потоку, а не источник
+            # числа. Данные в эту розетку слать нельзя — сервер закрывает соединение, и поток исчезает
+            # раньше, чем служба его увидит. Источник чисел на соединении чужого процесса проверяется
+            # отдельно, в самопроверке: «ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi)».
             $deadline = (Get-Date).AddSeconds($HoldSeconds)
             while ((Get-Date) -lt $deadline) {
                 if (-not $client.Connected) { break }
@@ -158,7 +162,12 @@ function Invoke-RealtimeCheck([string]$title, [switch]$Quiet) {
     $endpoint = Read-Field $startJson 'endpoint'
     if ([string]::IsNullOrWhiteSpace($endpoint)) { $endpoint = Read-Field $stopJson 'endpoint' }
 
-    return @{ Code = $code; Output = $out; Game = $game; Endpoint = $endpoint }
+    # Способ замера: служба называет его рядом с числом. Без этой строки нельзя понять, откуда взялась
+    # задержка — из статистики соединения (ни одного лишнего пакета) или из проб сверх трафика игры.
+    $method = Read-Field $startJson 'methodRu'
+    if ([string]::IsNullOrWhiteSpace($method)) { $method = Read-Field $stopJson 'methodRu' }
+
+    return @{ Code = $code; Output = $out; Game = $game; Endpoint = $endpoint; Method = $method }
 }
 
 # ── 1. Minecraft (Java): настоящий TCP-поток на 25565 ─────────────────────────────────────────
@@ -177,13 +186,34 @@ if (-not $mcState.StartsWith('connected')) {
     Write-Host "Поток javaw.exe: $mcState"
     Start-Sleep -Seconds 3
 
-    $result = Invoke-RealtimeCheck 'Minecraft (Java), порт 25565'
+    # Замер повторяется: сбор статистики включается на первом чтении таблицы соединений, и первое окно
+    # может прийти до того, как стек накопил замеры. Три попытки — это то, что сделал бы человек:
+    # остановить и запустить снова. Зачитывается попытка, где задержку дала статистика соединения.
+    $result = $null
+    $tries = 0
+    while ($tries -lt 3) {
+        $tries++
+        $result = Invoke-RealtimeCheck "Minecraft (Java), порт 25565" -Quiet
+        if ($result.Game -eq 'Minecraft (Java)' -and $result.Method -match 'TCP-статистика') { break }
+        Start-Sleep -Seconds 3
+    }
+
+    $summary = "попыток $tries, игра «$($result.Game)», адрес «$($result.Endpoint)», способ «$($result.Method)», exit $($result.Code)"
+    Write-Host "Замер: $summary"
+    Ann 'notice' "G Minecraft: $summary"
+
     if ($result.Game -ne 'Minecraft (Java)') {
         $failures += "Minecraft не назван: игра «$($result.Game)», адрес «$($result.Endpoint)»"
     } elseif ($result.Endpoint -notmatch ':25565$') {
         $failures += "Minecraft назван, но адрес не тот: «$($result.Endpoint)» вместо порта 25565"
+    } elseif ($result.Method -notmatch 'TCP-статистика') {
+        # Число дали пробы: у молчащего эмулятора это честно — сетевой стек считает задержку только по
+        # отправленным сегментам. Здесь проверяется называние игры и адреса; источник чисел на соединении
+        # чужого процесса проверяется в самопроверке, и там он назван отдельной строкой.
+        Ann 'warning' "G Minecraft: игра и адрес названы, число дали пробы («$($result.Method)») — источник чисел проверяется в самопроверке"
     } else {
-        Ann 'notice' "G Minecraft OK: $($result.Game) $($result.Endpoint)"
+        Write-Host "Способ замера: $($result.Method)"
+        Ann 'notice' "G Minecraft OK (попыток $tries): $($result.Game) $($result.Endpoint); способ — $($result.Method) (iphlpapi читает соединение чужого процесса, пакетов не отправлено)"
     }
 }
 
