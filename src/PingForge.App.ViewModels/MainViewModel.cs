@@ -38,6 +38,9 @@ public sealed class MainViewModel : ObservableObject
     private double? _baselineRttMs;
     private double? _currentRttMs;
     private double? _improvementMs;
+    private double? _floorRttMs;
+    private double? _currentJitterMs;
+    private double? _currentLossPercent;
     private bool _isOptimizing;
     private bool _hasRights;
     private string? _noticeTitleRu;
@@ -243,6 +246,25 @@ public sealed class MainViewModel : ObservableObject
         private set => Set(ref _improvementMs, value);
     }
 
+    /// <summary>Лучший замер сессии — «физический предел пути». null — ещё не измерено, а не ноль.</summary>
+    public double? FloorRttMs
+    {
+        get => _floorRttMs;
+        private set => Set(ref _floorRttMs, value);
+    }
+
+    public double? CurrentJitterMs
+    {
+        get => _currentJitterMs;
+        private set => Set(ref _currentJitterMs, value);
+    }
+
+    public double? CurrentLossPercent
+    {
+        get => _currentLossPercent;
+        private set => Set(ref _currentLossPercent, value);
+    }
+
     /// <summary>
     /// Адрес игрового сервера для трассы «Путь до сервера»: отдаётся только при живой сессии.
     /// Оптимизация остановлена — адрес неизвестен, и трасса честно скажет «сначала запустите игру».
@@ -276,7 +298,31 @@ public sealed class MainViewModel : ObservableObject
     public string RttLineRu => BaselineRttMs is null || CurrentRttMs is null
         ? "Задержка: не измерена"
         : $"Задержка: было {BaselineRttMs:0.#} мс, сейчас {CurrentRttMs:0.#} мс" +
-          (ImprovementMs is > 0.5 ? $", стало лучше на {ImprovementMs:0.#} мс" : ", заметного выигрыша нет");
+          (ImprovementMs is > 0.5 ? $", стало лучше на {ImprovementMs:0.#} мс" : ", заметного выигрыша нет") +
+          NumbersTailRu;
+
+    /// <summary>
+    /// Разброс, потери и предел пути словами. Неизмеренное называется «не измерено»: подставлять
+    /// ноль значило бы выдать отсутствие замера за идеальную сеть.
+    /// </summary>
+    private string NumbersTailRu
+    {
+        get
+        {
+            var parts = new List<string>
+            {
+                CurrentJitterMs is { } jitter ? $"разброс {jitter:0.#} мс" : "разброс не измерен",
+                CurrentLossPercent is { } loss ? $"потери {loss:0.#} %" : "потери не измерены"
+            };
+
+            if (FloorRttMs is { } floor)
+            {
+                parts.Add($"лучший замер {floor:0} мс");
+            }
+
+            return " · " + string.Join(", ", parts);
+        }
+    }
 
     /// <summary>
     /// Нажатие большой кнопки. Запуск или остановка — решается по текущему состоянию,
@@ -464,6 +510,9 @@ public sealed class MainViewModel : ObservableObject
             BaselineRttMs = ReadNumber(root, "baselineRttMs");
             CurrentRttMs = ReadNumber(root, "currentRttMs");
             ImprovementMs = ReadNumber(root, "improvementMs");
+            FloorRttMs = ReadNumber(root, "floorRttMs");
+            CurrentJitterMs = ReadNumber(root, "currentJitterMs");
+            CurrentLossPercent = ReadNumber(root, "currentLossPercent");
 
             if (root.TryGetProperty("qualityLabelRu", out System.Text.Json.JsonElement quality) && quality.ValueKind == System.Text.Json.JsonValueKind.String)
             {

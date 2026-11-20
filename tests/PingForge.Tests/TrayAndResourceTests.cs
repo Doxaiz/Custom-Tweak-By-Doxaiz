@@ -15,16 +15,19 @@ public sealed class TrayAndResourceTests
         RealtimeOptimizationState state,
         double? currentRttMs = null,
         double? baselineRttMs = null,
-        double? improvementMs = null) => new(
+        double? improvementMs = null,
+        double? floorRttMs = null,
+        double? currentJitterMs = null,
+        double? currentLossPercent = null) => new(
         State: state,
         StatusRu: "тест",
         GameTitleRu: "Fortnite",
         Endpoint: "3.4.5.6:9000",
         BaselineRttMs: baselineRttMs,
         CurrentRttMs: currentRttMs,
-        FloorRttMs: null,
-        CurrentJitterMs: null,
-        CurrentLossPercent: null,
+        FloorRttMs: floorRttMs,
+        CurrentJitterMs: currentJitterMs,
+        CurrentLossPercent: currentLossPercent,
         ImprovementMs: improvementMs,
         QualityLabelRu: "тест",
         AppliedActions: Array.Empty<OptimizationActionDescriptor>(),
@@ -132,9 +135,39 @@ public sealed class TrayAndResourceTests
     }
 
     [Fact]
+    public void Меню_трея_называет_разброс_и_потери_а_неизмеренное_не_делает_нулём()
+    {
+        var measured = TrayMenuBuilder.Build(
+            Snapshot(RealtimeOptimizationState.ActiveMonitoring, currentRttMs: 58, currentJitterMs: 3.1, currentLossPercent: 0),
+            true, 0);
+
+        Assert.Contains("разброс 3.1 мс", measured[0].TooltipRu, StringComparison.Ordinal);
+        Assert.Contains("потери 0 %", measured[0].TooltipRu, StringComparison.Ordinal);
+
+        var unknown = TrayMenuBuilder.Build(
+            Snapshot(RealtimeOptimizationState.ActiveMonitoring, currentRttMs: 58),
+            true, 0);
+
+        Assert.Contains("разброс не измерен", unknown[0].TooltipRu, StringComparison.Ordinal);
+        Assert.Contains("потери не измерены", unknown[0].TooltipRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("разброс 0", unknown[0].TooltipRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("потери 0", unknown[0].TooltipRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Текст_у_значка_не_показывает_ноль_вместо_неизмеренного()
+    {
+        string tooltip = TrayMenuBuilder.TooltipFor(
+            Snapshot(RealtimeOptimizationState.ActiveMonitoring, currentRttMs: 58, currentJitterMs: null, currentLossPercent: null));
+
+        Assert.Contains("пинг 58 мс", tooltip, StringComparison.Ordinal);
+        Assert.DoesNotContain("разброс 0", tooltip, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Когда_оптимизация_не_запущена_первым_пунктом_идёт_запуск()
     {
-        var menu = TrayMenuBuilder.Build(Snapshot(RealtimeOptimizationState.Idle), isAdministrator: true, revertableChangeCount: 0);
+        var menu = TrayMenuBuilder.Build(Snapshot(RealtimeOptimizationState.Idle), true, 0);
 
         Assert.Equal(TrayCommand.StartOptimization, menu[0].Command);
         Assert.True(menu[0].IsEnabled);
@@ -157,7 +190,7 @@ public sealed class TrayAndResourceTests
     public void Пока_идёт_поиск_игры_запуск_из_трея_заблокирован_чтобы_не_запускать_дважды()
     {
         var menu = TrayMenuBuilder.Build(Snapshot(RealtimeOptimizationState.FindingGame),
-            isAdministrator: true, revertableChangeCount: 0);
+            true, 0);
 
         Assert.False(menu.Single(m => m.Command == TrayCommand.StartOptimization).IsEnabled);
     }

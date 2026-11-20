@@ -1,3 +1,4 @@
+using System.Text.Json;
 using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
 using PingForge.Data;
@@ -190,6 +191,78 @@ public sealed class ServiceEngineTests : IDisposable
         Assert.DoesNotContain("\"rttMedianMs\":0,", result.DataJson, StringComparison.Ordinal);
         Assert.DoesNotContain("\"rttMedianMs\":null", result.DataJson, StringComparison.Ordinal);
         Assert.DoesNotContain("\"jitterMadMs\":0,", result.DataJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Статус_отдаёт_окну_выигрыш_разброс_потери_и_предел_пути()
+    {
+        // Раньше окно получало только «до» и «сейчас»: выигрыш, разброс, потери и предел пути
+        // оставались внутри снапшота службы, и окно честно писало «заметного выигрыша нет»
+        // даже тогда, когда выигрыш был измерен.
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "fortniteclient-win64-shipping.exe",
+                GameTitleRu: "Fortnite",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 3074,
+                Transport: "UDP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (пассивные UDP-метки)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (пассивные UDP-метки)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (пассивные UDP-метки)."),
+                new PathMeasurement(true, 80, 2, 0, 12, "Замер живого потока игры (пассивные UDP-метки)."),
+                new PathMeasurement(true, 80, 2, 0, 12, "Замер живого потока игры (пассивные UDP-метки).")),
+            new NoopActionRunner());
+
+        await optimizer.StartAsync();
+        await optimizer.TickOnceAsync();
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+        EngineOperationResult result = await ops.StatusAsync();
+
+        using JsonDocument document = JsonDocument.Parse(result.DataJson);
+        JsonElement root = document.RootElement;
+
+        Assert.Equal(40.0, root.GetProperty("improvementMs").GetDouble(), 3);
+        Assert.Equal(80.0, root.GetProperty("floorRttMs").GetDouble(), 3);
+        Assert.Equal(2.0, root.GetProperty("currentJitterMs").GetDouble(), 3);
+        Assert.Equal(0.0, root.GetProperty("currentLossPercent").GetDouble(), 3);
+    }
+
+    [Fact]
+    public async Task Неизмеренные_разброс_и_потери_не_уходят_окну_вовсе_а_не_нулём()
+    {
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "fortniteclient-win64-shipping.exe",
+                GameTitleRu: "Fortnite",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 3074,
+                Transport: "UDP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 80, null, null, 12, "Замер живого потока игры (статистика TCP-соединения).")),
+            new NoopActionRunner());
+
+        await optimizer.StartAsync();
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+        EngineOperationResult result = await ops.StatusAsync();
+
+        using JsonDocument document = JsonDocument.Parse(result.DataJson);
+        JsonElement root = document.RootElement;
+
+        // Поле, которого нет, окно читает как «не измерено»: ноль в провод не попадает вовсе.
+        Assert.False(root.TryGetProperty("currentJitterMs", out _));
+        Assert.False(root.TryGetProperty("currentLossPercent", out _));
+        Assert.DoesNotContain("\"currentJitterMs\"", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"currentLossPercent\"", result.DataJson, StringComparison.Ordinal);
     }
 
     private sealed class SingleGameWatcher(GameFlowInfo flow) : IGameFlowWatcher
