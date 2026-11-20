@@ -69,6 +69,14 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // Служебный режим дочернего процесса: подержать настоящее TCP-соединение, пока родитель читает
+        // его статистику. Проверяется именно то, что делает служба, — чтение потока ЧУЖОГО процесса.
+        if (PingForge.Probing.HoldTcpRequest.TryParse(e.Args, out PingForge.Probing.HoldTcpRequest? hold))
+        {
+            Shutdown(HoldTcpRunner.Run(hold!));
+            return;
+        }
+
         SelfCheckMode = HasArgument(e.Args, "--self-check");
         QuietMode = HasArgument(e.Args, "--quiet");
         CrashGuard.Silent = SelfCheckMode || QuietMode;

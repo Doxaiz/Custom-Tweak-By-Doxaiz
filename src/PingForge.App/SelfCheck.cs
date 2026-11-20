@@ -87,6 +87,7 @@ internal static class SelfCheck
         CheckUnmeasuredNumbers(problems);
         CheckLiveNetwork(problems);
         CheckLiveTcpEstats(problems);
+        CheckLiveTcpEstatsForeignProcess(problems);
         CheckService(problems);
 
         // Если окно построилось, но раскладка или привязки плохи — это тот же отказ, что и «окно не собралось»:
@@ -1265,6 +1266,126 @@ internal static class SelfCheck
         {
             problems.Add($"живой TCP-замер через iphlpapi: проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Живой замер по соединению ЧУЖОГО процесса. Служба читает статистику не своего соединения, а
+    /// соединения найденной игры, — и это единственный способ проверить такой путь: дочерний процесс
+    /// держит настоящее TCP-соединение с настоящим сервером и шлёт данные, а мы читаем статистику по
+    /// таблице всех процессов (номер 0) и убеждаемся, что числа пришли.
+    ///
+    /// Своего соединения у проверки нет: если числа появились, их дал чужой процесс, а не мы сами.
+    /// </summary>
+    private static void CheckLiveTcpEstatsForeignProcess(List<string> problems)
+    {
+        const string Host = "github.com";
+        const int Port = 80;
+        const int Seconds = 20;
+
+        try
+        {
+            string? exe = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(exe))
+            {
+                StartupLog.Note("ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): пропущен. Путь к программе не известен — " +
+                    "запускать дочерний процесс нечем.");
+                return;
+            }
+
+            // Адрес разрешает родитель и передаёт дочернему процессу числом: иначе два процесса могут
+            // попасть на разные адреса одного имени, и сравнение ничего не докажет.
+            IReadOnlyList<System.Net.IPAddress> addresses = new SystemHostResolver()
+                .ResolveAsync(Host).GetAwaiter().GetResult();
+            System.Net.IPAddress? target = addresses
+                .FirstOrDefault(item => item.AddressFamily == AddressFamily.InterNetwork);
+
+            if (target is null)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): пропущен. Имя {Host} не разрешилось " +
+                    "в IPv4-адрес — проверять не на чем.");
+                return;
+            }
+
+            string endpoint = target.ToString();
+
+            var start = new System.Diagnostics.ProcessStartInfo(exe)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            start.ArgumentList.Add(PingForge.Probing.HoldTcpRequest.Switch);
+            start.ArgumentList.Add(endpoint);
+            start.ArgumentList.Add(Port.ToString());
+            start.ArgumentList.Add(Seconds.ToString());
+
+            using System.Diagnostics.Process? child = System.Diagnostics.Process.Start(start);
+            if (child is null)
+            {
+                StartupLog.Note("ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): пропущен. Дочерний процесс не запустился.");
+                return;
+            }
+
+            try
+            {
+                var reader = new WindowsTcpEstatsReader();
+                LiveTcpEstatsVerdict verdict = LiveTcpEstatsVerdict.Evaluate(
+                    endpoint, Port, [], "чужой процесс ещё не открыл соединение");
+
+                for (int attempt = 0; attempt < 20; attempt++)
+                {
+                    // Номер 0 — все процессы: так служба и ищет соединение игры, не зная её номера.
+                    IReadOnlyList<LiveTcpConnectionStats> connections = reader.ReadEstablishedConnections(0);
+                    verdict = LiveTcpEstatsVerdict.Evaluate(endpoint, Port, connections, reader.ProblemRu);
+
+                    if (verdict.Verified)
+                    {
+                        break;
+                    }
+
+                    Thread.Sleep(300);
+                }
+
+                if (verdict.Verified)
+                {
+                    StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): {verdict.TextRu} " +
+                        $"Соединение держит другая программа (номер {child.Id}), а не самопроверка.");
+                    return;
+                }
+
+                if (verdict.Skipped)
+                {
+                    StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): пропущен. {verdict.TextRu}");
+                    return;
+                }
+
+                problems.Add($"живой TCP-замер по чужому процессу через iphlpapi: {verdict.TextRu}");
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): НЕ работает — {verdict.TextRu}");
+            }
+            finally
+            {
+                try
+                {
+                    if (!child.HasExited)
+                    {
+                        child.Kill(entireProcessTree: true);
+                    }
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    // Дочерний процесс уже вышел — добивать нечего.
+                }
+            }
+        }
+        catch (Exception ex) when (ex is SocketException or System.ComponentModel.Win32Exception
+            or PlatformNotSupportedException or NotSupportedException or OperationCanceledException)
+        {
+            StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): пропущен. {ex.GetType().Name}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"живой TCP-замер по чужому процессу через iphlpapi: проверка упала ({ex.GetType().Name}: {ex.Message})");
+            StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi): НЕ работает — {ex.GetType().Name}: {ex.Message}");
         }
     }
 

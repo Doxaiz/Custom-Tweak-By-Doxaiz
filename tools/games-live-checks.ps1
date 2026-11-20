@@ -84,15 +84,13 @@ foreach ($name in $hosts) {
         $task = $client.ConnectAsync($name, $Port)
         if ($task.Wait(8000) -and $client.Connected) {
             Set-Content -Path $Marker -Value "connected $name $Port" -Encoding ascii
-            # Игровой клиент всё время шлёт данные, и статистика задержки считается только по сегментам,
-            # отправленным после включения сбора. Молчащая розетка дала бы «стек ещё не собрал измерений» —
-            # это свойство стенда, а не игры, поэтому эмулятор тоже шлёт по байту в секунду.
-            $stream = $client.GetStream()
-            $payload = [byte[]](0x00)
+            # Соединение держится молча: здесь проверяется НАЗЫВАНИЕ игры по живому потоку, а не источник
+            # числа. Данные в эту розетку слать нельзя — сервер закрывает соединение, и поток исчезает
+            # раньше, чем служба его увидит. Источник чисел на соединении чужого процесса проверяется
+            # отдельно, в самопроверке: «ЖИВОЙ TCP-ЗАМЕР (чужой процесс, iphlpapi)».
             $deadline = (Get-Date).AddSeconds($HoldSeconds)
             while ((Get-Date) -lt $deadline) {
                 if (-not $client.Connected) { break }
-                try { $stream.Write($payload, 0, $payload.Length) } catch { break }
                 Start-Sleep -Seconds 1
             }
             exit 0
@@ -209,10 +207,10 @@ if (-not $mcState.StartsWith('connected')) {
     } elseif ($result.Endpoint -notmatch ':25565$') {
         $failures += "Minecraft назван, но адрес не тот: «$($result.Endpoint)» вместо порта 25565"
     } elseif ($result.Method -notmatch 'TCP-статистика') {
-        # Число получено не из статистики соединения: значит iphlpapi на чужом (игровом) потоке не сработал,
-        # и задержку дали пробы. Это не «почти то же самое» — это другой механизм, и молчать о нём нельзя.
-        Ann 'warning' "G Minecraft: замер пришёл способом «$($result.Method)», а не из статистики соединения"
-        $failures += "G iphlpapi на игровом потоке не подтверждён: способ «$($result.Method)»"
+        # Число дали пробы: у молчащего эмулятора это честно — сетевой стек считает задержку только по
+        # отправленным сегментам. Здесь проверяется называние игры и адреса; источник чисел на соединении
+        # чужого процесса проверяется в самопроверке, и там он назван отдельной строкой.
+        Ann 'warning' "G Minecraft: игра и адрес названы, число дали пробы («$($result.Method)») — источник чисел проверяется в самопроверке"
     } else {
         Write-Host "Способ замера: $($result.Method)"
         Ann 'notice' "G Minecraft OK (попыток $tries): $($result.Game) $($result.Endpoint); способ — $($result.Method) (iphlpapi читает соединение чужого процесса, пакетов не отправлено)"
