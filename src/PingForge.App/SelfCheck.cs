@@ -1148,45 +1148,79 @@ internal static class SelfCheck
     /// </summary>
     private static void CheckLiveTcpEstats(List<string> problems)
     {
-        const string Host = "1.1.1.1";
-        const int Port = 443;
+        const string Host = "github.com";
+        const int Port = 80;
 
         try
         {
+            // Адрес, а не имя: сравнивать прочитанное соединение нужно с тем адресом, куда мы правда
+            // подключились, иначе проверка ничего не докажет.
+            IReadOnlyList<System.Net.IPAddress> addresses = new SystemHostResolver()
+                .ResolveAsync(Host).GetAwaiter().GetResult();
+            System.Net.IPAddress? target = addresses
+                .FirstOrDefault(item => item.AddressFamily == AddressFamily.InterNetwork);
+
+            if (target is null)
+            {
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. Имя {Host} не разрешилось в IPv4-адрес — " +
+                    "проверять статистику не на чем.");
+                return;
+            }
+
+            string endpoint = target.ToString();
+
             using var client = new TcpClient();
             using var connectTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
             try
             {
-                client.ConnectAsync(Host, Port, connectTimeout.Token).GetAwaiter().GetResult();
+                client.ConnectAsync(endpoint, Port, connectTimeout.Token).GetAwaiter().GetResult();
             }
             catch (Exception ex) when (ex is SocketException or OperationCanceledException)
             {
-                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. Соединение с {Host}:{Port} не установилось " +
+                StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: пропущен. Соединение с {endpoint}:{Port} не установилось " +
                     $"({ex.GetType().Name}) — проверять статистику не на чем.");
                 return;
             }
 
-            // Трафик по соединению: без обмена стек не собирает замеры задержки.
+            // Обмен по соединению: без трафика стек не собирает замеры задержки. Соединение держим
+            // открытым (keep-alive), иначе оно уйдёт из таблицы раньше, чем появится статистика.
             NetworkStream stream = client.GetStream();
-            byte[] request = Encoding.ASCII.GetBytes($"GET / HTTP/1.0\r\nHost: {Host}\r\n\r\n");
+            byte[] request = Encoding.ASCII.GetBytes(
+                $"GET / HTTP/1.1\r\nHost: {Host}\r\nConnection: keep-alive\r\n\r\n");
             stream.Write(request, 0, request.Length);
 
             var reader = new WindowsTcpEstatsReader();
             LiveTcpEstatsVerdict verdict = LiveTcpEstatsVerdict.Evaluate(
-                Host, Port, [], "соединение ещё не попало в таблицу");
+                endpoint, Port, [], "соединение ещё не попало в таблицу");
 
-            for (int attempt = 0; attempt < 8; attempt++)
+            var drain = new byte[2048];
+
+            for (int attempt = 0; attempt < 12; attempt++)
             {
                 IReadOnlyList<LiveTcpConnectionStats> connections = reader.ReadEstablishedConnections(Environment.ProcessId);
-                verdict = LiveTcpEstatsVerdict.Evaluate(Host, Port, connections, reader.ProblemRu);
+                verdict = LiveTcpEstatsVerdict.Evaluate(endpoint, Port, connections, reader.ProblemRu);
 
                 if (verdict.Verified || verdict.Outcome == LiveProbeOutcome.Broken)
                 {
                     break;
                 }
 
-                Thread.Sleep(400);
+                // Забираем ответ: подтверждения на него дают стеку новые замеры задержки, а соединение
+                // остаётся живым (keep-alive) — иначе оно уйдёт из таблицы раньше, чем появится статистика.
+                try
+                {
+                    if (stream.DataAvailable)
+                    {
+                        stream.Read(drain, 0, drain.Length);
+                    }
+                }
+                catch (IOException)
+                {
+                    // Сервер закрыл соединение — решение всё равно примет вердикт ниже.
+                }
+
+                Thread.Sleep(300);
             }
 
             if (verdict.Verified)
