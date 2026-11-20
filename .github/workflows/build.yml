@@ -200,6 +200,41 @@ jobs:
 
           Write-Host 'Окно, разделы, трей и каталог собираются на живой Windows.'
 
+      # Ж: единственная проверка, где программа шлёт настоящие пакеты в настоящий адрес и называет
+      # получившиеся числа. 1.1.1.1 сначала ICMP-эхом, затем TCP-рукопожатием. Сети нет или ICMP
+      # запрещён — «пропущено» с причиной, а не зелёный результат. Ноль вместо задержки — отказ.
+      # Число из журнала попадает в аннотацию: его видно через API даже там, где полные логи не скачать.
+      - name: Ж - живой замер на настоящей сети (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ann = 'file=src/PingForge.App/SelfCheck.cs,line=1'
+          $log = Join-Path $env:LOCALAPPDATA 'CustomTweakByDoxaiz\app-start.log'
+          $exe = 'dist\portable\CustomTweakByDoxaiz.exe'
+          if (-not (Test-Path $exe)) { throw "Нет файла: $exe" }
+
+          Remove-Item $log -ErrorAction SilentlyContinue
+          $process = Start-Process $exe -ArgumentList '--self-check' -Wait -PassThru
+          Write-Host "   код возврата: $($process.ExitCode)"
+
+          if (-not (Test-Path $log)) { throw "Журнала нет: $log — программа не дошла до записи журнала" }
+
+          $lines = @(Get-Content $log | Where-Object { $_ -match 'ЖИВОЙ ЗАМЕР' })
+          if ($lines.Count -eq 0) {
+            $tail = (Get-Content $log | Select-Object -Last 12 | Where-Object { $_.Trim() }) -join ' | '
+            Write-Host "::error $ann::живой замер: строки «ЖИВОЙ ЗАМЕР» в журнале нет. Хвост: $tail"
+            throw 'Строки «ЖИВОЙ ЗАМЕР» нет в журнале: проверка не запускалась'
+          }
+
+          foreach ($line in $lines) {
+            $safe = ($line -replace '%', '%25' -replace "`r", '' -replace "`n", ' ')
+            Write-Host "::notice $ann::$safe"
+          }
+
+          $broken = @($lines | Where-Object { $_ -match 'НЕ работает' })
+          if ($broken.Count -gt 0) { throw "Живой замер не работает: $($broken -join ' | ')" }
+          if ($process.ExitCode -ne 0) { throw "Самопроверка вернула код $($process.ExitCode)" }
+
       - name: Программа — снимок живого окна на Windows
         shell: pwsh
         run: |
