@@ -482,7 +482,9 @@ public sealed class LiveEngineOperations : IEngineOperations
                 report.FinalRttMs,
                 report.ImprovementMs,
                 report.EverythingReverted,
-                report.AppliedActionTitles));
+                report.AppliedActionTitles,
+                DescribeMethod(report.FinalMethodTag),
+                DescribeMethod(report.BaselineMethodTag)));
 
             return new EngineOperationResult(report.EverythingReverted, message, data);
         }
@@ -518,7 +520,9 @@ public sealed class LiveEngineOperations : IEngineOperations
             snapshot.CurrentRttMs,
             snapshot.ImprovementMs,
             EverythingReverted: true,
-            snapshot.AppliedActions.Select(action => action.TitleRu).ToList()));
+            snapshot.AppliedActions.Select(action => action.TitleRu).ToList(),
+            DescribeMethod(snapshot.FinalMethodTag),
+            DescribeMethod(snapshot.BaselineMethodTag)));
 
         return new EngineOperationResult(snapshot.State != RealtimeOptimizationState.Failed, startMessage, startData);
     }
@@ -1292,6 +1296,13 @@ public sealed class LiveEngineOperations : IEngineOperations
         bool RebootNeeded,
         string ExplanationRu);
 
+    /// <summary>
+    /// Способ замера для окна. Пустая метка — это «не измерено», а не повод подставить привычное слово:
+    /// у сессии без замера способа нет, и выдумывать его нельзя.
+    /// </summary>
+    private static string? DescribeMethod(string? tag) =>
+        string.IsNullOrWhiteSpace(tag) ? null : ProbeMethodTags.Ru(tag);
+
     private sealed record JournalData(int Count, IReadOnlyList<JournalRow> Records);
 
     /// <summary>
@@ -1320,6 +1331,10 @@ public sealed class LiveEngineOperations : IEngineOperations
 
     private sealed record SessionsData(int Count, IReadOnlyList<SessionRowData> Records);
 
+    /// <summary>
+    /// Ответ живой оптимизации. Способ замера идёт рядом с числами, потому что число без способа
+    /// ничего не доказывает: «12 мс» от статистики стека и «12 мс» от проб — разные утверждения.
+    /// </summary>
     private sealed record RealtimeData(
         string State,
         string? GameTitleRu,
@@ -1328,7 +1343,9 @@ public sealed class LiveEngineOperations : IEngineOperations
         double? CurrentRttMs,
         double? ImprovementMs,
         bool EverythingReverted,
-        IReadOnlyList<string> AppliedActionTitles);
+        IReadOnlyList<string> AppliedActionTitles,
+        string? MethodRu,
+        string? BaselineMethodRu);
 
     private sealed record ProfileData(string ProfileWire, string ProfileRu, int MeasurementsPerMinute);
 

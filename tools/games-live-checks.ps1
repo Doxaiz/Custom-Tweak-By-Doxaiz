@@ -158,7 +158,12 @@ function Invoke-RealtimeCheck([string]$title, [switch]$Quiet) {
     $endpoint = Read-Field $startJson 'endpoint'
     if ([string]::IsNullOrWhiteSpace($endpoint)) { $endpoint = Read-Field $stopJson 'endpoint' }
 
-    return @{ Code = $code; Output = $out; Game = $game; Endpoint = $endpoint }
+    # Способ замера: служба называет его рядом с числом. Без этой строки нельзя понять, откуда взялась
+    # задержка — из статистики соединения (ни одного лишнего пакета) или из проб сверх трафика игры.
+    $method = Read-Field $startJson 'methodRu'
+    if ([string]::IsNullOrWhiteSpace($method)) { $method = Read-Field $stopJson 'methodRu' }
+
+    return @{ Code = $code; Output = $out; Game = $game; Endpoint = $endpoint; Method = $method }
 }
 
 # ── 1. Minecraft (Java): настоящий TCP-поток на 25565 ─────────────────────────────────────────
@@ -182,8 +187,14 @@ if (-not $mcState.StartsWith('connected')) {
         $failures += "Minecraft не назван: игра «$($result.Game)», адрес «$($result.Endpoint)»"
     } elseif ($result.Endpoint -notmatch ':25565$') {
         $failures += "Minecraft назван, но адрес не тот: «$($result.Endpoint)» вместо порта 25565"
+    } elseif ($result.Method -notmatch 'TCP-статистика') {
+        # Число получено не из статистики соединения: значит iphlpapi на чужом (игровом) потоке не сработал,
+        # и задержку дали пробы. Это не «почти то же самое» — это другой механизм, и молчать о нём нельзя.
+        Ann 'warning' "G Minecraft: замер пришёл способом «$($result.Method)», а не из статистики соединения"
+        $failures += "G iphlpapi на игровом потоке не подтверждён: способ «$($result.Method)»"
     } else {
-        Ann 'notice' "G Minecraft OK: $($result.Game) $($result.Endpoint)"
+        Write-Host "Способ замера: $($result.Method)"
+        Ann 'notice' "G Minecraft OK: $($result.Game) $($result.Endpoint); способ — $($result.Method) (iphlpapi читает соединение чужого процесса, пакетов не отправлено)"
     }
 }
 
