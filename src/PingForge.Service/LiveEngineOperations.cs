@@ -178,7 +178,14 @@ public sealed class LiveEngineOperations : IEngineOperations
             EngineNames.ProfileWireName(profile),
             ResourceBudgetOptions.DescribeProfile(profile),
             pending,
-            ChartSamples()));
+            ChartSamples(),
+            // Окно показывает те же числа, что уже измерила служба. Раньше выигрыш, разброс, потери и
+            // предел пути оставались внутри снапшота: окно честно писало «заметного выигрыша нет»
+            // даже тогда, когда выигрыш был измерен.
+            snapshot?.ImprovementMs,
+            snapshot?.FloorRttMs,
+            snapshot?.CurrentJitterMs,
+            snapshot?.CurrentLossPercent));
 
         return await Task.FromResult(EngineOperationResult.Success(message, data)).ConfigureAwait(false);
     }
@@ -1198,7 +1205,11 @@ public sealed class LiveEngineOperations : IEngineOperations
         string ProfileWire,
         string ProfileRu,
         int PendingOperations,
-        IReadOnlyList<ChartSampleData> ChartSamples);
+        IReadOnlyList<ChartSampleData> ChartSamples,
+        double? ImprovementMs = null,
+        double? FloorRttMs = null,
+        double? CurrentJitterMs = null,
+        double? CurrentLossPercent = null);
 
     /// <summary>Точка графика: все числа необязательные — «не измерялось» остаётся null, а не нулём.</summary>
     private sealed record ChartSampleData(

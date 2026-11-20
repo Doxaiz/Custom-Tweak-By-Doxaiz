@@ -72,6 +72,37 @@ public class ViewModelTests
     }
 
     [Fact]
+    public async Task Окно_читает_из_ответа_службы_выигрыш_разброс_потери_и_предел_пути()
+    {
+        // Раньше служба отдавала окну только «до» и «сейчас»: выигрыш, разброс, потери и предел пути
+        // оставались внутри снапшота, и окно писало «заметного выигрыша нет» при измеренном выигрыше.
+        var channel = new FakeEngineChannel
+        {
+            BaselineRttMs = 120,
+            CurrentRttMs = 78,
+            ImprovementMs = 42,
+            FloorRttMs = 74,
+            CurrentJitterMs = 2,
+            CurrentLossPercent = null,
+        };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Equal(42.0, main.ImprovementMs!.Value, 3);
+        Assert.Equal(74.0, main.FloorRttMs!.Value, 3);
+        Assert.Equal(2.0, main.CurrentJitterMs!.Value, 3);
+        Assert.Null(main.CurrentLossPercent);
+
+        Assert.Contains("стало лучше на 42 мс", main.RttLineRu);
+        Assert.Contains("разброс 2 мс", main.RttLineRu);
+        Assert.Contains("лучший замер 74 мс", main.RttLineRu);
+        // Живой замер потерь не измеряет — так и написано, нуля нет.
+        Assert.Contains("потери не измерены", main.RttLineRu);
+        Assert.DoesNotContain("потери 0", main.RttLineRu);
+    }
+
+    [Fact]
     public async Task Выигрыша_нет_так_и_написано()
     {
         // Двойник называет одни и те же числа и в ответе на запуск, и в состоянии — как настоящая служба.

@@ -30,6 +30,14 @@ public sealed class FakeEngineChannel : IEngineChannel
 
     public double? ImprovementMs { get; set; } = 42;
 
+    /// <summary>Лучший замер сессии: null — «ещё не измерено», а не ноль.</summary>
+    public double? FloorRttMs { get; set; }
+
+    /// <summary>Разброс и потери: null — способ замера их не измеряет, а не «идеальная сеть».</summary>
+    public double? CurrentJitterMs { get; set; }
+
+    public double? CurrentLossPercent { get; set; }
+
     /// <summary>Название игры: null — «игра не найдена».</summary>
     public string? GameTitleRu { get; set; } = "Fortnite";
 
@@ -134,6 +142,7 @@ public sealed class FakeEngineChannel : IEngineChannel
             $$"""
             {"realtimeState":"active-monitoring","realtimeStateRu":"идёт контроль качества","isElevationAvailable":{{Bool(IsElevationAvailable)}},"tweakCount":47,"pendingOperations":0,
              "gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6","baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},"qualityLabelRu":"хорошо",
+             "floorRttMs":{{Number(FloorRttMs)}},"currentJitterMs":{{Number(CurrentJitterMs)}},"currentLossPercent":{{Number(CurrentLossPercent)}},
              "chartSamples":[
                {"atUtc":"2026-10-18T12:00:00.0000000Z","measured":true,"rttMinMs":38,"rttMedianMs":40,"rttP95Ms":44,"jitterMadMs":1.5,"lossPercent":0},
                {"atUtc":"2026-10-18T12:00:02.0000000Z","measured":false},
@@ -173,6 +182,7 @@ public sealed class FakeEngineChannel : IEngineChannel
             $$"""
             {"state":"active-monitoring","realtimeState":"active-monitoring","gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6",
              "baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},
+             "floorRttMs":{{Number(FloorRttMs)}},"currentJitterMs":{{Number(CurrentJitterMs)}},"currentLossPercent":{{Number(CurrentLossPercent)}},
              "everythingReverted":true,"appliedActionTitles":["Маршрут для игрового сервера"]}
             """);
     }
