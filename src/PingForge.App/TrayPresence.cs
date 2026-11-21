@@ -69,7 +69,11 @@ public sealed class TrayPresence : IDisposable
         }
 
         string tip = TrayMenuBuilder.TooltipFor(snapshot);
-        _icon.Text = tip.Length > 63 ? tip[..63] : tip;
+        // Сборщик подсказок держит надпись в пределах, которые знает Windows; ножницы здесь —
+        // только защита от будущей ошибки, а не способ уместить текст.
+        _icon.Text = tip.Length > TrayMenuBuilder.MaxIconTextLength
+            ? tip[..TrayMenuBuilder.MaxIconTextLength]
+            : tip;
     }
 
     /// <summary>
@@ -96,7 +100,9 @@ public sealed class TrayPresence : IDisposable
             _app.MainScreen.QualityRu,
             [],
             [],
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            BaselineMethodTag: _app.MainScreen.LiveBaselineMethodTag ?? string.Empty,
+            FinalMethodTag: _app.MainScreen.LiveMethodTag ?? string.Empty);
     }
 
     private async void Execute(TrayCommand command)

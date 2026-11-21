@@ -148,6 +148,42 @@ public class ViewModelTests
     }
 
     [Fact]
+    public async Task Метка_способа_без_подписи_всё_равно_называет_способ()
+    {
+        // Подпись служба может не прислать, а метку — прислать. Молчать, когда способ известен
+        // хотя бы меткой, значило бы скрыть от человека правду: окно называет его само.
+        var channel = new FakeEngineChannel { MethodRu = null, MethodTag = "live-tcp" };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Equal("live-tcp", main.LiveMethodTag);
+        Assert.Contains("живой поток игры (TCP-статистика)", main.MethodLineRu);
+    }
+
+    [Fact]
+    public async Task Окно_и_трей_берут_способ_из_одной_метки()
+    {
+        // Метка — общий источник: окно строит по ней подпись, значок в трее — короткое имя.
+        // Один замер, названный двумя разными способами на двух экранах, — это уже враньё.
+        var channel = new FakeEngineChannel
+        {
+            MethodRu = "живой поток игры (пассивные метки)",
+            BaselineMethodRu = "живой поток игры (пассивные метки)",
+            MethodTag = "live-udp",
+            BaselineMethodTag = "live-udp",
+        };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Contains("пассивные метки", main.MethodLineRu);
+        Assert.Equal("live-udp", main.LiveMethodTag);
+        Assert.Equal(PingForge.Core.Models.ProbeMethodTags.Ru("live-udp"), main.LiveMethodRu);
+        Assert.Equal("живой UDP-поток", PingForge.Core.Models.ProbeMethodTags.ShortRu(main.LiveMethodTag));
+    }
+
+    [Fact]
     public async Task Выигрыша_нет_так_и_написано()
     {
         // Двойник называет одни и те же числа и в ответе на запуск, и в состоянии — как настоящая служба.

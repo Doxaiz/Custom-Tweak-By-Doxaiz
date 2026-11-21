@@ -321,7 +321,11 @@ static RealtimeSnapshot DemoSnapshot(RealtimeOptimizationState state, double? cu
     QualityLabelRu: currentRttMs is null ? "нет данных" : "хорошо",
     AppliedActions: Array.Empty<OptimizationActionDescriptor>(),
     Warnings: Array.Empty<string>(),
-    UpdatedUtc: DateTime.UtcNow);
+    UpdatedUtc: DateTime.UtcNow,
+    // Способ замера в макете — тот же, что называет окно: иначе подсказка значка в макете
+    // молчала бы о том, чем снято число.
+    BaselineMethodTag: baselineRttMs is null ? string.Empty : ProbeMethodTags.LiveTcp,
+    FinalMethodTag: currentRttMs is null ? string.Empty : ProbeMethodTags.LiveTcp);
 
 var options = new JsonSerializerOptions
 {
