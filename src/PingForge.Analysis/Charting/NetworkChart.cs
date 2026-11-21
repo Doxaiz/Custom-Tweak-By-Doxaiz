@@ -145,7 +145,15 @@ public sealed record ChartSeries(
                 : $"{TitleRu}: измерить не удалось ({UnavailableReasonRu}).";
         }
 
-        var value = SummaryValue ?? 0;
+        // Подписи без значения не бывает: если его нет, это «не измерено», а подставлять ноль нельзя —
+        // ряд с пропусками читался бы как идеальная сеть, которую никто не мерил.
+        if (SummaryValue is not { } value)
+        {
+            return UnavailableReasonRu is null
+                ? $"{TitleRu}: измерить не удалось — данных нет."
+                : $"{TitleRu}: измерить не удалось ({UnavailableReasonRu}).";
+        }
+
         var number = value.ToString("0.##", CultureInfo.InvariantCulture);
         var tail = MeasuredCount == TotalCount
             ? $"измерено {MeasuredCount} из {TotalCount}"

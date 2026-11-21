@@ -37,6 +37,8 @@ public sealed class MainViewModel : ObservableObject
     private string? _endpoint;
     private double? _baselineRttMs;
     private double? _currentRttMs;
+    private string? _liveMethodRu;
+    private string? _liveBaselineMethodRu;
     private double? _improvementMs;
     private double? _floorRttMs;
     private double? _currentJitterMs;
@@ -294,6 +296,57 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public string VersionsNoteRu => _engine.VersionsNoteRu;
 
+    /// <summary>Способ, которым получено текущее число: служба называет его сама, окно не угадывает.</summary>
+    public string? LiveMethodRu
+    {
+        get => _liveMethodRu;
+        private set
+        {
+            if (Set(ref _liveMethodRu, value))
+            {
+                OnPropertyChanged(nameof(MethodLineRu));
+            }
+        }
+    }
+
+    /// <summary>Способ, которым получено число «до». Может отличаться от текущего — тогда так и сказано.</summary>
+    public string? LiveBaselineMethodRu
+    {
+        get => _liveBaselineMethodRu;
+        private set
+        {
+            if (Set(ref _liveBaselineMethodRu, value))
+            {
+                OnPropertyChanged(nameof(MethodLineRu));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Строка о способе замера. Пустая строка — когда служба способа не назвала: «способ: неизвестно»
+    /// было бы выдумкой. Разные способы «до» и «после» называются оба: сравнивать числа, снятые
+    /// по-разному, и молчать об этом нельзя.
+    /// </summary>
+    public string MethodLineRu
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(LiveMethodRu) && string.IsNullOrWhiteSpace(LiveBaselineMethodRu))
+            {
+                return string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(LiveBaselineMethodRu)
+                || string.Equals(LiveMethodRu, LiveBaselineMethodRu, StringComparison.Ordinal))
+            {
+                return $"Способ замера: {LiveMethodRu ?? LiveBaselineMethodRu}.";
+            }
+
+            string now = string.IsNullOrWhiteSpace(LiveMethodRu) ? "не назван" : LiveMethodRu;
+            return $"Способ замера: сейчас — {now}, до — {LiveBaselineMethodRu}.";
+        }
+    }
+
     /// <summary>«120 мс → 78 мс» или честное «не измерено».</summary>
     public string RttLineRu => BaselineRttMs is null || CurrentRttMs is null
         ? "Задержка: не измерена"
@@ -513,6 +566,8 @@ public sealed class MainViewModel : ObservableObject
             FloorRttMs = ReadNumber(root, "floorRttMs");
             CurrentJitterMs = ReadNumber(root, "currentJitterMs");
             CurrentLossPercent = ReadNumber(root, "currentLossPercent");
+            LiveMethodRu = ReadText(root, "methodRu");
+            LiveBaselineMethodRu = ReadText(root, "baselineMethodRu");
 
             if (root.TryGetProperty("qualityLabelRu", out System.Text.Json.JsonElement quality) && quality.ValueKind == System.Text.Json.JsonValueKind.String)
             {
@@ -555,6 +610,13 @@ public sealed class MainViewModel : ObservableObject
             StatusRu = "Служба ответила неразборчиво: показываю прежнее состояние, а не выдуманные цифры.";
         }
     }
+
+    private static string? ReadText(System.Text.Json.JsonElement root, string name) =>
+        root.TryGetProperty(name, out System.Text.Json.JsonElement value)
+        && value.ValueKind == System.Text.Json.JsonValueKind.String
+        && !string.IsNullOrWhiteSpace(value.GetString())
+            ? value.GetString()
+            : null;
 
     private static double? ReadNumber(System.Text.Json.JsonElement root, string name) =>
         root.TryGetProperty(name, out System.Text.Json.JsonElement value)

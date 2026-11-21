@@ -103,6 +103,51 @@ public class ViewModelTests
     }
 
     [Fact]
+    public async Task Окно_называет_способ_замера()
+    {
+        // Служба называет способ рядом с числом; окно обязано его показать, иначе «78 мс» от статистики
+        // соединения и «78 мс» от проб выглядят одинаково.
+        var channel = new FakeEngineChannel
+        {
+            MethodRu = "живой поток игры (TCP-статистика)",
+            BaselineMethodRu = "живой поток игры (TCP-статистика)",
+        };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Equal("Способ замера: живой поток игры (TCP-статистика).", main.MethodLineRu);
+    }
+
+    [Fact]
+    public async Task Разные_способы_до_и_после_называются_оба()
+    {
+        var channel = new FakeEngineChannel
+        {
+            MethodRu = "TCP-рукопожатие",
+            BaselineMethodRu = "живой поток игры (TCP-статистика)",
+        };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Contains("сейчас — TCP-рукопожатие", main.MethodLineRu);
+        Assert.Contains("до — живой поток игры (TCP-статистика)", main.MethodLineRu);
+    }
+
+    [Fact]
+    public async Task Без_названного_способа_строки_нет()
+    {
+        var channel = new FakeEngineChannel { MethodRu = null, BaselineMethodRu = null };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Equal(string.Empty, main.MethodLineRu);
+        Assert.DoesNotContain("Способ замера", main.RttLineRu);
+    }
+
+    [Fact]
     public async Task Выигрыша_нет_так_и_написано()
     {
         // Двойник называет одни и те же числа и в ответе на запуск, и в состоянии — как настоящая служба.
