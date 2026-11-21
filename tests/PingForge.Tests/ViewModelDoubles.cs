@@ -38,6 +38,12 @@ public sealed class FakeEngineChannel : IEngineChannel
 
     public double? CurrentLossPercent { get; set; }
 
+    /// <summary>Способ замера: null — служба его не назвала, и окно не должно придумывать своё.</summary>
+    public string? MethodRu { get; set; }
+
+    /// <summary>Способ, которым снято «до».</summary>
+    public string? BaselineMethodRu { get; set; }
+
     /// <summary>Название игры: null — «игра не найдена».</summary>
     public string? GameTitleRu { get; set; } = "Fortnite";
 
@@ -143,6 +149,7 @@ public sealed class FakeEngineChannel : IEngineChannel
             {"realtimeState":"active-monitoring","realtimeStateRu":"идёт контроль качества","isElevationAvailable":{{Bool(IsElevationAvailable)}},"tweakCount":47,"pendingOperations":0,
              "gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6","baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},"qualityLabelRu":"хорошо",
              "floorRttMs":{{Number(FloorRttMs)}},"currentJitterMs":{{Number(CurrentJitterMs)}},"currentLossPercent":{{Number(CurrentLossPercent)}},
+             "methodRu":{{Text(MethodRu)}},"baselineMethodRu":{{Text(BaselineMethodRu)}},
              "chartSamples":[
                {"atUtc":"2026-10-18T12:00:00.0000000Z","measured":true,"rttMinMs":38,"rttMedianMs":40,"rttP95Ms":44,"jitterMadMs":1.5,"lossPercent":0},
                {"atUtc":"2026-10-18T12:00:02.0000000Z","measured":false},
@@ -183,6 +190,7 @@ public sealed class FakeEngineChannel : IEngineChannel
             {"state":"active-monitoring","realtimeState":"active-monitoring","gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6",
              "baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},
              "floorRttMs":{{Number(FloorRttMs)}},"currentJitterMs":{{Number(CurrentJitterMs)}},"currentLossPercent":{{Number(CurrentLossPercent)}},
+             "methodRu":{{Text(MethodRu)}},"baselineMethodRu":{{Text(BaselineMethodRu)}},
              "everythingReverted":true,"appliedActionTitles":["Маршрут для игрового сервера"]}
             """);
     }
