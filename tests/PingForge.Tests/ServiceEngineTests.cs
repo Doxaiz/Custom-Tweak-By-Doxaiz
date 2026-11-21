@@ -294,9 +294,44 @@ public sealed class ServiceEngineTests : IDisposable
         Assert.Contains("\"methodRu\":\"живой поток игры (TCP-статистика)\"", started.DataJson, StringComparison.Ordinal);
         Assert.Contains("\"baselineMethodRu\":\"живой поток игры (TCP-статистика)\"", started.DataJson, StringComparison.Ordinal);
 
+        // Рядом с подписью едет метка: по ней значок в трее называет тот же способ, что и окно.
+        // Без неё окно и трей сверять нечем, и один замер мог бы называться двумя способами.
+        Assert.Contains("\"methodTag\":\"live-tcp\"", started.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"baselineMethodTag\":\"live-tcp\"", started.DataJson, StringComparison.Ordinal);
+
         EngineOperationResult stopped = await ops.SetRealtimeAsync(start: false);
 
         Assert.Contains("\"methodRu\":\"живой поток игры (TCP-статистика)\"", stopped.DataJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Состояние_называет_способ_замера_так_же_как_запуск()
+    {
+        // Окно опрашивает состояние каждые пару секунд и перерисовывает карточку по нему. Если способ
+        // приходит только в ответе на запуск, строка «Способ замера» живёт до первого опроса — то есть
+        // человек видит её один раз. Двойник в тестах это поле присылал, а служба — нет.
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "javaw.exe",
+                GameTitleRu: "Minecraft (Java)",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 25565,
+                Transport: "TCP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(
+                new PathMeasurement(true, 120, 2, null, 12, "Замер живого TCP-потока игры.", Method: ProbeMethodUsed.LiveTcpEstats),
+                new PathMeasurement(true, 96, 2, null, 12, "Замер живого TCP-потока игры.", Method: ProbeMethodUsed.LiveTcpEstats)),
+            new NoopActionRunner());
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+        await ops.SetRealtimeAsync(start: true);
+        EngineOperationResult status = await ops.StatusAsync();
+
+        Assert.Contains("\"methodRu\":\"живой поток игры (TCP-статистика)\"", status.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"baselineMethodRu\":\"живой поток игры (TCP-статистика)\"", status.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"methodTag\":\"live-tcp\"", status.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"baselineMethodTag\":\"live-tcp\"", status.DataJson, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -320,6 +355,8 @@ public sealed class ServiceEngineTests : IDisposable
         // Поля нет вовсе: «способ замера не записан» — это не способ, и придумывать его нельзя.
         Assert.DoesNotContain("\"methodRu\"", result.DataJson, StringComparison.Ordinal);
         Assert.DoesNotContain("\"baselineMethodRu\"", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"methodTag\"", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"baselineMethodTag\"", result.DataJson, StringComparison.Ordinal);
     }
 
     private sealed class SingleGameWatcher(GameFlowInfo flow) : IGameFlowWatcher

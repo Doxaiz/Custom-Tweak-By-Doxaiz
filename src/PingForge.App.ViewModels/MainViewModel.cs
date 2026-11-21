@@ -39,6 +39,8 @@ public sealed class MainViewModel : ObservableObject
     private double? _currentRttMs;
     private string? _liveMethodRu;
     private string? _liveBaselineMethodRu;
+    private string? _liveMethodTag;
+    private string? _liveBaselineMethodTag;
     private double? _improvementMs;
     private double? _floorRttMs;
     private double? _currentJitterMs;
@@ -309,6 +311,35 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Метка способа для машины (`live-tcp`, `live-udp`, `icmp`, `tcp-handshake`). По ней значок в трее
+    /// называет тот же способ, что и окно: подпись — для человека, метка — для сверки.
+    /// </summary>
+    public string? LiveMethodTag
+    {
+        get => _liveMethodTag;
+        private set
+        {
+            if (Set(ref _liveMethodTag, value))
+            {
+                OnPropertyChanged(nameof(MethodLineRu));
+            }
+        }
+    }
+
+    /// <summary>Метка способа, которым снято «до».</summary>
+    public string? LiveBaselineMethodTag
+    {
+        get => _liveBaselineMethodTag;
+        private set
+        {
+            if (Set(ref _liveBaselineMethodTag, value))
+            {
+                OnPropertyChanged(nameof(MethodLineRu));
+            }
+        }
+    }
+
     /// <summary>Способ, которым получено число «до». Может отличаться от текущего — тогда так и сказано.</summary>
     public string? LiveBaselineMethodRu
     {
@@ -566,8 +597,13 @@ public sealed class MainViewModel : ObservableObject
             FloorRttMs = ReadNumber(root, "floorRttMs");
             CurrentJitterMs = ReadNumber(root, "currentJitterMs");
             CurrentLossPercent = ReadNumber(root, "currentLossPercent");
-            LiveMethodRu = ReadText(root, "methodRu");
-            LiveBaselineMethodRu = ReadText(root, "baselineMethodRu");
+            LiveMethodTag = ReadText(root, "methodTag");
+            LiveBaselineMethodTag = ReadText(root, "baselineMethodTag");
+
+            // Подпись берём у службы; если её нет, а метка есть — называем способ сами по метке.
+            // Молчать, когда способ известен хотя бы меткой, значило бы скрыть от человека правду.
+            LiveMethodRu = ReadText(root, "methodRu") ?? DescribeTagRu(LiveMethodTag);
+            LiveBaselineMethodRu = ReadText(root, "baselineMethodRu") ?? DescribeTagRu(LiveBaselineMethodTag);
 
             if (root.TryGetProperty("qualityLabelRu", out System.Text.Json.JsonElement quality) && quality.ValueKind == System.Text.Json.JsonValueKind.String)
             {
@@ -610,6 +646,10 @@ public sealed class MainViewModel : ObservableObject
             StatusRu = "Служба ответила неразборчиво: показываю прежнее состояние, а не выдуманные цифры.";
         }
     }
+
+    /// <summary>Подпись способа из метки: одна и та же для окна и для значка в трее.</summary>
+    private static string? DescribeTagRu(string? tag) =>
+        string.IsNullOrWhiteSpace(tag) ? null : PingForge.Core.Models.ProbeMethodTags.Ru(tag);
 
     private static string? ReadText(System.Text.Json.JsonElement root, string name) =>
         root.TryGetProperty(name, out System.Text.Json.JsonElement value)

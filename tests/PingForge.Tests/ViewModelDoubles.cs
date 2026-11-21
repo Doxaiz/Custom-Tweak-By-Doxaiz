@@ -44,6 +44,12 @@ public sealed class FakeEngineChannel : IEngineChannel
     /// <summary>Способ, которым снято «до».</summary>
     public string? BaselineMethodRu { get; set; }
 
+    /// <summary>Метка способа для машины: по ней значок в трее называет тот же способ, что и окно.</summary>
+    public string? MethodTag { get; set; }
+
+    /// <summary>Метка способа, которым снято «до».</summary>
+    public string? BaselineMethodTag { get; set; }
+
     /// <summary>Название игры: null — «игра не найдена».</summary>
     public string? GameTitleRu { get; set; } = "Fortnite";
 
@@ -150,6 +156,7 @@ public sealed class FakeEngineChannel : IEngineChannel
              "gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6","baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},"qualityLabelRu":"хорошо",
              "floorRttMs":{{Number(FloorRttMs)}},"currentJitterMs":{{Number(CurrentJitterMs)}},"currentLossPercent":{{Number(CurrentLossPercent)}},
              "methodRu":{{Text(MethodRu)}},"baselineMethodRu":{{Text(BaselineMethodRu)}},
+             "methodTag":{{Text(MethodTag)}},"baselineMethodTag":{{Text(BaselineMethodTag)}},
              "chartSamples":[
                {"atUtc":"2026-10-18T12:00:00.0000000Z","measured":true,"rttMinMs":38,"rttMedianMs":40,"rttP95Ms":44,"jitterMadMs":1.5,"lossPercent":0},
                {"atUtc":"2026-10-18T12:00:02.0000000Z","measured":false},
@@ -191,6 +198,7 @@ public sealed class FakeEngineChannel : IEngineChannel
              "baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},
              "floorRttMs":{{Number(FloorRttMs)}},"currentJitterMs":{{Number(CurrentJitterMs)}},"currentLossPercent":{{Number(CurrentLossPercent)}},
              "methodRu":{{Text(MethodRu)}},"baselineMethodRu":{{Text(BaselineMethodRu)}},
+             "methodTag":{{Text(MethodTag)}},"baselineMethodTag":{{Text(BaselineMethodTag)}},
              "everythingReverted":true,"appliedActionTitles":["Маршрут для игрового сервера"]}
             """);
     }

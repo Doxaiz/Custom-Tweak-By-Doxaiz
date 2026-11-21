@@ -185,7 +185,14 @@ public sealed class LiveEngineOperations : IEngineOperations
             snapshot?.ImprovementMs,
             snapshot?.FloorRttMs,
             snapshot?.CurrentJitterMs,
-            snapshot?.CurrentLossPercent));
+            snapshot?.CurrentLossPercent,
+            // Способ замера едет и в состоянии, а не только в ответе на запуск: окно опрашивает
+            // состояние каждые пару секунд, и без этих полей строка «Способ замера» исчезала бы
+            // сразу после запуска — то есть человек видел бы способ ровно один раз.
+            DescribeMethod(snapshot?.FinalMethodTag),
+            DescribeMethod(snapshot?.BaselineMethodTag),
+            DescribeTag(snapshot?.FinalMethodTag),
+            DescribeTag(snapshot?.BaselineMethodTag)));
 
         return await Task.FromResult(EngineOperationResult.Success(message, data)).ConfigureAwait(false);
     }
@@ -484,7 +491,9 @@ public sealed class LiveEngineOperations : IEngineOperations
                 report.EverythingReverted,
                 report.AppliedActionTitles,
                 DescribeMethod(report.FinalMethodTag),
-                DescribeMethod(report.BaselineMethodTag)));
+                DescribeMethod(report.BaselineMethodTag),
+                DescribeTag(report.FinalMethodTag),
+                DescribeTag(report.BaselineMethodTag)));
 
             return new EngineOperationResult(report.EverythingReverted, message, data);
         }
@@ -522,7 +531,9 @@ public sealed class LiveEngineOperations : IEngineOperations
             EverythingReverted: true,
             snapshot.AppliedActions.Select(action => action.TitleRu).ToList(),
             DescribeMethod(snapshot.FinalMethodTag),
-            DescribeMethod(snapshot.BaselineMethodTag)));
+            DescribeMethod(snapshot.BaselineMethodTag),
+            DescribeTag(snapshot.FinalMethodTag),
+            DescribeTag(snapshot.BaselineMethodTag)));
 
         return new EngineOperationResult(snapshot.State != RealtimeOptimizationState.Failed, startMessage, startData);
     }
@@ -1213,7 +1224,11 @@ public sealed class LiveEngineOperations : IEngineOperations
         double? ImprovementMs = null,
         double? FloorRttMs = null,
         double? CurrentJitterMs = null,
-        double? CurrentLossPercent = null);
+        double? CurrentLossPercent = null,
+        string? MethodRu = null,
+        string? BaselineMethodRu = null,
+        string? MethodTag = null,
+        string? BaselineMethodTag = null);
 
     /// <summary>Точка графика: все числа необязательные — «не измерялось» остаётся null, а не нулём.</summary>
     private sealed record ChartSampleData(
@@ -1303,6 +1318,13 @@ public sealed class LiveEngineOperations : IEngineOperations
     private static string? DescribeMethod(string? tag) =>
         string.IsNullOrWhiteSpace(tag) ? null : ProbeMethodTags.Ru(tag);
 
+    /// <summary>
+    /// Метка способа рядом с подписью: подпись читает человек, метку — программа. Без метки окно
+    /// и значок в трее могут назвать один и тот же замер по-разному, и сверить их будет нечем.
+    /// </summary>
+    private static string? DescribeTag(string? tag) =>
+        string.IsNullOrWhiteSpace(tag) ? null : tag;
+
     private sealed record JournalData(int Count, IReadOnlyList<JournalRow> Records);
 
     /// <summary>
@@ -1345,7 +1367,9 @@ public sealed class LiveEngineOperations : IEngineOperations
         bool EverythingReverted,
         IReadOnlyList<string> AppliedActionTitles,
         string? MethodRu,
-        string? BaselineMethodRu);
+        string? BaselineMethodRu,
+        string? MethodTag,
+        string? BaselineMethodTag);
 
     private sealed record ProfileData(string ProfileWire, string ProfileRu, int MeasurementsPerMinute);
 
