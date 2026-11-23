@@ -126,4 +126,81 @@ public sealed class AntiCheatNotesTests
         Assert.Contains("EAC", rust.NoteRu, StringComparison.Ordinal);
         Assert.DoesNotContain("фильтр", rust.NoteRu, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void The_Finals_узнаётся_по_рабочему_имени_и_сборкам_патча_8()
+    {
+        // Игра зовётся по рабочему имени проекта, а с патча 8.0.0 у неё две сборки с суффиксами -e и -d.
+        // Без этой проверки каталог терял игру ровно тогда, когда её переименовали.
+        var catalog = new GameProcessCatalog();
+
+        foreach (string exe in new[] { "discovery.exe", "Discovery-e.exe", "DISCOVERY-D.EXE" })
+        {
+            Assert.True(catalog.TryMatch($@"C:\Games\The Finals\{exe}", out KnownGame game), exe);
+            Assert.Equal("The Finals", game.TitleRu);
+        }
+
+        Assert.True(catalog.TryMatch("discovery.exe", out KnownGame finals));
+        Assert.Equal(AntiCheatStatus.KnownKernelConflict, finals.AntiCheat);
+        Assert.Contains("Denuvo", finals.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("8.0.0", finals.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("перехвата пакетов", finals.NoteRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Marvel_Rivals_называет_свой_анти_чит_а_не_чужой()
+    {
+        // NetEase ставит Anti-Cheat Expert (Neac Protect), а не Easy Anti-Cheat: путать их значит
+        // обещать человеку не тот анти-чит, который у него в системе.
+        var catalog = new GameProcessCatalog();
+
+        Assert.True(catalog.TryMatch(@"C:\Games\MarvelRivals\Marvel-Win64-Shipping.exe", out KnownGame marvel));
+        Assert.Equal("Marvel Rivals", marvel.TitleRu);
+        Assert.Equal(AntiCheatStatus.KnownKernelConflict, marvel.AntiCheat);
+        Assert.Contains("Anti-Cheat Expert", marvel.AntiCheatName, StringComparison.Ordinal);
+        Assert.DoesNotContain("EasyAntiCheat", marvel.AntiCheatName, StringComparison.Ordinal);
+        Assert.Contains("Neac Protect", marvel.NoteRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Порты_Valve_в_каталоге_процессов_не_включают_загрузки_Steam()
+    {
+        // TCP 27014–27050 в справке Steam — загрузки, а не игра. Если этот диапазон попадёт в игру,
+        // оптимизация уйдёт в скачивание обновления.
+        var catalog = new GameProcessCatalog();
+
+        Assert.True(catalog.TryMatch("cs2.exe", out KnownGame cs2));
+        Assert.True(cs2.MatchesPort(27000));
+        Assert.True(cs2.MatchesPort(27030));
+        Assert.False(cs2.MatchesPort(27050));
+        Assert.Contains("загрузки", cs2.NoteRu, StringComparison.Ordinal);
+
+        Assert.True(catalog.TryMatch("dota2.exe", out KnownGame dota));
+        Assert.True(dota.MatchesPort(27015));
+        Assert.False(dota.MatchesPort(27040));
+    }
+
+    [Fact]
+    public void Dead_by_Daylight_описан_как_выделенные_серверы_GameLift()
+    {
+        var catalog = new GameProcessCatalog();
+
+        Assert.True(catalog.TryMatch("deadbydaylight-win64-shipping.exe", out KnownGame dbd));
+        Assert.Equal(AntiCheatStatus.KnownKernelConflict, dbd.AntiCheat);
+        Assert.Contains("GameLift", dbd.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("2019", dbd.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("Франкфурт", dbd.NoteRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("peer-to-peer", dbd.NoteRu, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Разрушитель_не_обещает_VPN_блокировок_а_называет_запрет_манипуляций()
+    {
+        var catalog = new GameProcessCatalog();
+
+        Assert.True(catalog.TryMatch("destiny2.exe", out KnownGame destiny));
+        Assert.Contains("манипуляции сетью", destiny.NoteRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("блокировки за VPN", destiny.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("Bungie", destiny.NoteRu, StringComparison.Ordinal);
+    }
 }

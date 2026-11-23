@@ -95,6 +95,107 @@ public sealed class RouteCatalogTests
     }
 
     [Fact]
+    public void Порты_Steam_названы_по_справке_Valve_а_скачивания_не_выданы_за_игру()
+    {
+        // Справка Steam: UDP 27000–27015 — трафик клиента, UDP 27015–27030 — матчмейкинг, TCP 27014–27050 —
+        // загрузки Steam. Раньше справочник называл «игровым трафиком» 27015…27050 и путал загрузки с игрой.
+        foreach (string game in new[] { "Counter-Strike 2", "Dota 2" })
+        {
+            GameRouteTarget target = GameRouteCatalog.Targets.Single(t => t.GameRu == game);
+            string ports = string.Join(" ", target.PublishedPortsRu);
+
+            Assert.Contains("27000", ports, StringComparison.Ordinal);
+            Assert.Contains("27030", ports, StringComparison.Ordinal);
+            Assert.DoesNotContain("27014", ports, StringComparison.Ordinal);
+            Assert.DoesNotContain("27050", ports, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Rocket_League_не_обещает_смены_сервера_в_матче()
+    {
+        // Проверено по описаниям игры и ответам разработчиков: матч целиком идёт на одном сервере,
+        // сменить его в середине нельзя. Прежняя фраза про «сервер меняется прямо в матче» была неправдой.
+        GameRouteTarget target = GameRouteCatalog.Targets.Single(t => t.GameRu == "Rocket League");
+
+        Assert.DoesNotContain("меняется прямо в матче", target.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("одном сервере", target.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("до очереди", target.NoteRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Dead_by_Daylight_на_выделенных_серверах_а_не_у_хоста()
+    {
+        // С 2019 года матчи DBD идут на серверах Amazon GameLift. Прежняя фраза «часть сессий — peer-to-peer»
+        // описывала состояние до переезда и вводила в заблуждение.
+        GameRouteTarget target = GameRouteCatalog.Targets.Single(t => t.GameRu == "Dead by Daylight");
+        string regions = string.Join(" ", target.RegionsRu);
+
+        Assert.Contains("GameLift", target.NoteRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("peer-to-peer", target.NoteRu, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Франкфурт", regions, StringComparison.Ordinal);
+        Assert.Contains("Сидней", regions, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GTA_Online_и_Call_of_Duty_называют_порты_по_справкам_издателей()
+    {
+        GameRouteTarget gta = GameRouteCatalog.Targets.Single(t => t.GameRu == "GTA Online");
+        string gtaPorts = string.Join(" ", gta.PublishedPortsRu);
+        Assert.Contains("61455", gtaPorts, StringComparison.Ordinal);
+        Assert.Contains("61458", gtaPorts, StringComparison.Ordinal);
+        Assert.Contains("443", gtaPorts, StringComparison.Ordinal);
+        Assert.Contains("Rockstar", gtaPorts, StringComparison.Ordinal);
+
+        GameRouteTarget cod = GameRouteCatalog.Targets.Single(t => t.GameRu == "Call of Duty: Warzone");
+        string codPorts = string.Join(" ", cod.PublishedPortsRu);
+        Assert.Contains("27036", codPorts, StringComparison.Ordinal);
+        Assert.Contains("27014", codPorts, StringComparison.Ordinal);
+        Assert.Contains("28960", codPorts, StringComparison.Ordinal);
+        Assert.DoesNotContain("3075", codPorts, StringComparison.Ordinal);
+        Assert.Contains("Activision", codPorts, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ядерные_анти_читы_The_Finals_и_Marvel_названы_своими_именами_и_без_обещаний()
+    {
+        foreach (string game in new[] { "The Finals", "Marvel Rivals" })
+        {
+            GameRouteTarget target = GameRouteCatalog.Targets.Single(t => t.GameRu == game);
+            Assert.Contains("ядр", target.NoteRu, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("маршрут", target.NoteRu, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("перехват", target.NoteRu, StringComparison.OrdinalIgnoreCase);
+        }
+
+        GameRouteTarget marvel = GameRouteCatalog.Targets.Single(t => t.GameRu == "Marvel Rivals");
+        Assert.Contains("Anti-Cheat Expert", marvel.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("NetEase", marvel.NoteRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Fortnite_называет_порты_по_справке_Epic_а_не_по_слухам()
+    {
+        GameRouteTarget target = GameRouteCatalog.Targets.Single(t => t.GameRu == "Fortnite");
+        string ports = string.Join(" ", target.PublishedPortsRu);
+
+        Assert.Contains("5795", ports, StringComparison.Ordinal);
+        Assert.Contains("5222", ports, StringComparison.Ordinal);
+        Assert.Contains("Epic", ports, StringComparison.Ordinal);
+        Assert.DoesNotContain("9100", ports, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Destiny_2_называет_запрет_манипуляций_сетью_а_не_мифические_блокировки_за_VPN()
+    {
+        GameRouteTarget target = GameRouteCatalog.Targets.Single(t => t.GameRu == "Destiny 2");
+
+        Assert.Contains("Bungie", target.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("манипуляции сетью", target.NoteRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("блокировки за VPN", target.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("согласия", target.NoteRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Rust_назван_по_фактам_матчмейкинга_нет_регион_выбирает_человек()
     {
         // Факты из интернета, а не догадка: у Rust нет матчмейкинга — сервер выбирают в списке, где рядом
