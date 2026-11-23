@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using PingForge.Core.Models;
 using PingForge.Service.Protocol;
 
 namespace PingForge.App.ViewModels;
@@ -26,7 +27,9 @@ public sealed record SessionHistoryRow(
     string StatusRu,
     string Outcome,
     string MethodRu = "",
-    bool MethodsDiffer = false)
+    bool MethodsDiffer = false,
+    string BaselineMethodTag = "",
+    string FinalMethodTag = "")
 {
     public bool HasValidTime => StartedUtc != DateTime.MinValue;
 
@@ -201,6 +204,26 @@ public static class SessionComparison
                 "одинаковый сервер — ещё не одинаковые условия, и разница может быть разницей игр.");
         }
 
+        // Способ замера называется и при сравнении двух сессий: разница между сессиями, снятыми
+        // разными способами, может быть свойством способа, а не действий программы.
+        string firstPair = PairMethodRu(first);
+        string secondPair = PairMethodRu(second);
+        bool firstMethodNamed = !string.IsNullOrWhiteSpace(first.BaselineMethodTag)
+            || !string.IsNullOrWhiteSpace(first.FinalMethodTag);
+        bool secondMethodNamed = !string.IsNullOrWhiteSpace(second.BaselineMethodTag)
+            || !string.IsNullOrWhiteSpace(second.FinalMethodTag);
+
+        if (!firstMethodNamed || !secondMethodNamed)
+        {
+            lines.Add("Способ замера записан не у обеих сессий: неизвестный способ не считается тем же самым, " +
+                "и разница может быть разницей способа, а не действий программы.");
+        }
+        else if (!string.Equals(firstPair, secondPair, StringComparison.Ordinal))
+        {
+            lines.Add($"Способы замера различаются: в первой сессии {firstPair}; во второй {secondPair}. " +
+                "Разница может быть свойством способа, а не действий программы.");
+        }
+
         // Полного «до → после» нет хотя бы у одной сессии — числа не сравниваются. Проверяются все
         // три числа, а не только «после»: строка без измеренного «до» не получает выдуманной разницы.
         if (first.BaselineRttMs is null || second.BaselineRttMs is null
@@ -222,6 +245,10 @@ public static class SessionComparison
         return new SessionComparisonResult(true, lines);
     }
 
+    /// <summary>Пара способов одной сессии словами: «до» и «после» могли сниматься по-разному.</summary>
+    private static string PairMethodRu(SessionHistoryRow row) =>
+        $"«до»: {ProbeMethodTags.Ru(row.BaselineMethodTag)}, «после»: {ProbeMethodTags.Ru(row.FinalMethodTag)}";
+
     /// <summary>
     /// Одна и та же запись. Номер сессии важнее ссылки: строки перечитываются из базы, и две
     /// загрузки одной сессии — это два разных объекта с одним номером.
@@ -238,13 +265,21 @@ public static class SessionComparison
 }
 
 /// <summary>Точка дневного графика: средний RTT «до» по сессиям к ОДНОМУ серверу за день.</summary>
-public sealed record DailyRttPoint(DateTime Day, int SessionCount, double AverageRttMs, double BarWidthPx)
+public sealed record DailyRttPoint(
+    DateTime Day,
+    int SessionCount,
+    double AverageRttMs,
+    double BarWidthPx,
+    string MethodRu = "")
 {
     public string DayRu => Day.ToString("dd.MM.yyyy", CultureInfo.CurrentCulture);
 
-    public string LineRu => $"{DayRu}: {AverageRttMs:0.#} мс — сессий: {SessionCount}";
+    /// <summary>Подпись полосы. Способ назван прямо: среднее по ICMP-эху и среднее по живому потоку — разные числа.</summary>
+    private string MethodSuffixRu => string.IsNullOrWhiteSpace(MethodRu) ? string.Empty : $", способ: {MethodRu}";
 
-    public string ValueRu => $"{AverageRttMs:0.#} мс — сессий: {SessionCount}";
+    public string LineRu => $"{DayRu}: {AverageRttMs:0.#} мс — сессий: {SessionCount}{MethodSuffixRu}";
+
+    public string ValueRu => $"{AverageRttMs:0.#} мс — сессий: {SessionCount}{MethodSuffixRu}";
 }
 
 /// <summary>
@@ -256,6 +291,33 @@ public static class DailyRttHistory
     /// <summary>Ширина самой длинной полосы на канве графика, точки.</summary>
     public const double MaxBarWidthPx = 220;
 
+    /// <summary>
+    /// Подпись под графиком. Называет сервер и способы замера: среднее, собранное из ICMP-эха и живого
+    /// потока сразу, выдавало бы два разных измерения за одно. Пустой список — «не из чего строить».
+    /// </summary>
+    public static string CaptionRu(IReadOnlyList<DailyRttPoint> points, string? endpoint)
+    {
+        ArgumentNullException.ThrowIfNull(points);
+
+        if (points.Count == 0)
+        {
+            return string.IsNullOrWhiteSpace(endpoint)
+                ? "График по дням появится, когда будет хотя бы одна измеренная сессия."
+                : $"По серверу {endpoint} измеренных сессий пока нет: график не из чего строить, и нулём это не считается.";
+        }
+
+        string methods = string.Join(", ", points
+            .Select(point => point.MethodRu)
+            .Where(method => !string.IsNullOrWhiteSpace(method))
+            .Distinct(StringComparer.CurrentCulture)
+            .OrderBy(method => method, StringComparer.CurrentCulture));
+
+        return $"Средний RTT «до» по дням. Только сервер {endpoint}: сессии к другим серверам не усредняются. " +
+            (string.IsNullOrWhiteSpace(methods)
+                ? "Способ замера в этих записях не назван."
+                : $"Способы на графике: {methods}. Числа разных способов не смешиваются в одно среднее: полоса на день строится внутри своего способа.");
+    }
+
     public static IReadOnlyList<DailyRttPoint> Build(IReadOnlyList<SessionHistoryRow> sessions, string? endpoint)
     {
         ArgumentNullException.ThrowIfNull(sessions);
@@ -265,15 +327,19 @@ public static class DailyRttHistory
             return [];
         }
 
+        // Группировка по дню И по способу замера: усреднить ICMP-эхо с живым потоком значило бы
+        // выдать среднее двух разных измерений за одно. Способ называется в подписи полосы.
         var perDay = sessions
             .Where(session => string.Equals(session.Endpoint, endpoint, StringComparison.OrdinalIgnoreCase))
             .Where(session => session.BaselineRttMs is not null && session.IsMeasurable && session.HasValidTime)
-            .GroupBy(session => session.StartedUtc.ToLocalTime().Date)
+            .GroupBy(session => (Day: session.StartedUtc.ToLocalTime().Date, Tag: session.BaselineMethodTag))
             .Select(group => (
-                Day: group.Key,
+                Day: group.Key.Day,
+                MethodRu: ProbeMethodTags.Ru(group.Key.Tag),
                 Count: group.Count(),
                 Average: Math.Round(group.Average(session => session.BaselineRttMs!.Value), 1)))
             .OrderBy(point => point.Day)
+            .ThenBy(point => point.MethodRu, StringComparer.CurrentCulture)
             .ToList();
 
         if (perDay.Count == 0)
@@ -288,7 +354,8 @@ public static class DailyRttHistory
                 point.Day,
                 point.Count,
                 point.Average,
-                maximum <= 0 ? 0 : Math.Round(point.Average / maximum * MaxBarWidthPx, 1)))
+                maximum <= 0 ? 0 : Math.Round(point.Average / maximum * MaxBarWidthPx, 1),
+                point.MethodRu))
             .ToList();
     }
 }
@@ -602,9 +669,7 @@ public sealed class SessionHistoryViewModel : ObservableObject
             return;
         }
 
-        DailyCaptionRu = Daily.Count == 0
-            ? $"По серверу {SelectedEndpoint} измеренных сессий пока нет: график не из чего строить, и нулём это не считается."
-            : $"Средний RTT «до» по дням. Только сервер {SelectedEndpoint}: сессии к другим серверам не усредняются.";
+        DailyCaptionRu = DailyRttHistory.CaptionRu(Daily, SelectedEndpoint);
     }
 
     private string BuildSummary()
@@ -672,7 +737,9 @@ public sealed class SessionHistoryViewModel : ObservableObject
                     ReadText(item, "statusRu"),
                     ReadText(item, "outcome"),
                     ReadText(item, "methodRu"),
-                    ReadBool(item, "methodsDiffer")));
+                    ReadBool(item, "methodsDiffer"),
+                    ReadText(item, "baselineMethodTag"),
+                    ReadText(item, "finalMethodTag")));
             }
 
             return rows;

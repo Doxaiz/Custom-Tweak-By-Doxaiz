@@ -577,7 +577,9 @@ public sealed class LiveEngineOperations : IEngineOperations
                 record.StatusNoteRu,
                 record.Outcome,
                 ProbeMethodTags.DescribePairRu(record.BaselineMethodTag, record.FinalMethodTag),
-                ProbeMethodTags.PairDiffers(record.BaselineMethodTag, record.FinalMethodTag)))
+                ProbeMethodTags.PairDiffers(record.BaselineMethodTag, record.FinalMethodTag),
+                record.BaselineMethodTag,
+                record.FinalMethodTag))
             .ToList();
 
         return await Task.FromResult(EngineOperationResult.Success(
@@ -1349,7 +1351,11 @@ public sealed class LiveEngineOperations : IEngineOperations
         string StatusRu,
         string Outcome,
         string MethodRu,
-        bool MethodsDiffer);
+        bool MethodsDiffer,
+        // Сырые метки способа нужны окну: по ним график по дням не смешивает числа разных способов,
+        // а сравнение двух сессий видит, что способы различаются. Подпись MethodRu для этого не годится.
+        string BaselineMethodTag,
+        string FinalMethodTag);
 
     private sealed record SessionsData(int Count, IReadOnlyList<SessionRowData> Records);
 

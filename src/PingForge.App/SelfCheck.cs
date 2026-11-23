@@ -1107,9 +1107,34 @@ internal static class SelfCheck
 
             bool noMethodWithoutTag = !other.ResultRu.Contains("способ", StringComparison.Ordinal);
 
+            // Способ замера и там, где числа ставят рядом: в графике по дням и в сравнении двух сессий.
+            // Среднее из ICMP-эха и живого потока — не одно измерение, и разница между такими сессиями
+            // может быть свойством способа.
+            SessionHistoryRow icmpRow = other with
+            {
+                BaselineMethodTag = Core.Models.ProbeMethodTags.Icmp,
+                FinalMethodTag = Core.Models.ProbeMethodTags.Icmp,
+            };
+            SessionHistoryRow liveRow = other with
+            {
+                SessionId = "self-check-live",
+                BaselineMethodTag = Core.Models.ProbeMethodTags.LiveTcp,
+                FinalMethodTag = Core.Models.ProbeMethodTags.LiveTcp,
+            };
+
+            IReadOnlyList<DailyRttPoint> mixedDaily = DailyRttHistory.Build([icmpRow, liveRow], other.Endpoint);
+            bool dailyKeepsMethodsApart = mixedDaily.Count == 2
+                && mixedDaily.All(point => point.MethodRu.Length > 0)
+                && DailyRttHistory.CaptionRu(mixedDaily, other.Endpoint)
+                    .Contains("не смешиваются", StringComparison.Ordinal);
+
+            bool comparisonNamesMethods = SessionComparison.Compare(icmpRow, liveRow).Lines
+                .Any(line => line.Contains("Способы замера различаются", StringComparison.Ordinal));
+
             if (!honestText || !noInventedNumber || !refusesDifferentServers || !refusesSameSession
                 || !refusesUnknownAddress || !singleServerDaily
-                || !namesMethod || !legacyIsCalledOld || !noMethodWithoutTag || !pairCaveat)
+                || !namesMethod || !legacyIsCalledOld || !noMethodWithoutTag || !pairCaveat
+                || !dailyKeepsMethodsApart || !comparisonNamesMethods)
             {
                 problems.Add("история сессий: разбор «до/после» или график по дням работает неверно " +
                     $"(незавершённая: {(honestText ? "да" : "нет")}, без выдуманных чисел: {(noInventedNumber ? "да" : "нет")}, " +
@@ -1119,7 +1144,9 @@ internal static class SelfCheck
                     $"график: {(singleServerDaily ? "да" : "нет")}, " +
                     $"способ в паре: {(namesMethod ? "назван" : "потерян")}, " +
                     $"старая запись: {(legacyIsCalledOld ? "названа старой" : "выдана за живую")}, " +
-                    $"разные способы: {(pairCaveat ? "предупреждает" : "молчит")})");
+                    $"разные способы: {(pairCaveat ? "предупреждает" : "молчит")}, " +
+                    $"способы в графике: {(dailyKeepsMethodsApart ? "не смешаны" : "смешаны")}, " +
+                    $"способы в сравнении: {(comparisonNamesMethods ? "названы" : "потеряны")})");
                 StartupLog.Note("ИСТОРИЯ СЕССИЙ: НЕ работает — числа или сравнение сессий расходятся с правилом честности");
                 return;
             }
@@ -1127,7 +1154,8 @@ internal static class SelfCheck
             StartupLog.Note("ИСТОРИЯ СЕССИЙ: вкладка «Сессии» на месте, до нажатия записей нет, " +
                 "незавершённая сессия называется незавершённой, разные серверы, одна и та же сессия и " +
                 "неизвестный адрес не сравниваются, график — по одному серверу, способ замера назван, " +
-                "старая запись названа старой, разные способы пары названы причиной разницы");
+                "старая запись названа старой, разные способы пары названы причиной разницы, " +
+                "в графике по дням способы не смешаны, в сравнении двух сессий способы названы");
         }
         catch (Exception ex)
         {
