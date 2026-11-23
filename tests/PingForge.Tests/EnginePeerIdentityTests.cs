@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PingForge.Core.Abstractions;
 using PingForge.Service;
 using PingForge.Service.Protocol;
 using Xunit;
@@ -122,10 +123,49 @@ public sealed class EnginePeerIdentityTests
         Assert.Empty(ops.Calls);
     }
 
+    [Fact]
+    public async Task Изменение_настроек_пользователя_помнит_чей_профиль_меняется()
+    {
+        var ops = new PeerRecordingOperations();
+        var dispatcher = new EngineDispatcher(ops);
+
+        EngineResponse response = await dispatcher.HandleAsync(
+            new EngineRequest("peer-6", EngineCommandKind.ApplyTweaks,
+                new Dictionary<string, string> { ["tweaks"] = "MENU_SHOW_DELAY_ZERO" }),
+            peer: AdminPeer, clientIsAdministrator: true);
+
+        Assert.True(response.Ok, response.MessageRu);
+
+        // Служба идёт от LocalSystem: без SID запросившего настройка ушла бы в профиль системы.
+        Assert.Equal(AdminPeer.ClientSid, ops.LastUserHiveSid);
+
+        // Контекст — на одну команду: после ответа он снят, иначе следующий запрос чужого пользователя
+        // молча унаследовал бы предыдущий профиль.
+        Assert.Null(UserHiveContext.CurrentSid);
+    }
+
+    [Fact]
+    public async Task Служебный_SID_клиента_не_становится_веткой_пользователя()
+    {
+        var ops = new PeerRecordingOperations();
+        var dispatcher = new EngineDispatcher(ops);
+
+        await dispatcher.HandleAsync(
+            new EngineRequest("peer-7", EngineCommandKind.ApplyTweaks,
+                new Dictionary<string, string> { ["tweaks"] = "MENU_SHOW_DELAY_ZERO" }),
+            peer: new EnginePeerIdentity("NT AUTHORITY\\SYSTEM", "S-1-5-18", ClientIsAdmin: true, ClientProcessId: 4),
+            clientIsAdministrator: true);
+
+        Assert.Null(ops.LastUserHiveSid);
+    }
+
     /// <summary>Двойник: записывает пришедшую личность и вызовы меняющих операций.</summary>
     private sealed class PeerRecordingOperations : IEngineOperations
     {
         public EnginePeerIdentity? LastPeer { get; private set; }
+
+        /// <summary>Чей профиль пользователя видел слой операций в момент изменения настроек.</summary>
+        public string? LastUserHiveSid { get; private set; }
 
         public List<string> Calls { get; } = [];
 
@@ -150,6 +190,7 @@ public sealed class EnginePeerIdentityTests
         public Task<EngineOperationResult> ApplyTweaksAsync(IReadOnlyList<string> tweakCodes, bool requestRestorePoint, CancellationToken ct = default)
         {
             Calls.Add("apply-tweaks");
+            LastUserHiveSid = UserHiveContext.CurrentSid;
             return Task.FromResult(EngineOperationResult.Success("Применено."));
         }
 
