@@ -415,6 +415,137 @@ public sealed class SessionHistoryTests
     }
 
     [Fact]
+    public void График_по_дням_не_смешивает_способы_замера()
+    {
+        DateTime day = new(2026, 10, 18, 12, 0, 0, DateTimeKind.Utc);
+
+        var sessions = new List<SessionHistoryRow>
+        {
+            Row("a", SameServer, baseline: 120, final: 100, completed: true, started: day) with
+            {
+                BaselineMethodTag = ProbeMethodTags.Icmp,
+                FinalMethodTag = ProbeMethodTags.Icmp,
+            },
+            Row("b", SameServer, baseline: 130, final: 110, completed: true, started: day.AddHours(2)) with
+            {
+                BaselineMethodTag = ProbeMethodTags.Icmp,
+                FinalMethodTag = ProbeMethodTags.Icmp,
+            },
+            Row("c", SameServer, baseline: 40, final: 38, completed: true, started: day) with
+            {
+                BaselineMethodTag = ProbeMethodTags.LiveTcp,
+                FinalMethodTag = ProbeMethodTags.LiveTcp,
+            },
+        };
+
+        IReadOnlyList<DailyRttPoint> points = DailyRttHistory.Build(sessions, SameServer);
+
+        // Один день, но два способа: две полосы, и каждая подписана своим способом.
+        Assert.Equal(2, points.Count);
+
+        DailyRttPoint icmp = points.Single(point => point.MethodRu.Contains("ICMP", StringComparison.Ordinal));
+        Assert.Equal(2, icmp.SessionCount);
+        Assert.Equal(125, icmp.AverageRttMs);
+        Assert.Contains("ICMP-эхо", icmp.LineRu, StringComparison.Ordinal);
+
+        DailyRttPoint live = points.Single(point => point.MethodRu.Contains("живой поток", StringComparison.Ordinal));
+        Assert.Equal(1, live.SessionCount);
+        Assert.Equal(40, live.AverageRttMs);
+    }
+
+    [Fact]
+    public void Подпись_графика_называет_способы_замера()
+    {
+        DateTime day = new(2026, 10, 18, 12, 0, 0, DateTimeKind.Utc);
+
+        var sessions = new List<SessionHistoryRow>
+        {
+            Row("a", SameServer, baseline: 120, final: 100, completed: true, started: day) with
+            {
+                BaselineMethodTag = ProbeMethodTags.Icmp,
+                FinalMethodTag = ProbeMethodTags.Icmp,
+            },
+            Row("b", SameServer, baseline: 40, final: 38, completed: true, started: day) with
+            {
+                BaselineMethodTag = ProbeMethodTags.LiveUdp,
+                FinalMethodTag = ProbeMethodTags.LiveUdp,
+            },
+        };
+
+        IReadOnlyList<DailyRttPoint> points = DailyRttHistory.Build(sessions, SameServer);
+        string caption = DailyRttHistory.CaptionRu(points, SameServer);
+
+        Assert.Contains("ICMP-эхо", caption, StringComparison.Ordinal);
+        Assert.Contains("пассивные метки", caption, StringComparison.Ordinal);
+        Assert.Contains("не смешиваются", caption, StringComparison.Ordinal);
+
+        // Точка без названного способа не молчит: подпись говорит, что способ не записан.
+        Assert.Contains("Способ замера в этих записях не назван",
+            DailyRttHistory.CaptionRu([new DailyRttPoint(day, 1, 40, 10)], SameServer),
+            StringComparison.Ordinal);
+
+        Assert.Contains("не из чего строить", DailyRttHistory.CaptionRu([], SameServer), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Сравнение_оговаривает_разные_способы_замера()
+    {
+        SessionHistoryRow first = Row("s-icmp", SameServer, 120, 95, completed: true) with
+        {
+            BaselineMethodTag = ProbeMethodTags.Icmp,
+            FinalMethodTag = ProbeMethodTags.Icmp,
+        };
+        SessionHistoryRow second = Row("s-live", SameServer, 130, 100, completed: true) with
+        {
+            BaselineMethodTag = ProbeMethodTags.LiveTcp,
+            FinalMethodTag = ProbeMethodTags.LiveTcp,
+        };
+
+        SessionComparisonResult result = SessionComparison.Compare(first, second);
+
+        Assert.True(result.Comparable);
+        Assert.Contains(result.Lines, line => line.Contains("Способы замера различаются", StringComparison.Ordinal)
+            && line.Contains("ICMP-эхо", StringComparison.Ordinal)
+            && line.Contains("TCP-статистика", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Сравнение_не_считает_неизвестный_способ_тем_же_самым()
+    {
+        SessionHistoryRow named = Row("s-named", SameServer, 120, 95, completed: true) with
+        {
+            BaselineMethodTag = ProbeMethodTags.Icmp,
+            FinalMethodTag = ProbeMethodTags.Icmp,
+        };
+        SessionHistoryRow unknown = Row("s-unknown", SameServer, 130, 100, completed: true);
+
+        SessionComparisonResult result = SessionComparison.Compare(named, unknown);
+
+        Assert.True(result.Comparable);
+        Assert.Contains(result.Lines, line => line.Contains("Способ замера записан не у обеих сессий", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Сравнение_с_одним_способом_не_выдумывает_оговорку()
+    {
+        SessionHistoryRow first = Row("s-a", SameServer, 120, 95, completed: true) with
+        {
+            BaselineMethodTag = ProbeMethodTags.LiveTcp,
+            FinalMethodTag = ProbeMethodTags.LiveTcp,
+        };
+        SessionHistoryRow second = Row("s-b", SameServer, 130, 100, completed: true) with
+        {
+            BaselineMethodTag = ProbeMethodTags.LiveTcp,
+            FinalMethodTag = ProbeMethodTags.LiveTcp,
+        };
+
+        SessionComparisonResult result = SessionComparison.Compare(first, second);
+
+        Assert.DoesNotContain(result.Lines, line => line.Contains("Способы замера различаются", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Lines, line => line.Contains("записан не у обеих", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void График_без_выбранного_сервера_не_строится()
     {
         var sessions = new List<SessionHistoryRow> { Row("a", SameServer, baseline: 120, final: 100, completed: true) };
@@ -653,6 +784,41 @@ public sealed class SessionHistoryTests
 
         Assert.Contains("было 120 мс → стало 95 мс", row.ResultRu);
         Assert.DoesNotContain("способ", row.ResultRu);
+    }
+
+    private const string SessionsWithTagsJson = """
+        {"count":2,"records":[
+          {"sessionId":"t1","startedUtc":"2026-10-18T12:00:00Z","stoppedUtc":"2026-10-18T12:20:00Z","gameTitleRu":"Fortnite",
+           "endpoint":"203.0.113.9","hasGame":true,"isMeasurable":true,"baselineRttMs":120,"finalRttMs":95,
+           "improvementMs":25,"actions":[],"rollbackState":"EverythingReverted","rollbackStateRu":"Изменения сняты полностью",
+           "isCompleted":true,"statusRu":"Сессия завершена.","outcome":"Completed",
+           "methodRu":"способ: ICMP-эхо (активные пробы, пакеты сверх трафика игры)","methodsDiffer":false,
+           "baselineMethodTag":"icmp","finalMethodTag":"icmp"},
+          {"sessionId":"t2","startedUtc":"2026-10-18T13:00:00Z","stoppedUtc":"2026-10-18T13:20:00Z","gameTitleRu":"Fortnite",
+           "endpoint":"203.0.113.9","hasGame":true,"isMeasurable":true,"baselineRttMs":40,"finalRttMs":38,
+           "improvementMs":2,"actions":[],"rollbackState":"EverythingReverted","rollbackStateRu":"Изменения сняты полностью",
+           "isCompleted":true,"statusRu":"Сессия завершена.","outcome":"Completed",
+           "methodRu":"способ: живой поток игры (TCP-статистика)","methodsDiffer":false,
+           "baselineMethodTag":"live-tcp","finalMethodTag":"live-tcp"}
+        ]}
+        """;
+
+    [Fact]
+    public async Task Вкладка_сессий_строит_график_по_способам_и_называет_их()
+    {
+        var channel = new FakeEngineChannel(request => request.Command == EngineCommandKind.Sessions
+            ? EngineResponse.Success(request.Id, "Сессий: 2, завершено: 2, без итога: 0.", SessionsWithTagsJson)
+            : Fallback.DefaultAnswer(request));
+
+        var sessions = new SessionHistoryViewModel(new EngineClient(channel), new FakeDialogs());
+        await sessions.RefreshCommand.ExecuteAsync();
+
+        // Один сервер, один день, но два способа замера: две полосы и оба способа в подписи.
+        Assert.Equal(2, sessions.Daily.Count);
+        Assert.All(sessions.Daily, point => Assert.NotEqual(string.Empty, point.MethodRu));
+        Assert.Contains("ICMP-эхо", sessions.DailyCaptionRu, StringComparison.Ordinal);
+        Assert.Contains("TCP-статистика", sessions.DailyCaptionRu, StringComparison.Ordinal);
+        Assert.Contains("не смешиваются", sessions.DailyCaptionRu, StringComparison.Ordinal);
     }
 
     private const string TwoSessionsJson = """
