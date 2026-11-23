@@ -46,7 +46,11 @@ public static class AppSignature
 
         try
         {
+            // SYSLIB0057 советует X509CertificateLoader, но он загружает сертификат из файла сертификата,
+            // а не подпись Authenticode из PE-файла: замены этому вызову в .NET нет. Оставляем его осознанно.
+#pragma warning disable SYSLIB0057
             using X509Certificate certificate = X509Certificate.CreateFromSignedFile(filePath);
+#pragma warning restore SYSLIB0057
             string subject = certificate.Subject?.Trim() ?? string.Empty;
             return AppSignatureState.Signed(subject.Length > 0 ? subject : "издатель не назван");
         }

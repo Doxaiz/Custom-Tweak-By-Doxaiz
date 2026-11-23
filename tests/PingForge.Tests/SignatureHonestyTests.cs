@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using PingForge.App.ViewModels;
+using Xunit;
 
 namespace PingForge.Tests;
 
