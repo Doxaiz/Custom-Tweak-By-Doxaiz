@@ -67,7 +67,7 @@ public sealed class CustomGamesTests
 
         Assert.Equal(GameProcessCatalog.DefaultGames.Count + 1, catalog.All.Count);
         Assert.Single(catalog.CustomGames);
-        Assert.Equal(22, GameProcessCatalog.DefaultGames.Count);
+        Assert.Equal(24, GameProcessCatalog.DefaultGames.Count);
     }
 
     [Fact]

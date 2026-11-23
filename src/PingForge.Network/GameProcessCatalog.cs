@@ -171,8 +171,10 @@ public sealed class GameProcessCatalog
     public static IReadOnlyList<KnownGame> DefaultGames { get; } = new[]
     {
         new KnownGame("fortniteclient-win64-shipping.exe", "Fortnite", "EasyAntiCheat (EAC)", AntiCheatStatus.KnownKernelConflict,
-            "Игровой UDP-порт матча у Fortnite заранее неизвестен (5795–5847 и 7000–9100 в разных сезонах), " +
-            "поэтому поток матча опознаётся по процессу, протоколу UDP и собеседнику из трассировки стека. " +
+            "Epic в справке по сети называет UDP 5795–5847, TCP 5222 для чата и группы, TCP 80/443 для входа. " +
+            "Диапазоны 7000–9100 и 10000–10100 встречаются в старых сообщениях сообществ, а не в справке Epic, " +
+            "и следующий сезон может их сдвинуть — поэтому порт матча считается неизвестным, а поток опознаётся " +
+            "по процессу, протоколу UDP и собеседнику из трассировки стека. " +
             "Без трассировки UDP поток матча не виден — это честное «не нашли», а не ошибка. " +
             "Оверлеи сторонних программ лучше выключить: часть анти-читов считает их подозрительными.",
             PortHints: [7777, 7778, 9000, 5222],
@@ -193,13 +195,17 @@ public sealed class GameProcessCatalog
             PortHints: [19132, 19133],
             PortRanges: [(19132, 19133)]),
         new KnownGame("cs2.exe", "Counter-Strike 2", "VAC", AntiCheatStatus.Untested,
-            "VAC работает в пользовательском режиме. Совместимость наших действий мы не проверяли — " +
-            "так и записано: обещать проверенное без проверки нельзя.",
+            "Порты по справке Steam: UDP 27000–27015 — трафик игрового клиента, UDP 27015–27030 — матчмейкинг и HLTV, " +
+            "UDP 3478 и 4379–4380 — P2P и голос. TCP 27014–27050 из той же справки — загрузки Steam, к задержке игры " +
+            "они не относятся, поэтому в диапазон игры не входят. VAC работает в пользовательском режиме. " +
+            "Совместимость наших действий мы не проверяли — так и записано: обещать проверенное без проверки нельзя.",
             PortHints: [27015],
-            PortRanges: [(27015, 27050)]),
+            PortRanges: [(27000, 27030)]),
         new KnownGame("dota2.exe", "Dota 2", "VAC", AntiCheatStatus.Untested,
+            "Тот же стек, что у CS2, и те же порты по справке Steam: UDP 27000–27015 — игровой трафик, " +
+            "UDP 27015–27030 — матчмейкинг. TCP 27014–27050 там же — загрузки Steam, а не игра.",
             PortHints: [27015],
-            PortRanges: [(27015, 27030)]),
+            PortRanges: [(27000, 27030)]),
         new KnownGame("valorant-win64-shipping.exe", "VALORANT", "Vanguard (ядро)", AntiCheatStatus.KnownKernelConflict,
             "Vanguard — ядерный анти-чит: рядом с ним программа не поднимает ничего своего, а перехвата " +
             "пакетов в ней нет и для других игр. Остаются маршрут и QoS — настройки Windows. " +
@@ -247,6 +253,9 @@ public sealed class GameProcessCatalog
             "поэтому здесь они заданы как порты самой игры, а не как «голос».",
             PortHints: [1119, 3724, 6113, 3478, 3479, 5060, 6250]),
         new KnownGame("rocketleague.exe", "Rocket League", "EasyAntiCheat (EAC)", AntiCheatStatus.KnownKernelConflict,
+            "Матч целиком проходит на одном сервере: сменить сервер в середине матча нельзя, регион выбирается в настройках " +
+            "до очереди. Порты по спискам для маршрутизаторов: UDP 7000–9000 — матч, UDP 27000–27031 и TCP 27015–27030 — " +
+            "Steam-часть и голос. EAC работает в ядре, поэтому рядом с игрой программа не поднимает ничего своего.",
             PortHints: [7000],
             PortRanges: [(7000, 9000), (27000, 27031)]),
         new KnownGame("gta5.exe", "GTA Online", "Защита Rockstar", AntiCheatStatus.Untested,
@@ -257,12 +266,26 @@ public sealed class GameProcessCatalog
         new KnownGame("fivem_gtaprocess.exe", "FiveM (GTA V)", "Защита FiveM", AntiCheatStatus.Untested,
             PortHints: [30120]),
         new KnownGame("destiny2.exe", "Destiny 2", "BattlEye", AntiCheatStatus.Untested,
-            "У игры были блокировки за VPN: релейные пути предлагаем только с вашего явного согласия.",
+            "Bungie писала прямо: манипуляции сетью ради преимущества ведут к ограничениям и блокировкам. Речь шла " +
+            "о подмене задержки через VPN, а не о смене маршрута: маршрут содержимое пакетов не меняет. " +
+            "И всё же релейные пути предлагаем только с вашего явного согласия.",
             PortHints: [3074, 3097]),
         new KnownGame("warframe.x64.exe", "Warframe", "Защита Digital Extremes", AntiCheatStatus.Untested,
             PortHints: [4950, 4955]),
         new KnownGame("deadbydaylight-win64-shipping.exe", "Dead by Daylight", "EasyAntiCheat (EAC)", AntiCheatStatus.KnownKernelConflict,
-            "EAC работает в ядре — тот же анти-чит, что у Fortnite и Rust. Маршрут и QoS остаются доступны.")
+            "EAC работает в ядре — тот же анти-чит, что у Fortnite и Rust. С 2019 года матчи идут на выделенных серверах " +
+            "Amazon GameLift (Франкфурт, Ирландия, Лондон, Огайо, Северная Вирджиния, Орегон, Калифорния, Монреаль, " +
+            "Сан-Паулу, Сидней, Токио, Сеул, Сингапур, Мумбаи, Гонконг), а не у игрока-хоста: путь строится до дата-центра, " +
+            "регион задаёт хост группы. Маршрут и QoS остаются доступны."),
+        new KnownGame("discovery.exe", "The Finals", "EasyAntiCheat (EAC) и Denuvo Anti-Cheat", AntiCheatStatus.KnownKernelConflict,
+            "В диспетчере игра зовётся по рабочему имени проекта: discovery.exe, а с патча 8.0.0 к нему добавились " +
+            "discovery-e.exe (сборка с EAC) и discovery-d.exe (сборка с Denuvo Anti-Cheat). Steam прямо предупреждает: " +
+            "игра использует ядерный анти-чит, который грузится на время игры. Рядом с ней программа не поднимает ничего " +
+            "своего: остаются маршрут и QoS, а перехвата пакетов в программе нет вовсе."),
+        new KnownGame("marvel-win64-shipping.exe", "Marvel Rivals", "Anti-Cheat Expert (NetEase)", AntiCheatStatus.KnownKernelConflict,
+            "NetEase ставит свой ядерный анти-чит Anti-Cheat Expert: в списке процессов он виден как Neac Protect и отдельно " +
+            "не отключается. В части гайдов его называют Easy Anti-Cheat — это другой продукт; мы держим то, что " +
+            "подтверждают справочники анти-читов. Остаются маршрут и QoS, а перехвата пакетов в программе нет вовсе.")
     };
 
     /// <summary>
@@ -364,6 +387,13 @@ public sealed class GameProcessCatalog
             || norm.Equals("javaw.exe", StringComparison.OrdinalIgnoreCase))
         {
             return _byExe.TryGetValue("javaw.exe", out game!);
+        }
+
+        // The Finals: имя процесса — рабочее имя проекта, и после патча 8.0.0 к нему добавились сборки -e/-d.
+        if (norm.Equals("discovery.exe", StringComparison.OrdinalIgnoreCase)
+            || norm.StartsWith("discovery-", StringComparison.OrdinalIgnoreCase))
+        {
+            return _byExe.TryGetValue("discovery.exe", out game!);
         }
 
         // Фортнайт в творческом/лобби часто запускается обёрткой EAC/BE с суффиксом _be/_eac: ловим префиксом.
