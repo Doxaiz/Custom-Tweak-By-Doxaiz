@@ -50,6 +50,9 @@
     <None Include="..\..\src\PingForge.App\Views\JournalView.xaml" Link="checked-JournalView.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\tools\ui-walkthrough.ps1" Link="checked-ui-walkthrough.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\.github\workflows\build.yml" Link="checked-build.yml" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Настройки пользователя: сторож читает порт реестра и живую проверку как текст. -->
+    <None Include="..\..\src\PingForge.Tweaks.Windows\WindowsRegistryPort.cs" Link="checked-WindowsRegistryPort.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\c7-live-checks.ps1" Link="checked-c7-live-checks.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeAclFactory.cs" Link="checked-PipeAclFactory.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Windows\PipeClientInspector.cs" Link="checked-PipeClientInspector.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Host\ServiceProgram.cs" Link="checked-ServiceProgram.cs" CopyToOutputDirectory="PreserveNewest" />

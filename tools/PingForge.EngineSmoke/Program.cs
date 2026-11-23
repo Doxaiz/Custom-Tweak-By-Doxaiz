@@ -28,6 +28,12 @@ internal static class Program
     /// <summary>Сколько полей состояния должно быть прочитано, чтобы это считалось работой, а не пустышкой.</summary>
     private const int MinReadFields = 8;
 
+    /// <summary>
+    /// Набор для живой проверки применения: две настройки пользователя (ветка профиля) и одна машинная.
+    /// Все три безобидны и полностью возвращаются откатом.
+    /// </summary>
+    private const string DefaultLiveTweaks = "MENU_SHOW_DELAY_ZERO,MOUSE_ACCEL_SPEED,MMCSS_NETWORK_THROTTLING";
+
     private static async Task<int> Main(string[] args)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -38,7 +44,7 @@ internal static class Program
         string? pipeName = args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
         bool specialMode = flags.Contains("--expect-identity") || flags.Contains("--try-apply")
             || flags.Contains("--apply-and-rollback") || flags.Contains("--rollback-only")
-            || flags.Contains("--realtime");
+            || flags.Contains("--apply-hold") || flags.Contains("--realtime");
         Console.WriteLine("Custom Tweak By Doxaiz — живая проверка службы");
 
         // Живая оптимизация ищет поток и меряет «до» — это дольше обычного запроса,
@@ -282,20 +288,67 @@ internal static class Program
                 return start.Ok && stop.Ok ? 0 : 2;
             }
 
+            if (flags.Contains("--apply-hold"))
+            {
+                // Оставить изменения применёнными: так внешний наблюдатель (reg.exe в c7-live-checks.ps1)
+                // может сам прочитать значение в ветке пользователя и убедиться, что оно там, а не в профиле службы.
+                string holdCodes = TweakListFrom(flags);
+                var held = await ApplyBatchAsync(client, holdCodes, restorePoint: true);
+                return held.Ok ? 0 : 2;
+            }
+
             if (flags.Contains("--apply-and-rollback"))
             {
-                EngineResponse apply = await client.SendAsync(
-                    EngineCommandKind.ApplyTweaks,
-                    new Dictionary<string, string> { ["tweaks"] = "MENU_SHOW_DELAY_ZERO", ["restorePoint"] = "true" });
-                Console.WriteLine($"Применение MENU_SHOW_DELAY_ZERO: {(apply.Ok ? apply.MessageRu : "ОТКАЗ: " + apply.MessageRu)}");
-                if (!apply.Ok)
+                // Проверка на уровне значений, а не «команда прошла»: служба называет, что было,
+                // что стало и что она увидела в системе. Затем откат. Затем применение ещё раз —
+                // и прежние значения обязаны совпасть с первым заходом: значит откат действительно вернул
+                // систему, а не отрапортовал об этом.
+                string codes = TweakListFrom(flags);
+
+                (bool applied, Dictionary<string, string> before) = await ApplyBatchAsync(client, codes, restorePoint: true);
+                if (!applied)
                 {
                     return 2;
                 }
 
-                EngineResponse rollback = await client.SendAsync(EngineCommandKind.RollbackSnapshot);
-                Console.WriteLine($"Откат: {(rollback.Ok ? rollback.MessageRu : "ОТКАЗ: " + rollback.MessageRu)}");
-                return rollback.Ok ? 0 : 2;
+                if (!await RollbackAsync(client))
+                {
+                    return 2;
+                }
+
+                (bool reapplied, Dictionary<string, string> afterRollback) = await ApplyBatchAsync(client, codes, restorePoint: false);
+                if (!reapplied)
+                {
+                    return 2;
+                }
+
+                bool restored = true;
+                foreach ((string code, string wasBefore) in before)
+                {
+                    if (!afterRollback.TryGetValue(code, out string? afterAgain))
+                    {
+                        Console.WriteLine($"ПРОВАЛ: после отката твик {code} не вернулся в список.");
+                        restored = false;
+                    }
+                    else if (!string.Equals(wasBefore, afterAgain, StringComparison.Ordinal))
+                    {
+                        Console.WriteLine(
+                            $"ПРОВАЛ: твик {code}: до применения было «{wasBefore}», после отката «{afterAgain}» — значение не вернулось.");
+                        restored = false;
+                    }
+                }
+
+                if (restored)
+                {
+                    Console.WriteLine($"Откат вернул прежние значения: {before.Count} из {before.Count}.");
+                }
+
+                if (!await RollbackAsync(client))
+                {
+                    return 2;
+                }
+
+                return restored ? 0 : 2;
             }
 
             return 0;
@@ -305,6 +358,115 @@ internal static class Program
             Console.WriteLine($"Служба недоступна: {ex.Message}");
             return 1;
         }
+    }
+
+    /// <summary>Какие твики трогать в живой проверке: свои через --tweaks=КОД,КОД или безопасный набор по умолчанию.</summary>
+    private static string TweakListFrom(HashSet<string> flags)
+    {
+        string? custom = flags
+            .Where(flag => flag.StartsWith("--tweaks=", StringComparison.Ordinal))
+            .Select(flag => flag["--tweaks=".Length..])
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+        return custom?.Trim() ?? DefaultLiveTweaks;
+    }
+
+    /// <summary>Применить набор и напечатать по каждому твику: было, стало, что увидела система, итог.</summary>
+    private static async Task<(bool Ok, Dictionary<string, string> Previous)> ApplyBatchAsync(
+        EngineClient client,
+        string codes,
+        bool restorePoint)
+    {
+        EngineResponse apply = await client.SendAsync(
+            EngineCommandKind.ApplyTweaks,
+            new Dictionary<string, string>
+            {
+                ["tweaks"] = codes,
+                ["restorePoint"] = restorePoint ? "true" : "false"
+            });
+
+        Console.WriteLine($"Применение [{codes}]: {(apply.Ok ? apply.MessageRu : "ОТКАЗ: " + apply.MessageRu)}");
+
+        var previous = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!apply.Ok)
+        {
+            Console.WriteLine($"ApplyData: {apply.DataJson ?? "нет"}");
+            return (false, previous);
+        }
+
+        bool rowsOk = PrintBatchRows(apply.DataJson, previous);
+        return (apply.Ok && rowsOk, previous);
+    }
+
+    /// <summary>Разбор строк применения: печать «до/после/подтверждено» и проверка, что значения совпали.</summary>
+    private static bool PrintBatchRows(string? dataJson, Dictionary<string, string> previous)
+    {
+        if (string.IsNullOrWhiteSpace(dataJson))
+        {
+            Console.WriteLine("ПРОВАЛ: в ответе нет данных о применённых твиках — сверять значения не с чем.");
+            return false;
+        }
+
+        using JsonDocument data = JsonDocument.Parse(dataJson);
+        if (!data.RootElement.TryGetProperty("rows", out JsonElement rows) || rows.ValueKind != JsonValueKind.Array)
+        {
+            Console.WriteLine("ПРОВАЛ: в ответе нет строк твиков.");
+            return false;
+        }
+
+        bool ok = true;
+        int seen = 0;
+        foreach (JsonElement row in rows.EnumerateArray())
+        {
+            seen++;
+            string code = TextField(row, "code");
+            string wasBefore = TextField(row, "previousText");
+            string applied = TextField(row, "appliedText");
+            string verified = TextField(row, "verifiedText");
+            string outcome = TextField(row, "outcome");
+            string statusRu = TextField(row, "statusRu");
+            bool succeeded = row.TryGetProperty("succeeded", out JsonElement flag) && flag.ValueKind == JsonValueKind.True;
+
+            Console.WriteLine($"твик {code}: было «{wasBefore}», стало «{applied}», система увидела «{verified}», итог {outcome} ({statusRu})");
+
+            if (code.Length > 0)
+            {
+                previous[code] = wasBefore;
+            }
+
+            if (!succeeded)
+            {
+                Console.WriteLine($"ПРОВАЛ: твик {code} не применён: {statusRu}");
+                ok = false;
+                continue;
+            }
+
+            if (applied.Length > 0 && verified.Length > 0 && !string.Equals(applied, verified, StringComparison.Ordinal))
+            {
+                Console.WriteLine($"ПРОВАЛ: твик {code}: применено «{applied}», а в системе «{verified}».");
+                ok = false;
+            }
+        }
+
+        if (seen == 0)
+        {
+            Console.WriteLine("ПРОВАЛ: строк твиков ноль — применение ничего не рассказало.");
+            return false;
+        }
+
+        return ok;
+    }
+
+    private static string TextField(JsonElement row, string name) =>
+        row.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? string.Empty
+            : string.Empty;
+
+    private static async Task<bool> RollbackAsync(EngineClient client)
+    {
+        EngineResponse rollback = await client.SendAsync(EngineCommandKind.RollbackSnapshot);
+        Console.WriteLine($"Откат: {(rollback.Ok ? rollback.MessageRu : "ОТКАЗ: " + rollback.MessageRu)}");
+        return rollback.Ok;
     }
 
     private static (string Name, string Sid, bool IsAdmin) ReadIdentity(string? dataJson)

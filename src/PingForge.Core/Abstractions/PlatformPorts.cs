@@ -44,6 +44,16 @@ public interface IRegistryPort
     Task WriteAsync(RegistryLocation location, string canonicalValue, TweakValueDataType dataType, CancellationToken ct = default);
 
     Task DeleteValueAsync(RegistryLocation location, CancellationToken ct = default);
+
+    /// <summary>
+    /// Причина, по которой настройки ветки пользователя сейчас недоступны, или null, если они доступны.
+    ///
+    /// Нужна из-за того, что служба работает под LocalSystem: её HKCU — это профиль системы.
+    /// Писать туда настройку пользователя и рапортовать «применено» — значит показывать изменение,
+    /// которого человек не увидит. Реализации по умолчанию (фейки в тестах, не-Windows) считают,
+    /// что проблемы нет.
+    /// </summary>
+    string? DescribeUserHiveProblem() => null;
 }
 
 public sealed record CommandResult(int ExitCode, string StandardOutput, string StandardError)

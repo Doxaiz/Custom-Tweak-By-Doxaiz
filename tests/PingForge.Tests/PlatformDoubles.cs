@@ -16,6 +16,14 @@ public sealed class FakeRegistryPort : IRegistryPort
 
     public int DeleteCount { get; private set; }
 
+    /// <summary>
+    /// Что порт отвечает про ветку пользователя. null — «доступна» (обычный случай фейка).
+    /// Так проверяется честный отказ, когда профиль пользователя привязать не к кому.
+    /// </summary>
+    public string? UserHiveProblem { get; set; }
+
+    public string? DescribeUserHiveProblem() => UserHiveProblem;
+
     public void Seed(RegistryLocation location, string? value) => _values[Key(location)] = value;
 
     public string? Get(RegistryLocation location) => _values.TryGetValue(Key(location), out string? value) ? value : null;

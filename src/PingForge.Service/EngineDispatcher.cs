@@ -1,3 +1,4 @@
+using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
 using PingForge.Orchestration.Realtime;
 using PingForge.Service.Protocol;
@@ -145,6 +146,12 @@ public sealed class EngineDispatcher
         }
 
         var args = new EngineArgs(request.Args, descriptor.WireName);
+
+        // Чья ветка пользователя меняется. Служба идёт от LocalSystem, поэтому без этого «применить
+        // настройку пользователя» означало бы записать её в профиль системы: проверка подтвердила бы
+        // запись, а человек в Windows не увидел бы ничего. SID запросившего уезжает в контекст команды,
+        // и порт реестра открывает HKEY_USERS\<SID> вместо своего HKCU.
+        using IDisposable userHive = UserHiveContext.Use(peer?.ClientSid);
 
         try
         {

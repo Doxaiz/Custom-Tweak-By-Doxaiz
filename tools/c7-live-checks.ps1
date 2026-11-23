@@ -57,6 +57,24 @@ function Run-AsUser([string]$exe, [string[]]$arguments, [string]$user, [string]$
     return @{ Code = $process.ExitCode; Output = $out + $err }
 }
 
+# Значения, которые проверяются «своими глазами»: ветка пользователя (её видит человек) и одна машинная настройка.
+$menuDesktopKey = 'HKCU:\Control Panel\Desktop'
+$mouseControlKey = 'HKCU:\Control Panel\Mouse'
+$multimediaKey = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
+
+function Get-TweakValues {
+    return @{
+        MenuShowDelay = (Get-ItemProperty -Path $menuDesktopKey -Name MenuShowDelay -ErrorAction SilentlyContinue).MenuShowDelay
+        MouseSpeed    = (Get-ItemProperty -Path $mouseControlKey -Name MouseSpeed -ErrorAction SilentlyContinue).MouseSpeed
+        Throttling    = (Get-ItemProperty -Path $multimediaKey -Name NetworkThrottlingIndex -ErrorAction SilentlyContinue).NetworkThrottlingIndex
+    }
+}
+
+function Format-TweakValues($values) {
+    if ($null -eq $values) { return 'нет данных' }
+    return "MenuShowDelay=$($values.MenuShowDelay); MouseSpeed=$($values.MouseSpeed); NetworkThrottlingIndex=$($values.Throttling)"
+}
+
 try {
     Write-Host '-- Silent install'
     $install = Start-Process $SetupPath -ArgumentList '/S' -Wait -PassThru
@@ -132,9 +150,45 @@ try {
         }
     }
 
-    # 4) Administrator really can apply one harmless tweak and roll it back.
-    if ((Run-Smoke @('--apply-and-rollback') 'Admin --apply-and-rollback MENU_SHOW_DELAY_ZERO') -ne 0) {
+    # 4) Administrator really can apply harmless tweaks and roll them back — с проверкой значений.
+    #    Смоук печатает по каждому твику «было / стало / что увидела система» и после отката
+    #    применяет набор заново: прежние значения обязаны совпасть, иначе откат только на словах.
+    if ((Run-Smoke @('--apply-and-rollback') 'Admin --apply-and-rollback (значения до/после/откат)') -ne 0) {
         Note-Failure 'admin --apply-and-rollback'
+    }
+
+    # 5) Настройка пользователя обязана оказаться в ветке ЕГО профиля, а не в профиле службы.
+    #    Служба идёт от LocalSystem: её HKCU — это профиль системы. Поэтому проверяем не ответом
+    #    службы, а собственным чтением из своей учётной записи — так же, как это увидел бы человек.
+    $userBefore = Get-TweakValues
+    Ann 'notice' "до применения: $(Format-TweakValues $userBefore)"
+
+    if ((Run-Smoke @('--apply-hold') 'Admin --apply-hold (настройки пользователя и системы)') -ne 0) {
+        Note-Failure 'admin --apply-hold'
+    }
+
+    $userApplied = Get-TweakValues
+    Ann 'notice' "после применения: $(Format-TweakValues $userApplied)"
+    if ("$($userApplied.MenuShowDelay)" -ne '0') {
+        Note-Failure "MenuShowDelay в ветке пользователя = «$($userApplied.MenuShowDelay)», ожидалось 0 (запись ушла не в тот профиль?)"
+    }
+    if ("$($userApplied.MouseSpeed)" -ne '0') {
+        Note-Failure "MouseSpeed в ветке пользователя = «$($userApplied.MouseSpeed)», ожидалось 0"
+    }
+    if (@('4294967295', '-1') -notcontains "$($userApplied.Throttling)") {
+        Note-Failure "NetworkThrottlingIndex = «$($userApplied.Throttling)», ожидалось 4294967295"
+    }
+
+    if ((Run-Smoke @('--rollback-only') 'Admin --rollback-only (после настроек пользователя)') -ne 0) {
+        Note-Failure 'admin --rollback-only'
+    }
+
+    $userAfter = Get-TweakValues
+    Ann 'notice' "после отката: $(Format-TweakValues $userAfter)"
+    foreach ($name in @('MenuShowDelay', 'MouseSpeed', 'Throttling')) {
+        if ("$($userAfter[$name])" -ne "$($userBefore[$name])") {
+            Note-Failure "после отката $name = «$($userAfter[$name])», а было «$($userBefore[$name])»"
+        }
     }
 }
 catch {
