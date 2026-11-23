@@ -209,16 +209,19 @@ public sealed class GameProcessCatalog
         new KnownGame("valorant-win64-shipping.exe", "VALORANT", "Vanguard (ядро)", AntiCheatStatus.KnownKernelConflict,
             "Vanguard — ядерный анти-чит: рядом с ним программа не поднимает ничего своего, а перехвата " +
             "пакетов в ней нет и для других игр. Остаются маршрут и QoS — настройки Windows. " +
-            "Игровой трафик идёт по UDP 7000–8000 и 8180–8181, голос — 3478–3480 (STUN), поэтому голос " +
-            "здесь не матч.",
+            "Riot в своей справке называет для игры UDP 5000–5500 и 8088, а TCP 2099, 5222–5223, 8088, " +
+            "8393–8400 — для входа и служб. Диапазоны 7000–8000 и 8180–8181 встречаются в перепечатках " +
+            "сообществ и здесь оставлены подсказкой, а не выдан за список Riot. Голос идёт по 3478–3480 (STUN), " +
+            "поэтому голос здесь не матч.",
             PortHints: [8393, 8088],
-            PortRanges: [(7000, 8000), (8180, 8181)]),
+            PortRanges: [(5000, 5500), (7000, 8000), (8180, 8181)]),
         new KnownGame("valorant.exe", "VALORANT (лаунчер)", "Vanguard (ядро)", AntiCheatStatus.KnownKernelConflict,
             "Только маршрут и QoS."),
         new KnownGame("league of legends.exe", "League of Legends", "Vanguard (ядро)", AntiCheatStatus.KnownKernelConflict,
             "С 2024 года игра использует Vanguard — ядерный анти-чит: программа не поднимает рядом с ним " +
-            "ничего своего, остаются маршрут и QoS (настройки Windows).",
-            PortHints: [2099, 5222, 8393],
+            "ничего своего, остаются маршрут и QoS (настройки Windows). Порты по справке Riot: UDP 5000–5500 — " +
+            "игровой клиент, UDP 8088 — просмотр; TCP 2099, 5222–5223, 8088, 8393–8400 — вход, чат и службы.",
+            PortHints: [2099, 5222, 5223, 8088, 8393],
             PortRanges: [(5000, 5500)]),
         new KnownGame("r5apex.exe", "Apex Legends", "EasyAntiCheat (EAC)", AntiCheatStatus.KnownKernelConflict,
             "Порт матча у Apex не один: по логам игроков он попадает в 37000–40115 (шаг 100 и +15). " +
