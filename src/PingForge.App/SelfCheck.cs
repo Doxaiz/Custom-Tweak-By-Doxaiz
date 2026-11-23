@@ -90,6 +90,7 @@ internal static class SelfCheck
         CheckLiveTcpEstats(problems);
         CheckLiveTcpEstatsForeignProcess(problems);
         CheckNicBackend(app, problems);
+        CheckSignatureReadable(problems);
         CheckService(problems);
 
         // Если окно построилось, но раскладка или привязки плохи — это тот же отказ, что и «окно не собралось»:
@@ -1296,6 +1297,28 @@ internal static class SelfCheck
         {
             problems.Add($"живой TCP-замер через iphlpapi: проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Подпись собственного файла: читается у самого файла, а не пересказывается словами.
+    ///
+    /// Смысл: строка «мы не подписаны EV» была утверждением о сборке, а не о файле, и с 2024 года
+    /// ещё и неверным по смыслу — тип сертификата на предупреждение SmartScreen больше не влияет.
+    /// Здесь программа смотрит на свой файл и говорит, что видит: подписан (и кем) или нет.
+    /// </summary>
+    private static void CheckSignatureReadable(List<string> problems)
+    {
+        try
+        {
+            string path = Environment.ProcessPath ?? string.Empty;
+            AppSignatureState state = AppSignature.Read(path);
+            StartupLog.Note($"ПОДПИСЬ: {AppSignature.DescribeRu(state)}");
+        }
+        catch (Exception ex)
+        {
+            StartupLog.Note($"ПОДПИСЬ: НЕ прочитана — {ex.GetType().Name}: {ex.Message}");
+            problems.Add($"подпись файла не прочитана: {ex.GetType().Name}: {ex.Message}");
         }
     }
 

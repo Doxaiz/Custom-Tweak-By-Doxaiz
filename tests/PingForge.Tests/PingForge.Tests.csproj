@@ -58,8 +58,15 @@
     <None Include="..\..\src\PingForge.Service.Host\ServiceProgram.cs" Link="checked-ServiceProgram.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\StartupGuard.cs" Link="checked-StartupGuard.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\SelfCheck.cs" Link="checked-SelfCheck.cs" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Волна 48: сторож видит, откуда берётся строка о подписи, и что старого обещания про EV в коде нет. -->
+    <None Include="..\..\src\PingForge.App.ViewModels\MainViewModel.cs" Link="checked-MainViewModel.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App.ViewModels\ForbiddenActionsList.cs" Link="checked-ForbiddenActionsList.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\КАНАЛЫ-СЛУЖБЫ.md" Link="checked-pipes-doc.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\README.md" Link="checked-README.md" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Подпись, SmartScreen и Smart App Control: сторож сверяет тексты программы и документации
+         с тем, что написано в Microsoft Learn (тип сертификата на предупреждение не влияет). -->
+    <None Include="..\..\docs\УСТАНОВКА.md" Link="checked-install-doc.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\ИСТОЧНИКИ.md" Link="checked-sources-doc.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\АРХИТЕКТУРА.md" Link="checked-architecture.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\scripts\install-service.ps1" Link="checked-install-service.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\tools\render_ui_preview.py" Link="checked-render-ui-preview.py" CopyToOutputDirectory="PreserveNewest" />
