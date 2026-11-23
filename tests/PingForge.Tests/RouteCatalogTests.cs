@@ -162,9 +162,13 @@ public sealed class RouteCatalogTests
         foreach (string game in new[] { "The Finals", "Marvel Rivals" })
         {
             GameRouteTarget target = GameRouteCatalog.Targets.Single(t => t.GameRu == game);
-            Assert.Contains("ядр", target.NoteRu, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("маршрут", target.NoteRu, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("перехват", target.NoteRu, StringComparison.OrdinalIgnoreCase);
+
+            // Сравнение по нижнему регистру, а не OrdinalIgnoreCase: для кириллицы последний
+            // не считает «Ядерный» и «ядр» одним и тем же, и проверка падала бы на верном тексте.
+            string note = target.NoteRu.ToLowerInvariant();
+            Assert.Contains("ядр", note, StringComparison.Ordinal);
+            Assert.Contains("маршрут", note, StringComparison.Ordinal);
+            Assert.Contains("перехват", note, StringComparison.Ordinal);
         }
 
         GameRouteTarget marvel = GameRouteCatalog.Targets.Single(t => t.GameRu == "Marvel Rivals");
