@@ -70,6 +70,14 @@ function Get-TweakValues {
     }
 }
 
+# Чтение глобального параметра TCP своим процессом: так его увидел бы человек в netsh.
+function Get-TcpAutoTuning {
+    $out = & netsh interface tcp show global 2>&1 | Out-String
+    $m = [regex]::Match($out, '(?im)^\s*(?:Auto-?[Tt]uning [Ll]evel|Уровень автонастройки)[^:]*:\s*(\S+)')
+    if ($m.Success) { return $m.Groups[1].Value.Trim().ToLowerInvariant() }
+    return ''
+}
+
 function Format-TweakValues($values) {
     if ($null -eq $values) { return 'нет данных' }
     return "MenuShowDelay=$($values.MenuShowDelay); MouseSpeed=$($values.MouseSpeed); NetworkThrottlingIndex=$($values.Throttling)"
@@ -188,6 +196,50 @@ try {
     foreach ($name in @('MenuShowDelay', 'MouseSpeed', 'Throttling')) {
         if ("$($userAfter[$name])" -ne "$($userBefore[$name])") {
             Note-Failure "после отката $name = «$($userAfter[$name])», а было «$($userBefore[$name])»"
+        }
+    }
+
+    # 6) netsh-бэкенд: служба обязана уметь менять глобальный параметр TCP и возвращать его откатом.
+    #    Значение перед опытом меняем сами: на чистой машине твик оказался бы «уже был таким»,
+    #    и запись через netsh осталась бы недоказанной. Смотрим на результат своим netsh, не ответом службы.
+    $tuningBefore = Get-TcpAutoTuning
+    Ann 'notice' "autotuninglevel до опыта: «$tuningBefore»"
+    if (-not $tuningBefore) {
+        Note-Failure 'netsh не назвал autotuninglevel — проверку netsh-бэкенда провести нельзя'
+    } else {
+        $prepared = if ($tuningBefore -eq 'normal') { 'restricted' } else { 'normal' }
+        & netsh interface tcp set global "autotuninglevel=$prepared" | Out-Host
+        $afterPrepare = Get-TcpAutoTuning
+        if ($afterPrepare -ne $prepared) {
+            Note-Failure "подготовка autotuninglevel=«$prepared» не удалась (сейчас «$afterPrepare»)"
+        } else {
+            if ((Run-Smoke @('--apply-hold', '--tweaks=TCP_AUTOTUNING_NORMAL') 'Admin --apply-hold TCP_AUTOTUNING_NORMAL') -ne 0) {
+                Note-Failure 'admin --apply-hold TCP_AUTOTUNING_NORMAL'
+            }
+
+            $tuningApplied = Get-TcpAutoTuning
+            Ann 'notice' "применение TCP_AUTOTUNING_NORMAL: autotuninglevel=«$tuningApplied» (ожидалось normal)"
+            if ($tuningApplied -ne 'normal') {
+                Note-Failure "netsh не увидел применения: autotuninglevel=«$tuningApplied», ожидалось normal"
+            }
+
+            if ((Run-Smoke @('--rollback-only') 'Admin --rollback-only (после netsh-твика)') -ne 0) {
+                Note-Failure 'admin --rollback-only (после netsh-твика)'
+            }
+
+            $tuningRolledBack = Get-TcpAutoTuning
+            Ann 'notice' "после отката: autotuninglevel=«$tuningRolledBack» (ожидалось «$prepared»)"
+            if ($tuningRolledBack -ne $prepared) {
+                Note-Failure "откат вернул autotuninglevel=«$tuningRolledBack», а было «$prepared»"
+            }
+        }
+
+        # Возвращаем то, что было до опыта, даже если проверка выше не прошла.
+        & netsh interface tcp set global "autotuninglevel=$tuningBefore" | Out-Host
+        $tuningRestored = Get-TcpAutoTuning
+        Ann 'notice' "autotuninglevel после опыта: «$tuningRestored» (до опыта «$tuningBefore»)"
+        if ($tuningRestored -ne $tuningBefore) {
+            Note-Failure "не удалось вернуть исходный autotuninglevel=«$tuningBefore» (сейчас «$tuningRestored»)"
         }
     }
 }
