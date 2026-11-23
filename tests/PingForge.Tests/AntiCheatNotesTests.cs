@@ -51,13 +51,20 @@ public sealed class AntiCheatNotesTests
         GameFlowInfo flow = Flow(status);
         OptimizationPlan plan = new OptimizationActionPlanner().Plan(flow, new RealtimeOptions(), isAdministrator: true);
 
-        Assert.Contains(plan.Notes, note => string.Equals(
-            note, AntiCheatNotes.ExplainRu(status, flow.GameTitleRu), StringComparison.Ordinal));
-
         // Ни одного обещания «мы не поднимем фильтр» и ни одного «действия выключены».
         string all = string.Join(" | ", plan.Notes);
         Assert.DoesNotContain("фильтр", all, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("выключен", all, StringComparison.OrdinalIgnoreCase);
+
+        if (status == AntiCheatStatus.VerifiedSafe)
+        {
+            // Проверенной игре предупреждения не нужно: пугать человека нечем.
+            Assert.DoesNotContain(plan.Notes, note => note.Contains("анти-чит", StringComparison.OrdinalIgnoreCase));
+            return;
+        }
+
+        Assert.Contains(plan.Notes, note => string.Equals(
+            note, AntiCheatNotes.ExplainRu(status, flow.GameTitleRu), StringComparison.Ordinal));
     }
 
     [Fact]

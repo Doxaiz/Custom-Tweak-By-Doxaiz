@@ -90,7 +90,7 @@ public sealed class RouteCatalogTests
             var target = GameRouteCatalog.Targets.Single(t => t.GameRu == game);
             Assert.Contains("маршрут", target.NoteRu, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("перехват", target.NoteRu, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("не поднима", target.NoteRu, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("фильтр", target.NoteRu, StringComparison.OrdinalIgnoreCase);
         }
     }
 
