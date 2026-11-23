@@ -128,6 +128,38 @@ public sealed class AntiCheatNotesTests
     }
 
     [Fact]
+    public void VALORANT_подтверждается_портами_из_справки_Riot()
+    {
+        // Порты Riot — игровой UDP 5000–5500 и службы; диапазоны сообществ оставлены подсказкой.
+        var catalog = new GameProcessCatalog();
+
+        Assert.True(catalog.TryMatch("VALORANT-Win64-Shipping.exe", out KnownGame valorant));
+        Assert.True(valorant.MatchesPort(5400));
+        Assert.True(valorant.MatchesPort(7777));
+        Assert.True(valorant.MatchesPort(8393));
+        Assert.False(valorant.MatchesPort(443));
+
+        Assert.Contains("Riot", valorant.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("перепечатках", valorant.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("5000", valorant.NoteRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void League_of_Legends_подтверждается_портами_из_справки_Riot()
+    {
+        var catalog = new GameProcessCatalog();
+
+        Assert.True(catalog.TryMatch("League of Legends.exe", out KnownGame lol));
+        Assert.True(lol.MatchesPort(5223));
+        Assert.True(lol.MatchesPort(8088));
+        Assert.True(lol.MatchesPort(5400));
+        Assert.False(lol.MatchesPort(27015));
+
+        Assert.Contains("Riot", lol.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("5000", lol.NoteRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_Finals_узнаётся_по_рабочему_имени_и_сборкам_патча_8()
     {
         // Игра зовётся по рабочему имени проекта, а с патча 8.0.0 у неё две сборки с суффиксами -e и -d.

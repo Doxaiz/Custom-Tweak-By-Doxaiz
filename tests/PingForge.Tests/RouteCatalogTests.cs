@@ -204,6 +204,25 @@ public sealed class RouteCatalogTests
     }
 
     [Fact]
+    public void VALORANT_и_League_of_Legends_называют_порты_по_справке_Riot()
+    {
+        // Справка Riot: UDP 5000–5500 и 8088 — игровой клиент, TCP 2099, 5222–5223, 8088, 8393–8400 — вход
+        // и службы. Диапазоны 7000–8000 и 8180–8181 у VALORANT есть только в перепечатках сообществ.
+        foreach (string game in new[] { "VALORANT", "League of Legends" })
+        {
+            GameRouteTarget target = GameRouteCatalog.Targets.Single(t => t.GameRu == game);
+            string ports = string.Join(" ", target.PublishedPortsRu);
+
+            Assert.Contains("5000", ports, StringComparison.Ordinal);
+            Assert.Contains("5500", ports, StringComparison.Ordinal);
+            Assert.Contains("Riot", ports, StringComparison.Ordinal);
+        }
+
+        GameRouteTarget valorant = GameRouteCatalog.Targets.Single(t => t.GameRu == "VALORANT");
+        Assert.Contains("8393", string.Join(" ", valorant.PublishedPortsRu), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Rust_назван_по_фактам_матчмейкинга_нет_регион_выбирает_человек()
     {
         // Факты из интернета, а не догадка: у Rust нет матчмейкинга — сервер выбирают в списке, где рядом
