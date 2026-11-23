@@ -114,9 +114,14 @@ public sealed class RouteScorer
             penalties.Add($"дополнительный трафик +{extraTrafficPercent:F0} %");
         }
 
+        // Неизмеренный джиттер не подставляется нулём в формулу: слагаемого просто нет, и в объяснении
+        // балла стоит «джиттер не измерен — в балл не вошёл». Ноль и «не измерено» — разные вещи.
+        // Имя не measuredJitter: оно уже занято проверкой порога выше и живёт до конца блока.
+        double jitterTerm = jitter is { } scoredJitter ? scoredJitter * _weights.PerJitterMs : 0.0;
+
         double score =
             (rtt * _weights.PerRttMs)
-            + ((jitter ?? 0.0) * _weights.PerJitterMs)
+            + jitterTerm
             + lossPenalty
             + hopPenalty
             + nodeLoadPenalty
