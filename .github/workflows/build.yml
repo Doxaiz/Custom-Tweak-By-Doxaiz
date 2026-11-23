@@ -257,7 +257,19 @@ jobs:
             Write-Host "::notice $ann::$safe"
           }
 
-          $broken = @($lines + $nic | Where-Object { $_ -match 'НЕ работает' })
+          # Подпись своего файла: программа читает её у файла и говорит правду (в CI сборка не подписана).
+          $sign = @(Get-Content $log | Where-Object { $_ -match 'ПОДПИСЬ:' })
+          if ($sign.Count -eq 0) {
+            Write-Host "::error $ann::подпись файла: строки «ПОДПИСЬ:» в журнале нет — проверка не запускалась"
+            throw 'Строки «ПОДПИСЬ:» нет в журнале'
+          }
+
+          foreach ($line in $sign) {
+            $safe = ($line -replace '%', '%25' -replace "`r", '' -replace "`n", ' ')
+            Write-Host "::notice $ann::$safe"
+          }
+
+          $broken = @($lines + $nic + $sign | Where-Object { $_ -match 'НЕ работает' })
           if ($broken.Count -gt 0) { throw "Живой замер не работает: $($broken -join ' | ')" }
           if ($process.ExitCode -ne 0) { throw "Самопроверка вернула код $($process.ExitCode)" }
 
