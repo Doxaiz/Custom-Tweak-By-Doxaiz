@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using PingForge.App.ViewModels;
 using PingForge.Service.Protocol;
@@ -308,6 +309,9 @@ internal static class Program
                 (bool applied, Dictionary<string, string> before) = await ApplyBatchAsync(client, codes, restorePoint: true);
                 if (!applied)
                 {
+                    // Не оставляем применённое за собой даже при провале проверки: иначе следующий запуск
+                    // увидит «уже было таким» и проверка значений станет бессмысленной.
+                    await RollbackAsync(client);
                     return 2;
                 }
 
@@ -319,6 +323,7 @@ internal static class Program
                 (bool reapplied, Dictionary<string, string> afterRollback) = await ApplyBatchAsync(client, codes, restorePoint: false);
                 if (!reapplied)
                 {
+                    await RollbackAsync(client);
                     return 2;
                 }
 
@@ -441,7 +446,7 @@ internal static class Program
                 continue;
             }
 
-            if (applied.Length > 0 && verified.Length > 0 && !string.Equals(applied, verified, StringComparison.Ordinal))
+            if (applied.Length > 0 && verified.Length > 0 && !SameShownValue(applied, verified))
             {
                 Console.WriteLine($"ПРОВАЛ: твик {code}: применено «{applied}», а в системе «{verified}».");
                 ok = false;
@@ -455,6 +460,29 @@ internal static class Program
         }
 
         return ok;
+    }
+
+    /// <summary>
+    /// Сравнение значений так, как их видит человек. «4294967295» и «-1» — одно и то же 32-битное
+    /// значение DWord: служба сравнивает их канонически, а печатает в разных видах, и проверка
+    /// не должна спотыкаться о форму записи.
+    /// </summary>
+    private static bool SameShownValue(string first, string second)
+    {
+        if (string.Equals(first, second, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        bool firstIsNumber = long.TryParse(first, NumberStyles.Integer, CultureInfo.InvariantCulture, out long a);
+        bool secondIsNumber = long.TryParse(second, NumberStyles.Integer, CultureInfo.InvariantCulture, out long b);
+        if (!firstIsNumber || !secondIsNumber)
+        {
+            return false;
+        }
+
+        bool inDwordRange = a is >= int.MinValue and <= uint.MaxValue && b is >= int.MinValue and <= uint.MaxValue;
+        return inDwordRange && unchecked((uint)a) == unchecked((uint)b);
     }
 
     private static string TextField(JsonElement row, string name) =>
