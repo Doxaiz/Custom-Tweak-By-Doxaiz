@@ -116,7 +116,8 @@ public sealed class RouteScorer
 
         // Неизмеренный джиттер не подставляется нулём в формулу: слагаемого просто нет, и в объяснении
         // балла стоит «джиттер не измерен — в балл не вошёл». Ноль и «не измерено» — разные вещи.
-        double jitterTerm = jitter is { } measuredJitter ? measuredJitter * _weights.PerJitterMs : 0.0;
+        // Имя не measuredJitter: оно уже занято проверкой порога выше и живёт до конца блока.
+        double jitterTerm = jitter is { } scoredJitter ? scoredJitter * _weights.PerJitterMs : 0.0;
 
         double score =
             (rtt * _weights.PerRttMs)
