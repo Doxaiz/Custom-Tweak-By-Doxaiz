@@ -4,6 +4,17 @@
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Стенограмма в test-results: аннотаций в прогоне не больше пятидесяти, и доказательства (значения
+# до/после/после отката, ответы netsh) в них не всегда помещаются. Файл уходит в артефакты прогона.
+$transcriptDir = Join-Path (Get-Location) 'test-results'
+New-Item -ItemType Directory -Force $transcriptDir | Out-Null
+try {
+    Start-Transcript -Path (Join-Path $transcriptDir 'c7-live-checks.log') -Force | Out-Null
+} catch {
+    Write-Host "transcript note: $($_.Exception.Message)"
+}
+
 $installDir = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz'
 $serviceLog = Join-Path $env:ProgramData 'PingForge\service.log'
 $failures = @()
@@ -253,6 +264,8 @@ catch {
     Note-Failure $_.Exception.Message
 }
 finally {
+    try { Stop-Transcript | Out-Null } catch { Write-Host "transcript stop note: $($_.Exception.Message)" }
+
     # Safety rollback and account cleanup always run.
     try {
         if (Test-Path $SmokePath) {

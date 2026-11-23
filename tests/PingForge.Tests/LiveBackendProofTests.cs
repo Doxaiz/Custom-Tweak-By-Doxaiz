@@ -40,6 +40,10 @@ public sealed class LiveBackendProofTests
         // Значение перед опытом меняется вручную: иначе твик был бы «уже таким» и запись не доказана.
         Assert.Contains("autotuninglevel=$prepared", script, StringComparison.Ordinal);
         Assert.Contains("не удалось вернуть исходный autotuninglevel", script, StringComparison.Ordinal);
+
+        // Аннотаций в прогоне не больше пятидесяти, поэтому доказательства обязаны попасть в файл,
+        // который сборка и так кладёт в артефакты. Путь в build.yml без этого файла — обещание пустоты.
+        Assert.Contains("c7-live-checks.log", script, StringComparison.Ordinal);
     }
 
     private static string Read(string fileName)
