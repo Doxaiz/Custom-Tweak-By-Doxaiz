@@ -73,7 +73,9 @@ function Get-TweakValues {
 # Чтение глобального параметра TCP своим процессом: так его увидел бы человек в netsh.
 function Get-TcpAutoTuning {
     $out = & netsh interface tcp show global 2>&1 | Out-String
-    $m = [regex]::Match($out, '(?im)^\s*(?:Auto-?[Tt]uning [Ll]evel|Уровень автонастройки)[^:]*:\s*(\S+)')
+    # Подпись строки в netsh разная: «Receive Window Auto-Tuning Level» по-английски и
+    # «Уровень автонастройки…» по-русски, поэтому ищем подпись в любом месте строки, а не сначала.
+    $m = [regex]::Match($out, '(?im)^[^:]*?(?:Auto-?[Tt]uning [Ll]evel|Уровень автонастройки)[^:]*:\s*(\S+)')
     if ($m.Success) { return $m.Groups[1].Value.Trim().ToLowerInvariant() }
     return ''
 }
@@ -205,6 +207,9 @@ try {
     $tuningBefore = Get-TcpAutoTuning
     Ann 'notice' "autotuninglevel до опыта: «$tuningBefore»"
     if (-not $tuningBefore) {
+        # Сырой вывод netsh — в аннотацию: без него непонятно, подпись не нашлась или параметра нет вовсе.
+        $raw = (& netsh interface tcp show global 2>&1 | Out-String) -replace "`r", '' -replace "`n", ' | '
+        Ann 'notice' "netsh interface tcp show global: $raw"
         Note-Failure 'netsh не назвал autotuninglevel — проверку netsh-бэкенда провести нельзя'
     } else {
         $prepared = if ($tuningBefore -eq 'normal') { 'restricted' } else { 'normal' }
