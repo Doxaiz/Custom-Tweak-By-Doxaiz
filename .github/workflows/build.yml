@@ -244,7 +244,20 @@ jobs:
             Write-Host "::notice $ann::$safe"
           }
 
-          $broken = @($lines | Where-Object { $_ -match 'НЕ работает' })
+          # Свойства сетевого адаптера: тот бэкенд, через который применяются NIC-твики. Проверка только
+          # читает — если у виртуальной карты свойства нет, это честное «пропущено» с причиной.
+          $nic = @(Get-Content $log | Where-Object { $_ -match 'ЖИВОЕ СВОЙСТВО NIC' })
+          if ($nic.Count -eq 0) {
+            Write-Host "::error $ann::чтение свойств NIC: строки «ЖИВОЕ СВОЙСТВО NIC» в журнале нет — проверка не запускалась"
+            throw 'Строки «ЖИВОЕ СВОЙСТВО NIC» нет в журнале'
+          }
+
+          foreach ($line in $nic) {
+            $safe = ($line -replace '%', '%25' -replace "`r", '' -replace "`n", ' ')
+            Write-Host "::notice $ann::$safe"
+          }
+
+          $broken = @($lines + $nic | Where-Object { $_ -match 'НЕ работает' })
           if ($broken.Count -gt 0) { throw "Живой замер не работает: $($broken -join ' | ')" }
           if ($process.ExitCode -ne 0) { throw "Самопроверка вернула код $($process.ExitCode)" }
 

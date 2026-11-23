@@ -57,6 +57,7 @@
     <None Include="..\..\src\PingForge.Service.Windows\PipeClientInspector.cs" Link="checked-PipeClientInspector.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Service.Host\ServiceProgram.cs" Link="checked-ServiceProgram.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.App\StartupGuard.cs" Link="checked-StartupGuard.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PingForge.App\SelfCheck.cs" Link="checked-SelfCheck.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\КАНАЛЫ-СЛУЖБЫ.md" Link="checked-pipes-doc.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\README.md" Link="checked-README.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\АРХИТЕКТУРА.md" Link="checked-architecture.md" CopyToOutputDirectory="PreserveNewest" />

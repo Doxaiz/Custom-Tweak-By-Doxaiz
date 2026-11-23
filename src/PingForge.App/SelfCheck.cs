@@ -8,6 +8,7 @@ using PingForge.App.Views;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
 using PingForge.Core.Layout;
 using PingForge.Core.Ui;
@@ -88,6 +89,7 @@ internal static class SelfCheck
         CheckLiveNetwork(problems);
         CheckLiveTcpEstats(problems);
         CheckLiveTcpEstatsForeignProcess(problems);
+        CheckNicBackend(app, problems);
         CheckService(problems);
 
         // Если окно построилось, но раскладка или привязки плохи — это тот же отказ, что и «окно не собралось»:
@@ -1294,6 +1296,60 @@ internal static class SelfCheck
         {
             problems.Add($"живой TCP-замер через iphlpapi: проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Живое чтение свойств сетевого адаптера — тот самый бэкенд, через который применяются NIC-твики.
+    ///
+    /// Здесь ничего не меняется: проверяется, что на настоящей Windows порт отвечает и называет
+    /// текущее значение свойства. Если у карты такого свойства нет (обычное дело у виртуальных
+    /// адаптеров сборочной машины), это честный ответ «пропущено», а не зелёный результат: писать
+    /// в свойство, которого нет, программа не станет.
+    /// </summary>
+    private static void CheckNicBackend(App app, List<string> problems)
+    {
+        string[] codes = ["NIC_INTERRUPT_MODERATION", "NIC_FLOW_CONTROL", "NIC_PACKET_PRIORITY_ON"];
+        var skipped = new List<string>();
+
+        try
+        {
+            foreach (string code in codes)
+            {
+                ITweak? tweak = app.Catalog.GetByCode(code);
+                if (tweak is null)
+                {
+                    skipped.Add($"{code}: твика нет в каталоге");
+                    continue;
+                }
+
+                (TweakTarget target, TweakSupport support) =
+                    Task.Run(() => tweak.ResolveTargetAsync()).GetAwaiter().GetResult();
+
+                if (!support.IsSupported)
+                {
+                    skipped.Add($"{code}: {support.ReasonRu}");
+                    continue;
+                }
+
+                CapturedParameterState captured =
+                    Task.Run(() => tweak.CaptureAsync(target)).GetAwaiter().GetResult();
+
+                string value = captured.ExistedBefore ? captured.CapturedRawValue ?? "<без значения>" : "<значения нет>";
+                StartupLog.Note(
+                    $"ЖИВОЕ СВОЙСТВО NIC: {code} на «{target.ResourceLocator}» = «{value}»; " +
+                    "только чтение — программа его не меняла");
+                return;
+            }
+
+            StartupLog.Note(
+                "ЖИВОЕ СВОЙСТВО NIC: пропущено — активный адаптер не отдал ни одного из проверяемых свойств " +
+                "(у виртуальной карты их обычно нет): " + string.Join("; ", skipped));
+        }
+        catch (Exception ex)
+        {
+            StartupLog.Note($"ЖИВОЕ СВОЙСТВО NIC: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+            problems.Add($"чтение свойств сетевого адаптера упало: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
