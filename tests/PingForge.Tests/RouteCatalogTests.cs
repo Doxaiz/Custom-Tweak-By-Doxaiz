@@ -159,16 +159,20 @@ public sealed class RouteCatalogTests
     [Fact]
     public void Ядерные_анти_читы_The_Finals_и_Marvel_названы_своими_именами_и_без_обещаний()
     {
-        foreach (string game in new[] { "The Finals", "Marvel Rivals" })
+        // Ищем слова в том виде, как они написаны в тексте: смена регистра кириллицы в этой среде
+        // не срабатывает ни в ToLowerInvariant, ни в OrdinalIgnoreCase, и проверка падала на верном тексте.
+        var expectations = new (string Game, string KernelWord)[]
+        {
+            ("The Finals", "Ядерный анти-чит"),
+            ("Marvel Rivals", "ядерный Anti-Cheat Expert"),
+        };
+
+        foreach ((string game, string kernelWord) in expectations)
         {
             GameRouteTarget target = GameRouteCatalog.Targets.Single(t => t.GameRu == game);
-
-            // Сравнение по нижнему регистру, а не OrdinalIgnoreCase: для кириллицы последний
-            // не считает «Ядерный» и «ядр» одним и тем же, и проверка падала бы на верном тексте.
-            string note = target.NoteRu.ToLowerInvariant();
-            Assert.Contains("ядр", note, StringComparison.Ordinal);
-            Assert.Contains("маршрут", note, StringComparison.Ordinal);
-            Assert.Contains("перехват", note, StringComparison.Ordinal);
+            Assert.Contains(kernelWord, target.NoteRu, StringComparison.Ordinal);
+            Assert.Contains("маршрут", target.NoteRu, StringComparison.Ordinal);
+            Assert.Contains("перехват", target.NoteRu, StringComparison.Ordinal);
         }
 
         GameRouteTarget marvel = GameRouteCatalog.Targets.Single(t => t.GameRu == "Marvel Rivals");
