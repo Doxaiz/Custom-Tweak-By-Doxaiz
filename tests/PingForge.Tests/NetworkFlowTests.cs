@@ -130,7 +130,7 @@ public class NetworkFlowTests
     {
         var catalog = new GameProcessCatalog();
 
-        Assert.Equal(22, catalog.All.Count);
+        Assert.Equal(24, catalog.All.Count);
 
         Assert.True(catalog.TryMatch(@"C:\Games\Fortnite\FortniteClient-Win64-Shipping.exe", out KnownGame fortnite));
         Assert.Equal("Fortnite", fortnite.TitleRu);
