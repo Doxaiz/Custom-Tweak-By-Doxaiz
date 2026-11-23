@@ -134,7 +134,9 @@ public class NetworkFlowTests
 
         Assert.True(catalog.TryMatch(@"C:\Games\Fortnite\FortniteClient-Win64-Shipping.exe", out KnownGame fortnite));
         Assert.Equal("Fortnite", fortnite.TitleRu);
-        Assert.Equal(AntiCheatStatus.Untested, fortnite.AntiCheat);
+        // EAC работает в ядре — это про анти-чит, а не про наши тесты: раньше у Fortnite стояло «не проверяли»,
+        // и один и тот же анти-чит назывался по-разному у разных игр.
+        Assert.Equal(AntiCheatStatus.KnownKernelConflict, fortnite.AntiCheat);
 
         Assert.True(catalog.TryMatch("VALORANT-Win64-Shipping.EXE", out KnownGame valorant));
         Assert.Equal(AntiCheatStatus.KnownKernelConflict, valorant.AntiCheat);
@@ -287,8 +289,15 @@ public class NetworkFlowTests
         Assert.Equal("34.16.1.5:3074", flow.EndpointText);
         Assert.Equal(2, flow.CandidateCount); // UDP к серверу + TCP 443, LAN-адрес отброшен
         Assert.Equal("UDP", flow.Flow.Transport);
-        Assert.True(flow.CanOptimize);
+        Assert.True(flow.NeedsAntiCheatWarning);
         Assert.Contains("наиболее игровой", flow.ReasonRu);
+
+        // Сетевые действия разрешены и для игры с ядерным анти-читом: маршрут и QoS — настройки Windows.
+        // А вот слова «автоматические действия выключены» быть не должно: они были неправдой.
+        string summary = report.DescribeSummaryRu();
+        Assert.Contains("маршрут", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("действия выключены", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("фильтр", summary, StringComparison.OrdinalIgnoreCase);
 
         Assert.Equal(5, report.RowsRead);
         Assert.Equal(2, report.PublicFlowRows);
@@ -328,7 +337,10 @@ public class NetworkFlowTests
         Assert.Equal("51.79.12.34:25565", flow.EndpointText);
         Assert.Equal("TCP", flow.Flow.Transport);
         Assert.Contains("совпал с портом игры", flow.ReasonRu, StringComparison.Ordinal);
-        Assert.True(flow.CanOptimize);
+
+        // Анти-чит Minecraft не проверялся — и в докладе это сказано словами, а не выдуманным «можно».
+        Assert.True(flow.NeedsAntiCheatWarning);
+        Assert.Contains("не проверялся", report.DescribeSummaryRu(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -505,10 +517,15 @@ public class NetworkFlowTests
         GameFlowDetectionReport report = new GameFlowDetector(includeUnknownProcesses: true).Detect(rows, names);
 
         DetectedGameFlow flow = Assert.Single(report.Games);
-        Assert.False(flow.CanOptimize);
+        Assert.True(flow.NeedsAntiCheatWarning);
         Assert.True(report.HasKernelProtectedGame);
         Assert.Single(report.KernelProtectedGames);
-        Assert.Contains("ядерный анти-чит", report.DescribeSummaryRu());
+        // Ядерный анти-чит назван, а обещания, которого нет, в докладе нет: перехвата пакетов
+        // в программе не существует ни для одной игры.
+        string summary = report.DescribeSummaryRu();
+        Assert.Contains("ядерный анти-чит", summary);
+        Assert.Contains("перехвата пакетов", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("выключены", summary, StringComparison.Ordinal);
     }
 
     [Theory]

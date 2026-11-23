@@ -78,18 +78,35 @@ public sealed class RouteCatalogTests
     }
 
     [Fact]
-    public void Для_игр_с_ядерным_анти_читом_прямо_сказано_что_фильтр_не_поднимается()
+    public void Для_игр_с_ядерным_анти_читом_сказано_что_перехвата_пакетов_нет()
     {
+        // Раньше здесь проверялось «фильтр не поднимается». Беда была в самом обещании: в программе нет
+        // никакого перехвата пакетов — ни WinDivert, ни своего драйвера. «Не поднимем фильтр» намекало,
+        // что фильтр существует, а для остальных игр его поднимают. Теперь сказано прямо.
         string[] kernelAntiCheat = { "VALORANT", "League of Legends", "Call of Duty: Warzone", "Apex Legends" };
 
         foreach (var game in kernelAntiCheat)
         {
             var target = GameRouteCatalog.Targets.Single(t => t.GameRu == game);
-            bool filterOff = target.NoteRu.Contains("не поднима", StringComparison.OrdinalIgnoreCase) ||
-                             target.NoteRu.Contains("выключен", StringComparison.OrdinalIgnoreCase);
-            Assert.True(filterOff, $"для {game} должно быть сказано, что фильтр не поднимается, а написано: {target.NoteRu}");
-            Assert.Contains("маршрут", target.NoteRu);
+            Assert.Contains("маршрут", target.NoteRu, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("перехват", target.NoteRu, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("не поднима", target.NoteRu, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    [Fact]
+    public void Rust_назван_по_фактам_матчмейкинга_нет_регион_выбирает_человек()
+    {
+        // Факты из интернета, а не догадка: у Rust нет матчмейкинга — сервер выбирают в списке, где рядом
+        // виден пинг; официальные серверы держит Facepunch (Европа и США), остальное — сообщества.
+        var rust = GameRouteCatalog.Targets.Single(t => t.GameRu == "Rust");
+
+        Assert.Contains(rust.RegionsRu, r => r.Contains("Facepunch", StringComparison.Ordinal));
+        Assert.Contains(rust.RegionsRu, r => r.Contains("Сообщества", StringComparison.Ordinal));
+        Assert.Contains("28015", string.Join(" ", rust.PublishedPortsRu), StringComparison.Ordinal);
+        Assert.Contains("матчмейкинга", rust.NoteRu, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("28016", rust.NoteRu, StringComparison.Ordinal);
+        Assert.Contains("администрирование", rust.NoteRu, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

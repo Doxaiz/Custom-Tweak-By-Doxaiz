@@ -3,7 +3,9 @@ using PingForge.Core.Models;
 namespace PingForge.Network;
 
 /// <summary>
-/// Известная игра: имя процесса, анти-чит и честный статус его совместимости с сетевым фильтром.
+/// Известная игра: имя процесса, анти-чит и честный статус того, что мы о нём знаем.
+/// <para>Перехвата пакетов в программе нет ни для одной игры, поэтому статус отвечает не на вопрос
+/// «совместимы ли мы с фильтром», а на вопрос «проверяли ли мы совместимость своих действий».</para>
 /// <para><c>PortHints</c>/<c>PortRanges</c> — порты, по которым игру можно подтвердить при ранжировании потоков
 /// процесса: игровой UDP-порт часто меняется, одиночным числом его не описать.</para>
 /// <para><c>RequiresPortMatch</c> — процесс общий для многих программ (javaw.exe — это и Minecraft, и любая другая
@@ -143,10 +145,11 @@ public static class CustomGameValidation
 /// Список известных игр. Намеренно короткий и проверяемый: неизвестный процесс мы НЕ называем игрой
 /// по угадыванию — он просто не попадает в список (см. <see cref="GameFlowDetector"/>).
 ///
-/// Статус анти-чита — это про совместимость с нашим сетевым фильтром, а не «безопасно ли для аккаунта».
+/// Статус анти-чита — это про то, что мы знаем об анти-чите игры, а не «безопасно ли для аккаунта».
 /// Маршрут и маркировка DSCP содержимое пакетов не меняют и в память игры не лезут, поэтому они
-/// разрешены для всех; фильтр пакетов (WinDivert) не поднимается для игр с ядерным анти-читом,
-/// и это подтверждено тестом каталога.
+/// разрешены для всех. Перехвата пакетов в программе нет вовсе — ни WinDivert, ни своего драйвера,
+/// ни для одной игры: раньше каталог обещал «не поднимать фильтр для игр с ядерным анти-читом»,
+/// а это обещание того, чего не существует (см. <see cref="PingForge.Core.Models.AntiCheatNotes"/>).
 /// </summary>
 /// <summary>Дополнительные алиасы Фортнайта: EAC/BE-обёртки и лаунчерные варианты. Проверяется префиксом fortniteclient.</summary>
 public static class FortniteAliases
@@ -167,7 +170,7 @@ public sealed class GameProcessCatalog
 {
     public static IReadOnlyList<KnownGame> DefaultGames { get; } = new[]
     {
-        new KnownGame("fortniteclient-win64-shipping.exe", "Fortnite", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested,
+        new KnownGame("fortniteclient-win64-shipping.exe", "Fortnite", "EasyAntiCheat (EAC)", AntiCheatStatus.KnownKernelConflict,
             "Игровой UDP-порт матча у Fortnite заранее неизвестен (5795–5847 и 7000–9100 в разных сезонах), " +
             "поэтому поток матча опознаётся по процессу, протоколу UDP и собеседнику из трассировки стека. " +
             "Без трассировки UDP поток матча не виден — это честное «не нашли», а не ошибка. " +
@@ -190,14 +193,16 @@ public sealed class GameProcessCatalog
             PortHints: [19132, 19133],
             PortRanges: [(19132, 19133)]),
         new KnownGame("cs2.exe", "Counter-Strike 2", "VAC", AntiCheatStatus.Untested,
-            "VAC работает в пользовательском режиме, но совместимость фильтра мы не проверяли.",
+            "VAC работает в пользовательском режиме. Совместимость наших действий мы не проверяли — " +
+            "так и записано: обещать проверенное без проверки нельзя.",
             PortHints: [27015],
             PortRanges: [(27015, 27050)]),
         new KnownGame("dota2.exe", "Dota 2", "VAC", AntiCheatStatus.Untested,
             PortHints: [27015],
             PortRanges: [(27015, 27030)]),
         new KnownGame("valorant-win64-shipping.exe", "VALORANT", "Vanguard (ядро)", AntiCheatStatus.KnownKernelConflict,
-            "Vanguard — ядерный анти-чит: фильтр пакетов не поднимаем, применяем только маршрут и QoS. " +
+            "Vanguard — ядерный анти-чит: рядом с ним программа не поднимает ничего своего, а перехвата " +
+            "пакетов в ней нет и для других игр. Остаются маршрут и QoS — настройки Windows. " +
             "Игровой трафик идёт по UDP 7000–8000 и 8180–8181, голос — 3478–3480 (STUN), поэтому голос " +
             "здесь не матч.",
             PortHints: [8393, 8088],
@@ -205,14 +210,21 @@ public sealed class GameProcessCatalog
         new KnownGame("valorant.exe", "VALORANT (лаунчер)", "Vanguard (ядро)", AntiCheatStatus.KnownKernelConflict,
             "Только маршрут и QoS."),
         new KnownGame("league of legends.exe", "League of Legends", "Vanguard (ядро)", AntiCheatStatus.KnownKernelConflict,
-            "С 2024 года игра использует Vanguard: только маршрут и QoS.",
+            "С 2024 года игра использует Vanguard — ядерный анти-чит: программа не поднимает рядом с ним " +
+            "ничего своего, остаются маршрут и QoS (настройки Windows).",
             PortHints: [2099, 5222, 8393],
             PortRanges: [(5000, 5500)]),
-        new KnownGame("r5apex.exe", "Apex Legends", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested,
+        new KnownGame("r5apex.exe", "Apex Legends", "EasyAntiCheat (EAC)", AntiCheatStatus.KnownKernelConflict,
             "Порт матча у Apex не один: по логам игроков он попадает в 37000–40115 (шаг 100 и +15). " +
             "Ранжирование учитывает диапазон, а не одно число.",
             PortRanges: [(37000, 40115)]),
-        new KnownGame("rustclient.exe", "Rust", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested,
+        new KnownGame("rustclient.exe", "Rust", "EasyAntiCheat (EAC)", AntiCheatStatus.KnownKernelConflict,
+            "Матчмейкинга у Rust нет: человек сам выбирает сервер в списке, где рядом показан его пинг, — " +
+            "поэтому «регион» здесь ничего не значит, путь строится до конкретного адреса. Порт сервера по " +
+            "умолчанию 28015 UDP; у серверов сообществ он бывает любым, так что поток опознаётся по процессу и " +
+            "UDP-собеседнику, а не по одному числу. 28016 TCP (RCON) и 28082 TCP (Rust+ для телефона) — это " +
+            "порты сервера для администрирования, к задержке игры они не относятся. EAC работает в ядре: " +
+            "перехвата пакетов в программе нет вовсе, остаются маршрут и QoS.",
             PortHints: [28015],
             PortRanges: [(28015, 28017)]),
         new KnownGame("rainbowsix.exe", "Rainbow Six Siege", "BattlEye", AntiCheatStatus.Untested,
@@ -224,7 +236,7 @@ public sealed class GameProcessCatalog
             PortRanges: [(7086, 7995), (12070, 12460)]),
         new KnownGame("escapefromtarkov.exe", "Escape from Tarkov", "BattlEye", AntiCheatStatus.Untested),
         new KnownGame("cod.exe", "Call of Duty", "Ricochet (ядро)", AntiCheatStatus.KnownKernelConflict,
-            "Ricochet — ядерный анти-чит: фильтр не поднимаем.",
+            "Ricochet работает в ядре: рядом с ним программа не поднимает ничего своего, остаются маршрут и QoS.",
             PortHints: [3074],
             PortRanges: [(27000, 27050)]),
         new KnownGame("modernwarfare.exe", "Call of Duty: Modern Warfare", "Ricochet (ядро)", AntiCheatStatus.KnownKernelConflict,
@@ -234,7 +246,7 @@ public sealed class GameProcessCatalog
             "Battle.net держит TCP 1119/3724/6113 и UDP 3478–3479/5060/6250 — те же порты у голосового чата, " +
             "поэтому здесь они заданы как порты самой игры, а не как «голос».",
             PortHints: [1119, 3724, 6113, 3478, 3479, 5060, 6250]),
-        new KnownGame("rocketleague.exe", "Rocket League", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested,
+        new KnownGame("rocketleague.exe", "Rocket League", "EasyAntiCheat (EAC)", AntiCheatStatus.KnownKernelConflict,
             PortHints: [7000],
             PortRanges: [(7000, 9000), (27000, 27031)]),
         new KnownGame("gta5.exe", "GTA Online", "Защита Rockstar", AntiCheatStatus.Untested,
@@ -249,7 +261,8 @@ public sealed class GameProcessCatalog
             PortHints: [3074, 3097]),
         new KnownGame("warframe.x64.exe", "Warframe", "Защита Digital Extremes", AntiCheatStatus.Untested,
             PortHints: [4950, 4955]),
-        new KnownGame("deadbydaylight-win64-shipping.exe", "Dead by Daylight", "EasyAntiCheat (EAC)", AntiCheatStatus.Untested)
+        new KnownGame("deadbydaylight-win64-shipping.exe", "Dead by Daylight", "EasyAntiCheat (EAC)", AntiCheatStatus.KnownKernelConflict,
+            "EAC работает в ядре — тот же анти-чит, что у Fortnite и Rust. Маршрут и QoS остаются доступны.")
     };
 
     /// <summary>

@@ -88,7 +88,10 @@ public sealed class GameCardViewModel : ObservableObject
 
     public string PortsLineRu => _regions?.PortsLineRu(ProcessName) ?? GameRegionsViewModel.UnpublishedPortsRu;
 
-    /// <summary>Что игра значит для сетевого слоя: маршрут и QoS разрешены всем, фильтр — нет.</summary>
+    /// <summary>
+    /// Что игра значит для сетевого слоя: маршрут и QoS разрешены всем — это настройки Windows.
+    /// Перехвата пакетов в программе нет ни для одной игры, и обещать «не поднимать фильтр» нечего.
+    /// </summary>
     public string NoteRu => string.IsNullOrWhiteSpace(Game.NoteRu)
         ? "Маршрут и приоритет пакетов применяются; в память игры программа не лезет."
         : Game.NoteRu;
@@ -155,12 +158,9 @@ public sealed class GameCardViewModel : ObservableObject
         }
     }
 
-    private static string AnticheatText(AntiCheatStatus status) => status switch
-    {
-        AntiCheatStatus.VerifiedSafe => "маршрут и QoS — проверено",
-        AntiCheatStatus.KnownKernelConflict => "только маршрут и QoS, без фильтра пакетов",
-        _ => "маршрут и QoS — можно, совместимость не проверялась",
-    };
+    // Слова — из одного источника (AntiCheatNotes): карточка, предупреждение движка и доклад детектора
+    // должны говорить про анти-чит одно и то же.
+    private static string AnticheatText(AntiCheatStatus status) => AntiCheatNotes.ActionsRu(status);
 }
 
 /// <summary>

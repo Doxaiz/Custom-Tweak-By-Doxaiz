@@ -121,7 +121,7 @@ public static class EngineCommandCatalog
             EngineCommandKind.RealtimeStop,
             "realtime-stop",
             "Остановить и вернуть как было",
-            "Снимает свои изменения и закрывает фильтр. Остановка не оставляет за собой маршрутов.",
+            "Снимает свои изменения и закрывает сессию: маршруты и политика QoS удаляются, замеры прекращаются.",
             NeedsElevation: false,
             RequiredArgs: [],
             OptionalArgs: [],
