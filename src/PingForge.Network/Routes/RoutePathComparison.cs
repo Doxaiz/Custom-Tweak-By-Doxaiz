@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using PingForge.Core.Abstractions;
+using PingForge.Core.Models;
 using PingForge.Network.Actions;
 using PingForge.Orchestration.Realtime;
 
@@ -54,8 +55,11 @@ public sealed record RoutePathComparisonReport(
 /// </summary>
 public sealed class RoutePathComparisonService
 {
-    /// <summary>Минимальный заметный выигрыш медианы, мс. Меньше — это погрешность измерения, а не победа.</summary>
-    public const double NotableImprovementMs = 0.5;
+    /// <summary>
+    /// Минимальный заметный выигрыш медианы, мс. Меньше — это погрешность измерения, а не победа.
+    /// Число одно на программу: те же слова о пороге говорит живая оптимизация (<see cref="ThresholdNotes"/>).
+    /// </summary>
+    public const double NotableImprovementMs = ThresholdNotes.MinimalGainMs;
 
     /// <summary>
     /// Сколько серий замера делает каждый путь. Две серии вперемешку (прямой → узел А → узел Б →
@@ -355,12 +359,32 @@ public sealed class RoutePathComparisonService
     }
 
     /// <summary>
-    /// Какой выигрыш медианы считать настоящим: не меньше <see cref="NotableImprovementMs"/>, и
-    /// обязательно больше разброса серий обоих путей. Иначе сеть дрейфанула, а мы бы записали это
-    /// в победу маршрута.
+    /// Измерен ли разброс у обоих путей. Пока шум хотя бы одного неизвестен, «выигрыш больше шума»
+    /// назвать нельзя — и притворяться, что он равен нулю, тоже.
     /// </summary>
-    public static double RequiredGainMs(RoutePathProbeResult first, RoutePathProbeResult second) =>
-        Math.Max(NotableImprovementMs, Math.Max(first.SpreadMs ?? 0, second.SpreadMs ?? 0));
+    public static bool NoiseMeasured(RoutePathProbeResult first, RoutePathProbeResult second) =>
+        first.SpreadMs.HasValue && second.SpreadMs.HasValue;
+
+    /// <summary>
+    /// Какой выигрыш медианы считать настоящим: не меньше <see cref="NotableImprovementMs"/>, и
+    /// больше разброса серий обоих путей — но только того разброса, который измерен. Неизмеренный
+    /// в формулу не подставляется нулём: о нём говорит <see cref="NoiseNoteRu"/>, и решение принимается
+    /// с открытыми глазами. Иначе сеть дрейфанула, а мы бы записали это в победу маршрута.
+    /// </summary>
+    public static double RequiredGainMs(RoutePathProbeResult first, RoutePathProbeResult second)
+    {
+        double measuredSpread = new[] { first.SpreadMs, second.SpreadMs }
+            .Where(spread => spread.HasValue)
+            .Select(spread => spread!.Value)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        return Math.Max(NotableImprovementMs, measuredSpread);
+    }
+
+    /// <summary>Слова о неизмеренном шуме. Пусто — когда разброс обоих путей измерен.</summary>
+    public static string NoiseNoteRu(RoutePathProbeResult first, RoutePathProbeResult second) =>
+        NoiseMeasured(first, second) ? string.Empty : " " + ThresholdNotes.NoiseUnmeasuredRu;
 
     private async Task<RoutePathProbeResult> MeasureDirectAsync(string target, int port, CancellationToken ct)
     {
@@ -527,9 +551,14 @@ public sealed class RoutePathComparisonService
         // Порог — не только «0,5 мс», но и разброс серий: сеть дрейфует, и выигрыш меньше
         // собственного разброса замеров — это шум, а не победа маршрута.
         double required = RequiredGainMs(direct, best);
-        string spreadNote = required > NotableImprovementMs
-            ? $" Разброс серий замера ±{FormatMs(required)} мс, поэтому меньший выигрыш не засчитывается."
-            : string.Empty;
+
+        // Разброс — не украшение вердикта: он либо измерен у обоих путей и назван числом, либо
+        // неизмерен, и тогда так и сказано. Подставлять ноль вместо него нельзя.
+        string spreadNote = !NoiseMeasured(direct, best)
+            ? NoiseNoteRu(direct, best)
+            : required > NotableImprovementMs
+                ? $" Разброс серий замера ±{FormatMs(required)} мс, поэтому меньший выигрыш не засчитывается."
+                : string.Empty;
 
         if (gain >= required)
         {

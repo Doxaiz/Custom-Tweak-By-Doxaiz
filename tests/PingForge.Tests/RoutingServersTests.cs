@@ -519,6 +519,36 @@ public sealed class RoutingServersTests
     }
 
     [Fact]
+    public void Порог_не_подставляет_ноль_вместо_неизмеренного_разброса()
+    {
+        // Разброс серий бывает неизмерен (путь, замеренный один раз, или замер без разброса).
+        // Раньше он молча подставлялся нулём в формулу порога, и вердикт звучал так, будто шум учтён.
+        RoutePathProbeResult direct = ProbeResult(spreadMs: null);
+        RoutePathProbeResult node = ProbeResult(spreadMs: 7);
+
+        Assert.False(RoutePathComparisonService.NoiseMeasured(direct, node));
+        Assert.Equal(
+            RoutePathComparisonService.NotableImprovementMs,
+            RoutePathComparisonService.RequiredGainMs(direct, node),
+            3);
+
+        string note = RoutePathComparisonService.NoiseNoteRu(direct, node);
+        Assert.Contains("не измерен", note, StringComparison.Ordinal);
+        Assert.Contains("шум в нём не учтён", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Порог_по_шуму_берётся_из_измеренных_разбросов_обоих_путей()
+    {
+        RoutePathProbeResult direct = ProbeResult(spreadMs: 4);
+        RoutePathProbeResult node = ProbeResult(spreadMs: 9);
+
+        Assert.True(RoutePathComparisonService.NoiseMeasured(direct, node));
+        Assert.Equal(9, RoutePathComparisonService.RequiredGainMs(direct, node), 3);
+        Assert.Equal(string.Empty, RoutePathComparisonService.NoiseNoteRu(direct, node));
+    }
+
+    [Fact]
     public async Task Узел_хуже_прямого_пути_победителя_нет_и_вердикт_говорит_правду()
     {
         FakeRouteSystem system = new();
@@ -1505,6 +1535,10 @@ public sealed class RoutingServersTests
 
     private static PathMeasurement Window(double median, double jitter = 1, double loss = 0) =>
         new(true, median, jitter, loss, 12, "ICMP-эхо до игрового сервера");
+
+    /// <summary>Замер одного пути для проверки порога: разброс задаётся явно, null — «не измерен».</summary>
+    private static RoutePathProbeResult ProbeResult(double? spreadMs) =>
+        new("10.0.0.1", "узел", "тест", Success: true, MedianRttMs: 40, JitterMs: 1, LossPercent: 0, ProblemRu: null, SpreadMs: spreadMs);
 
     private static RoutingNodeEntry Node(string address, string name = "узел", string? source = null) =>
         new(address, name, source ?? RoutingNodeSourceRu.SecondGateway);

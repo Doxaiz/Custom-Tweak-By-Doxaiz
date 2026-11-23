@@ -299,13 +299,17 @@ public sealed class RealtimeOptimizationTests
         Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, optimizer.Current.State);
     }
 
-    private static StubPathOptions MeasuredPaths(double activeMs, double alternativeMs) => new(
+    private static StubPathOptions MeasuredPaths(
+        double activeMs,
+        double alternativeMs,
+        double? activeSpreadMs = null,
+        double? alternativeSpreadMs = null) => new(
         new RealtimePathOption("node:10.8.0.1", "«WG» (10.8.0.1)", true, "10.8.0.1",
             new OptimizationActionDescriptor("route:game-server", OptimizationActionKind.RouteForGame, "Маршрут через «WG»", "тест", RouteNextHop: "10.8.0.1"),
-            MedianRttMs: activeMs),
+            MedianRttMs: activeMs, SpreadMs: activeSpreadMs),
         new RealtimePathOption("node:10.0.0.5", "«LTE» (10.0.0.5) — резерв", true, "10.0.0.5",
             new OptimizationActionDescriptor("route:game-server:runner-up", OptimizationActionKind.RouteForGame, "Маршрут через «LTE»", "тест", RouteNextHop: "10.0.0.5"),
-            MedianRttMs: alternativeMs));
+            MedianRttMs: alternativeMs, SpreadMs: alternativeSpreadMs));
 
     [Fact]
     public async Task Поиск_пути_быстрее_переключает_когда_альтернатива_ощутимо_быстрее()
@@ -354,6 +358,73 @@ public sealed class RealtimeOptimizationTests
         Assert.DoesNotContain("route:game-server:runner-up", runner.Applied);
         Assert.Contains("не быстрее текущего", optimizer.Current.StatusRu, StringComparison.Ordinal);
         Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, optimizer.Current.State);
+    }
+
+    [Fact]
+    public async Task Неизмеренный_разброс_назван_словами_а_не_посчитан_нулём()
+    {
+        // У путей нет измеренного разброса: порог остаётся по марже, и об этом сказано прямо —
+        // иначе «выигрыш больше шума» было бы утверждением о шуме, которого никто не видел.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 44.2);
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(HealthyWindowsBetweenRouteReviews: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.Contains(ThresholdNotes.NoiseUnmeasuredRu, optimizer.Current.StatusRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Измеренный_шум_путей_поднимает_порог_и_маршрут_не_дёргается()
+    {
+        // Разброс обоих путей измерен и велик: выигрыш 7 мс при пороге 13 мс — это шум, а не победа.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(
+            activeMs: 45, alternativeMs: 38, activeSpreadMs: 12, alternativeSpreadMs: 13);
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(HealthyWindowsBetweenRouteReviews: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.DoesNotContain("route:game-server:runner-up", runner.Applied);
+        Assert.Contains("пороге 13", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.DoesNotContain(ThresholdNotes.NoiseUnmeasuredRu, optimizer.Current.StatusRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Переключение_с_неизмеренным_разбросом_честно_оговаривает_шум()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 38);
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(HealthyWindowsBetweenRouteReviews: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.Contains("route:game-server:runner-up", runner.Applied);
+        Assert.Contains(optimizer.Current.Warnings, w => w.Contains(ThresholdNotes.NoiseUnmeasuredRu, StringComparison.Ordinal));
     }
 
     [Fact]

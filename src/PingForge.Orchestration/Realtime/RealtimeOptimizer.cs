@@ -644,9 +644,19 @@ public sealed class RealtimeOptimizer
         }
 
         // Порог — «не меньше 3 мс» и не меньше разброса серий обоих путей: шум не победа.
-        double required = Math.Max(
-            _options.RouteUpgradeMarginMs,
-            Math.Max(active.SpreadMs ?? 0, better.SpreadMs ?? 0));
+        // Разброс берётся только измеренный: неизмеренный в формулу не подставляется нулём, а
+        // называется словами ниже. Иначе «выигрыш больше шума» — утверждение о шуме, которого не видели.
+        double measuredSpread = new[] { active.SpreadMs, better.SpreadMs }
+            .Where(spread => spread.HasValue)
+            .Select(spread => spread!.Value)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        double required = Math.Max(_options.RouteUpgradeMarginMs, measuredSpread);
+
+        string noiseNote = active.SpreadMs.HasValue && better.SpreadMs.HasValue
+            ? string.Empty
+            : $" {ThresholdNotes.NoiseUnmeasuredRu}";
 
         double gain = activeMs - betterMs;
 
@@ -654,12 +664,13 @@ public sealed class RealtimeOptimizer
         {
             return (false,
                 $"{BuildRunningStatus(window)} Проверили альтернативы: «{better.DisplayName}» не быстрее текущего " +
-                $"на ощутимую величину (разница {gain:F1} мс при пороге {required:F1} мс). Остаёмся на текущем пути.");
+                $"на ощутимую величину (разница {gain:F1} мс при пороге {required:F1} мс).{noiseNote} Остаёмся на текущем пути.");
         }
 
         bool switched = await ApplyPathSwitchAsync(
             better,
-            $"Поиск пути быстрее: «{better.DisplayName}» измерен на {gain:F1} мс лучше текущего (порог {required:F1} мс), пробуем.",
+            $"Поиск пути быстрее: «{better.DisplayName}» измерен на {gain:F1} мс лучше текущего " +
+            $"(порог {required:F1} мс).{noiseNote} Пробуем.",
             $"Переключились на путь «{better.DisplayName}»: в этой сессии замеров он на {gain:F1} мс быстрее прежнего. " +
             "Решение по числам, а не по ожиданиям; если станет хуже — вернёмся: прежний путь остаётся рабочим кандидатом.",
             markCurrentPathFailed: false,
