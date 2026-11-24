@@ -269,7 +269,19 @@ jobs:
             Write-Host "::notice $ann::$safe"
           }
 
-          $broken = @($lines + $nic + $sign | Where-Object { $_ -match 'НЕ работает' })
+          # Замер доступа: карточка «Блокировки и доступ» действительно соединяется, а не рисует текст.
+          $access = @(Get-Content $log | Where-Object { $_ -match 'ДОСТУП:' })
+          if ($access.Count -eq 0) {
+            Write-Host "::error $ann::доступ: строки «ДОСТУП:» в журнале нет — замер не запускался"
+            throw 'Строки «ДОСТУП:» нет в журнале'
+          }
+
+          foreach ($line in $access) {
+            $safe = ($line -replace '%', '%25' -replace "`r", '' -replace "`n", ' ')
+            Write-Host "::notice $ann::$safe"
+          }
+
+          $broken = @($lines + $nic + $sign + $access | Where-Object { $_ -match 'НЕ работает' })
           if ($broken.Count -gt 0) { throw "Живой замер не работает: $($broken -join ' | ')" }
           if ($process.ExitCode -ne 0) { throw "Самопроверка вернула код $($process.ExitCode)" }
 

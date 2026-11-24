@@ -16,6 +16,7 @@ using PingForge.Network;
 using PingForge.Network.Windows;
 using PingForge.Orchestration.Realtime;
 using PingForge.Probing;
+using PingForge.Probing.Access;
 using PingForge.Routing;
 
 namespace PingForge.App;
@@ -91,6 +92,7 @@ internal static class SelfCheck
         CheckLiveTcpEstatsForeignProcess(problems);
         CheckNicBackend(app, problems);
         CheckSignatureReadable(problems);
+        CheckAccessProbe(problems);
         CheckService(problems);
 
         // Если окно построилось, но раскладка или привязки плохи — это тот же отказ, что и «окно не собралось»:
@@ -1297,6 +1299,32 @@ internal static class SelfCheck
         {
             problems.Add($"живой TCP-замер через iphlpapi: проверка упала ({ex.GetType().Name}: {ex.Message})");
             StartupLog.Note($"ЖИВОЙ TCP-ЗАМЕР: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Живой замер доступа из той же карточки, что видит человек: DNS → TCP → TLS до api.github.com
+    /// (тот же адрес, куда ходит проверка обновлений).
+    ///
+    /// Смысл: доказать, что карточка «Блокировки и доступ» не рисует текст из воздуха, а действительно
+    /// соединяется и читает ответ. Замер ничего не меняет и ничего не обходит — это обычный запрос.
+    /// Если на сборочной машине доступа нет, вывод будет честным «соединение не установилось»:
+    /// это не повод валить сборку, повод — отсутствие строки.
+    /// </summary>
+    private static void CheckAccessProbe(List<string> problems)
+    {
+        try
+        {
+            var probe = new LiveAccessProbe();
+            AccessObservation observation = Task.Run(() => probe.ProbeAsync("api.github.com"))
+                .GetAwaiter().GetResult();
+            AccessDiagnosis diagnosis = AccessClassifier.Classify(observation);
+            StartupLog.Note($"ДОСТУП: {diagnosis.Outcome} — {diagnosis.TitleRu}. {diagnosis.DetailRu}");
+        }
+        catch (Exception ex)
+        {
+            StartupLog.Note($"ДОСТУП: НЕ измерен — {ex.GetType().Name}: {ex.Message}");
+            problems.Add($"замер доступа не выполнился: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
