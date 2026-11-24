@@ -67,6 +67,8 @@
          с тем, что написано в Microsoft Learn (тип сертификата на предупреждение не влияет). -->
     <None Include="..\..\docs\УСТАНОВКА.md" Link="checked-install-doc.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\ИСТОЧНИКИ.md" Link="checked-sources-doc.md" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Блокировки: сторож сверяет, что документ говорит «обхода в программе нет», а не наоборот. -->
+    <None Include="..\..\docs\БЛОКИРОВКИ.md" Link="checked-blocking-doc.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\АРХИТЕКТУРА.md" Link="checked-architecture.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\scripts\install-service.ps1" Link="checked-install-service.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\tools\render_ui_preview.py" Link="checked-render-ui-preview.py" CopyToOutputDirectory="PreserveNewest" />

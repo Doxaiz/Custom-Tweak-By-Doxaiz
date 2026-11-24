@@ -242,6 +242,43 @@
       </StackPanel>
     </Border>
 
+    <!-- Блокировки и доступ: ОДИН замер по кнопке, без единого пакета до нажатия.
+         Программа не обходит блокировки — у неё нет ни туннеля, ни релея, ни перехвата пакетов.
+         Поэтому карточка не обещает «сайт откроется», а называет, что видно на пути, и что проверить
+         дальше. Тот же текст проверяется сторожем: обещаний обхода в программе нет. -->
+    <Border Style="{StaticResource Card}" x:Name="AccessCard">
+      <StackPanel DataContext="{Binding Access}">
+        <TextBlock Style="{StaticResource H2}" Text="Блокировки и доступ" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
+                   Text="{Binding HonestTextRu}" />
+
+        <Grid Margin="0,10,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBox Grid.Column="0" x:Name="AccessHostBox" AutomationProperties.Name="Сайт для проверки доступа"
+                   Text="{Binding HostInput, UpdateSourceTrigger=PropertyChanged}"
+                   ToolTip="Имя сайта или адрес: www.youtube.com, https://discord.com — расширение снимается автоматически" />
+          <Button Grid.Column="1" x:Name="AccessCheckButton" Style="{StaticResource GhostButton}" Margin="10,0,0,0"
+                  Content="Проверить доступ" AutomationProperties.Name="Проверить доступ к сайту"
+                  Command="{Binding CheckCommand}"
+                  ToolTip="Один обычный запрос: DNS, TCP, TLS. Ничего не меняет и ничего не обходит" />
+        </Grid>
+
+        <TextBlock x:Name="AccessStatusText" Style="{StaticResource Caption}" Margin="0,8,0,0" TextWrapping="Wrap"
+                   Text="{Binding StatusRu}" />
+
+        <StackPanel Margin="0,8,0,0" Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibility}}">
+          <TextBlock x:Name="AccessResultTitle" Text="{Binding ResultTitleRu}" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock x:Name="AccessResultDetail" Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"
+                     Text="{Binding ResultDetailRu}" />
+          <TextBlock x:Name="AccessNextStep" Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
+                     Text="{Binding NextStepRu}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
     <!-- Путь до сервера (задача H): трасса только до адреса найденного игрового сервера и только
          при живой сессии. Без игры — честный текст «сначала запустите игру» и ноль пакетов.
          Результат раскрывается под кнопкой: таблица хопов, итог и подсказка «где растёт задержка». -->

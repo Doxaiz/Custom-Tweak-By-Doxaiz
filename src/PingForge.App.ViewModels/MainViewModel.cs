@@ -62,7 +62,8 @@ public sealed class MainViewModel : ObservableObject
         bool runsAsAdministrator = false,
         bool pollStatusWhileOptimizing = false,
         NetworkCheckViewModel? networkCheck = null,
-        ServerPathViewModel? serverPath = null)
+        ServerPathViewModel? serverPath = null,
+        AccessCheckViewModel? access = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
@@ -70,6 +71,7 @@ public sealed class MainViewModel : ObservableObject
         _pollStatusWhileOptimizing = pollStatusWhileOptimizing;
         NetworkCheck = networkCheck ?? NetworkCheckViewModel.Unavailable();
         ServerPath = serverPath ?? ServerPathViewModel.Unavailable();
+        Access = access ?? AccessCheckViewModel.Unavailable();
 
         OptimizeCommand = new AsyncRelayCommand(ToggleOptimizationAsync, () => true);
         RefreshStatusCommand = new AsyncRelayCommand(RefreshStatusAsync, () => true);
@@ -90,6 +92,13 @@ public sealed class MainViewModel : ObservableObject
     /// Ничего не меняет: рекомендации применяются обычным путём раздела «Твики».
     /// </summary>
     public NetworkCheckViewModel NetworkCheck { get; }
+
+    /// <summary>
+    /// «Блокировки и доступ»: один замер до сайта по кнопке — DNS, TCP, TLS, при отказе TLS обычный HTTP.
+    /// Обхода блокировок в программе нет; здесь только диагностика и честный следующий шаг.
+    /// Собирается приложением с живым замером; по умолчанию — честное «не подключена».
+    /// </summary>
+    public AccessCheckViewModel Access { get; }
 
     /// <summary>
     /// «Путь до сервера» (задача H): трасса до адреса найденного игрового сервера, только при живой

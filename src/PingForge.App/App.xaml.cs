@@ -4,6 +4,7 @@ using System.Threading;
 using System.Windows;
 using PingForge.App.ViewModels;
 using PingForge.Network.Windows;
+using PingForge.Probing.Access;
 using PingForge.Tweaks;
 
 namespace PingForge.App;
@@ -174,7 +175,10 @@ public partial class App : Application
                 tweakRows.Select(row => row.Code).ToList()),
             serverPath: new ServerPathViewModel(
                 new IcmpServerPathRunner(new SystemNetIcmpProbe()),
-                () => MainScreen?.LiveGameEndpoint));
+                () => MainScreen?.LiveGameEndpoint),
+            // «Блокировки и доступ»: живой замер до сайта. Ничего не меняет и не обходит —
+            // один обычный запрос по кнопке, вывод по тому, что видно на пути.
+            access: new AccessCheckViewModel(new LiveAccessProbe()));
         Tweaks = new TweaksViewModel(
             Engine,
             dialogs,
