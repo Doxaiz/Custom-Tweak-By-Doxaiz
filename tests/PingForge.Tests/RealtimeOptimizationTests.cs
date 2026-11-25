@@ -1,4 +1,5 @@
 using PingForge.Core.Models;
+using PingForge.Core.Statistics;
 using PingForge.Orchestration.Realtime;
 using Xunit;
 
@@ -163,23 +164,36 @@ public sealed class RealtimeOptimizationTests
     {
         var watcher = new StubWatcher(Fortnite());
         var runner = new RecordingRunner();
-        // Три окна «до»: медиана 120, затем контрольное окно «после»: 80.
-        var measurements = new ScriptedMeasurements(Measurable(122), Measurable(118), Measurable(120), Measurable(80));
+        // Восемь окон «до» с медианой 120 (столько нужно, чтобы вообще иметь право на вывод),
+        // затем контрольные окна «после»: 80. Лента кончится — дальше пойдёт Fallback 80.
+        var measurements = new ScriptedMeasurements(
+            Measurable(122), Measurable(118), Measurable(120), Measurable(121),
+            Measurable(119), Measurable(117), Measurable(123), Measurable(120));
         RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
 
-        RealtimeSnapshot snapshot = await optimizer.StartAsync();
+        RealtimeSnapshot snapshot = await optimizer.StartAsync(new RealtimeOptions(BaselineWindows: 8));
 
         Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, snapshot.State);
         Assert.Equal(120, snapshot.BaselineRttMs!.Value, 0.01);
         Assert.Equal(80, snapshot.CurrentRttMs!.Value, 0.01);
         Assert.Equal(40, snapshot.ImprovementMs!.Value, 0.01);
-        Assert.True(snapshot.HasMeasuredImprovement);
         Assert.Equal("Fortnite", snapshot.GameTitleRu);
         Assert.Equal("3.4.5.6:9000", snapshot.Endpoint);
         Assert.Equal("Терпимо", snapshot.QualityLabelRu);
         Assert.Contains("стало 80", snapshot.StatusRu);
+        // Одно контрольное окно — ещё не статистика: «выигрыш» объявляется только после того,
+        // как наберётся не меньше GainVerdict.MinimumSamples окон «после» и разница переживёт шум.
+        Assert.False(snapshot.HasMeasuredImprovement);
         Assert.Contains(runner.Applied, a => a == "route:game-server");
         Assert.Contains(runner.Applied, a => a == "qos:dscp-46");
+
+        for (int i = 0; i < GainVerdict.MinimumSamples; i++)
+        {
+            snapshot = await optimizer.TickOnceAsync();
+        }
+
+        Assert.True(snapshot.HasMeasuredImprovement);
+        Assert.Contains("подтверждён", snapshot.StatusRu, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -763,6 +777,34 @@ public sealed class RealtimeOptimizationTests
         Assert.Contains("Заметного выигрыша нет", report.HonestSummaryRu);
         Assert.Contains("так не бывает", report.HonestSummaryRu);
         Assert.False(optimizer.Current.HasMeasuredImprovement);
+    }
+
+    [Fact]
+    public async Task Разница_внутри_шума_не_объявляется_выигрышем()
+    {
+        // Базовая линия и контрольные окна «дышат» на ±6 мс — это обычный Wi-Fi. Медиана после
+        // применения стала ниже на 0,5 мс, то есть внутри шума: старая логика с порогом 0,5 мс
+        // назвала бы это выигрышем, а программа обязана сказать «в пределах шума».
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        var measurements = new ScriptedMeasurements(
+            Measurable(114), Measurable(126), Measurable(120), Measurable(118), Measurable(122),
+            Measurable(115), Measurable(125), Measurable(119));
+        measurements.Fallback = Measurable(119.5);
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+        await optimizer.StartAsync(new RealtimeOptions(BaselineWindows: 8));
+
+        RealtimeSnapshot snapshot = optimizer.Current;
+        for (int i = 0; i < GainVerdict.MinimumSamples; i++)
+        {
+            snapshot = await optimizer.TickOnceAsync();
+        }
+
+        Assert.False(snapshot.HasMeasuredImprovement);
+        Assert.Contains("в пределах шума", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("в пределах шума", snapshot.GainVerdictRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("подтверждён", snapshot.StatusRu, StringComparison.Ordinal);
     }
 
     [Fact]

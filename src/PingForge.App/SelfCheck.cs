@@ -6,10 +6,12 @@ using System.Windows.Media;
 using PingForge.App.ViewModels;
 using PingForge.App.Views;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
+using PingForge.Core.Statistics;
 using PingForge.Core.Layout;
 using PingForge.Core.Ui;
 using PingForge.Network;
@@ -93,6 +95,7 @@ internal static class SelfCheck
         CheckNicBackend(app, problems);
         CheckSignatureReadable(problems);
         CheckAccessProbe(problems);
+        CheckGainHonesty(problems);
         CheckService(problems);
 
         // Если окно построилось, но раскладка или привязки плохи — это тот же отказ, что и «окно не собралось»:
@@ -1326,6 +1329,97 @@ internal static class SelfCheck
             StartupLog.Note($"ДОСТУП: НЕ измерен — {ex.GetType().Name}: {ex.Message}");
             problems.Add($"замер доступа не выполнился: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Живое доказательство того, что программа не засчитывает шум как выигрыш.
+    ///
+    /// Смысл: делаем 16 настоящих проб до того же адреса, что и проверка доступа, ничего не меняя,
+    /// и раскладываем их на две группы через одну. Условия у групп одинаковые (пробы идут вперемешку),
+    /// поэтому честный вывод — «разница в пределах шума». Если программа засчитает такой разнице выигрыш,
+    /// значит засчитает шум и в настоящей сессии, и фраза «стало лучше на N мс» будет ложью.
+    ///
+    /// В CI строка «ШУМ:» обязательна: её отсутствие значит, что проверка не запускалась.
+    /// </summary>
+    private static void CheckGainHonesty(List<string> problems)
+    {
+        try
+        {
+            string host = "api.github.com";
+            List<double> samples = SampleRtt(host, 16);
+            if (samples.Count < 2 * GainVerdict.MinimumSamples)
+            {
+                // ICMP мог быть закрыт на сборочной машине — тогда честный «локальный» замер.
+                host = "127.0.0.1";
+                samples = SampleRtt(host, 16);
+            }
+
+            if (samples.Count < 2 * GainVerdict.MinimumSamples)
+            {
+                StartupLog.Note(
+                    $"ШУМ: не измерено — ICMP не дал {2 * GainVerdict.MinimumSamples} ответов. " +
+                    "Это не «всё хорошо», это «проверить нечем».");
+                return;
+            }
+
+            List<double> before = samples.Where((_, index) => index % 2 == 0).ToList();
+            List<double> after = samples.Where((_, index) => index % 2 == 1).ToList();
+            GainVerdict verdict = GainVerdict.Evaluate(before, after);
+
+            if (verdict.Outcome is GainOutcome.Confirmed or GainOutcome.Worse)
+            {
+                string bad = $"одинаковые условия дали вывод «{verdict.SummaryRu}» — шум засчитан как результат";
+                problems.Add($"проверка шума: {bad}");
+                StartupLog.Note($"ШУМ: НЕ работает — {bad}");
+                return;
+            }
+
+            StartupLog.Note(
+                $"ШУМ: {host}, {samples.Count} проб вперемешку, медианы {verdict.MedianBeforeMs:0.#} и " +
+                $"{verdict.MedianAfterMs:0.#} мс, 95% ДИ разницы [{verdict.CiLowMs:+0.#;-0.#;0}; " +
+                $"{verdict.CiHighMs:+0.#;-0.#;0}] накрывает ноль → выигрышем не считаем. " +
+                $"Так же считаются и настоящие сессии: ниже шума выигрыша нет.");
+        }
+        catch (Exception ex) when (ex is PingException or PlatformNotSupportedException
+            or NotSupportedException or InvalidOperationException)
+        {
+            StartupLog.Note($"ШУМ: не измерено — {ex.GetType().Name}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"проверка шума упала: {ex.GetType().Name}: {ex.Message}");
+            StartupLog.Note($"ШУМ: НЕ работает — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Несколько настоящих ICMP-проб. Возвращает только успешные ответы в миллисекундах:
+    /// потерянная проба — это не «ноль миллисекунд».
+    /// </summary>
+    private static List<double> SampleRtt(string host, int count)
+    {
+        var samples = new List<double>();
+        using var ping = new Ping();
+
+        for (int i = 0; i < count; i++)
+        {
+            try
+            {
+                PingReply reply = ping.SendPingAsync(host, 2000).GetAwaiter().GetResult();
+                if (reply.Status == IPStatus.Success)
+                {
+                    samples.Add(reply.RoundtripTime);
+                }
+            }
+            catch (Exception ex) when (ex is PingException or PlatformNotSupportedException or InvalidOperationException)
+            {
+                break;
+            }
+
+            Thread.Sleep(60);
+        }
+
+        return samples;
     }
 
     /// <summary>

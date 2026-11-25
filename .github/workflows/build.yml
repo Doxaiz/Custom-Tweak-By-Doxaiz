@@ -281,7 +281,21 @@ jobs:
             Write-Host "::notice $ann::$safe"
           }
 
-          $broken = @($lines + $nic + $sign + $access | Where-Object { $_ -match 'НЕ работает' })
+          # Замер шума: программа меряет одно и то же соединение вперемешку и обязана сказать
+          # «разница в пределах шума». Если она засчитала такой разнице выигрыш — это и есть ложь,
+          # которую волна 51 убирает: фраза «стало лучше» без проверки значимости.
+          $noise = @(Get-Content $log | Where-Object { $_ -match 'ШУМ:' })
+          if ($noise.Count -eq 0) {
+            Write-Host "::error $ann::шум: строки «ШУМ:» в журнале нет — проверка честности выигрыша не запускалась"
+            throw 'Строки «ШУМ:» нет в журнале'
+          }
+
+          foreach ($line in $noise) {
+            $safe = ($line -replace '%', '%25' -replace "`r", '' -replace "`n", ' ')
+            Write-Host "::notice $ann::$safe"
+          }
+
+          $broken = @($lines + $nic + $sign + $access + $noise | Where-Object { $_ -match 'НЕ работает' })
           if ($broken.Count -gt 0) { throw "Живой замер не работает: $($broken -join ' | ')" }
           if ($process.ExitCode -ne 0) { throw "Самопроверка вернула код $($process.ExitCode)" }
 

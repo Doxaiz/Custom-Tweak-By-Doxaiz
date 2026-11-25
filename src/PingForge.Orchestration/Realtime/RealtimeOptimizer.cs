@@ -1,4 +1,5 @@
 using PingForge.Core.Models;
+using PingForge.Core.Statistics;
 
 namespace PingForge.Orchestration.Realtime;
 
@@ -24,6 +25,9 @@ public sealed class RealtimeOptimizer
 
     private readonly List<OptimizationActionDescriptor> _applied = new();
     private readonly List<double> _baselineWindows = new();
+
+    /// <summary>Разброс в тех же окнах «до»: без него нельзя сказать «стало стабильнее», только «стало быстрее».</summary>
+    private readonly List<double> _baselineJitter = new();
     private readonly List<PathMeasurement> _recentWindows = new();
     private readonly List<string> _warnings = new();
 
@@ -201,6 +205,11 @@ public sealed class RealtimeOptimizer
             }
 
             _baselineWindows.Add(window.RttMedianMs);
+            if (window.JitterMs is { } baselineJitter)
+            {
+                _baselineJitter.Add(baselineJitter);
+            }
+
             _baselineMethodTag = ProbeMethodTags.Tag(window.Method);
             UpdateFloor(window.RttMedianMs);
         }
@@ -276,9 +285,12 @@ public sealed class RealtimeOptimizer
         {
             verdict = "Применено. Первое контрольное измерение ещё не пришло.";
         }
-        else if (confirmed <= baselineValue + 0.5)
+        else if (confirmed <= baselineValue + GainVerdict.MeaningfulMs)
         {
-            verdict = $"Применено. Пинг: было {baselineValue:F0} мс, стало {confirmed:F0} мс (медиана живого потока).";
+            // Одно контрольное окно — ещё не доказательство: разница в пределах шума остаётся разницей в пределах шума.
+            verdict = $"Применено. Пинг: было {baselineValue:F0} мс, стало {confirmed:F0} мс (медиана живого потока). " +
+                $"Разница меньше порога значимости {GainVerdict.MeaningfulMs:0.#} мс — выигрышем её пока не называем, " +
+                "решение будет по контрольным окнам.";
         }
         else
         {
@@ -345,6 +357,11 @@ public sealed class RealtimeOptimizer
         if (_baselineRttMs is null)
         {
             _baselineWindows.Add(window.RttMedianMs);
+            if (window.JitterMs is { } lateJitter)
+            {
+                _baselineJitter.Add(lateJitter);
+            }
+
             if (_baselineWindows.Count >= Math.Max(1, _options.BaselineWindows))
             {
                 _baselineRttMs = Median(_baselineWindows);
@@ -872,6 +889,7 @@ public sealed class RealtimeOptimizer
         _lastJitterMs = null;
         _lastLossPercent = null;
         _baselineWindows.Clear();
+        _baselineJitter.Clear();
         _recentWindows.Clear();
         // Сервер сменился — прежний способ замера «до» к новому серверу не относится.
         _baselineMethodTag = string.Empty;
@@ -1022,21 +1040,57 @@ public sealed class RealtimeOptimizer
 
     private string BuildRunningStatus(PathMeasurement window)
     {
-        double? improvement = _baselineRttMs is { } baseline ? Math.Round(baseline - window.RttMedianMs, 1) : null;
+        // Сравниваем набор окон «до» и «после» с доверительным интервалом, а не две медианы с порогом 0,5 мс:
+        // иначе разброс в ±3 мс объявлялся бы выигрышем на каждой второй сессии.
+        GainVerdict gain = EvaluateGain();
 
-        string improvementText = improvement switch
+        string improvementText = gain.Outcome switch
         {
-            null => "выигрыш ещё считается",
-            > 0.5 => $"выигрыш {improvement:F0} мс против исходных {_baselineRttMs:F0} мс",
-            < -0.5 => $"пока хуже на {Math.Abs(improvement.Value):F0} мс",
-            _ => "выигрыша нет — пинг как был"
+            GainOutcome.Confirmed =>
+                $"выигрыш {Math.Abs(gain.GainMs ?? 0):0.#} мс против исходных {gain.MedianBeforeMs:F0} мс подтверждён по шуму " +
+                $"(95% ДИ [{gain.CiLowMs:+0.#;-0.#;0}; {gain.CiHighMs:+0.#;-0.#;0}])",
+            GainOutcome.Worse =>
+                $"пока хуже на {Math.Abs(gain.GainMs ?? 0):0.#} мс, и это больше шума " +
+                $"(95% ДИ [{gain.CiLowMs:+0.#;-0.#;0}; {gain.CiHighMs:+0.#;-0.#;0}])",
+            GainOutcome.WithinNoise =>
+                $"разница в пределах шума ({gain.MedianBeforeMs:F0} → {gain.MedianAfterMs:F0} мс, " +
+                $"95% ДИ [{gain.CiLowMs:+0.#;-0.#;0}; {gain.CiHighMs:+0.#;-0.#;0}]) — выигрышем это не считаем",
+            _ => _baselineRttMs is null
+                ? "выигрыш ещё считается"
+                : $"окон для вывода пока мало ({gain.AfterSamples} из {GainVerdict.MinimumSamples}) — выигрыш не заявляем"
         };
 
         return $"Пинг {window.RttMedianMs:F0} мс (джиттер {window.JitterRu}, потери {window.LossRu}), {improvementText}. " +
                $"Физический предел пути: {_floorRttMs:F0} мс.";
     }
 
-    private RealtimeSnapshot BuildSnapshot() => new(
+    /// <summary>
+    /// Сводка «до/после» по всем окнам с проверкой на шум. Если сервер сменился, «до» относится
+    /// к другому адресу — тогда вывод не делается вовсе, а не «примерно тот же».
+    /// </summary>
+    private GainVerdict EvaluateGain()
+    {
+        List<double> after = _recentWindows
+            .Where(w => w.IsMeasurable)
+            .Select(w => w.RttMedianMs)
+            .ToList();
+
+        List<double> afterJitter = _recentWindows
+            .Where(w => w.IsMeasurable && w.JitterMs is not null)
+            .Select(w => w.JitterMs!.Value)
+            .ToList();
+
+        List<double> before = _baselineIsForAnotherServer ? new List<double>() : _baselineWindows;
+        List<double> beforeJitter = _baselineIsForAnotherServer ? new List<double>() : _baselineJitter;
+
+        return GainVerdict.Evaluate(before, after, beforeJitter, afterJitter);
+    }
+
+    private RealtimeSnapshot BuildSnapshot()
+    {
+        GainVerdict gain = EvaluateGain();
+
+        return new RealtimeSnapshot(
         State: _state,
         StatusRu: _statusRu,
         GameTitleRu: _flow?.GameTitleRu,
@@ -1055,7 +1109,10 @@ public sealed class RealtimeOptimizer
         Warnings: _warnings.ToList(),
         UpdatedUtc: _clock(),
         BaselineMethodTag: _baselineMethodTag,
-        FinalMethodTag: _lastMethodTag);
+        FinalMethodTag: _lastMethodTag,
+        GainConfirmed: gain.IsConfirmedGain,
+        GainVerdictRu: gain.DescribeRu());
+    }
 
     private string BuildHonestSummary(double? baselineRttMs, double? finalRttMs, double? improvement, bool everythingReverted)
     {
@@ -1068,23 +1125,45 @@ public sealed class RealtimeOptimizer
             return $"Замеры «до» или «после» недоступны, поэтому выигрыш не заявляем. {revertText}";
         }
 
-        if (improvement is > 0.5)
-        {
-            string floorText = _floorRttMs is { } floor
-                ? $" Лучший замер за сессию — {floor:F0} мс, ниже физического предела пути опуститься нельзя."
-                : string.Empty;
+        // Итог делается по набору окон с проверкой на шум. Обещание «стало лучше» теперь требует,
+        // чтобы 95-процентный интервал разницы целиком был выше порога значимости.
+        GainVerdict gain = EvaluateGain();
+        string floorTextForGain = _floorRttMs is { } floorMs
+            ? $" Лучший замер за сессию — {floorMs:F0} мс, ниже физического предела пути опуститься нельзя."
+            : string.Empty;
 
-            return $"Пинг снизился с {baseline:F0} до {after:F0} мс (медиана живого потока). Это измеренный результат, " +
-                   $"а не обещание.{floorText} {revertText}";
+        if (gain.Outcome == GainOutcome.Confirmed)
+        {
+            return $"Пинг снизился с {baseline:F0} до {after:F0} мс (медиана живого потока). {gain.DescribeRu()} " +
+                   $"Это измеренный результат, а не обещание.{floorTextForGain} {revertText}";
         }
 
-        if (improvement is < -0.5)
+        if (gain.Outcome == GainOutcome.Worse)
         {
-            return $"Стало хуже: {baseline:F0} → {after:F0} мс. Оптимизацию не оставляем: {revertText} " +
+            return $"Стало хуже: {baseline:F0} → {after:F0} мс. {gain.DescribeRu()} Оптимизацию не оставляем: {revertText} " +
                    "Причина в самом маршруте, а не в настройках Windows — тут помог бы только релей в обход проблемного участка.";
         }
 
-        return $"Заметного выигрыша нет: {baseline:F0} → {after:F0} мс. {revertText} " +
+        if (gain.Outcome == GainOutcome.WithinNoise)
+        {
+            return $"Заметного выигрыша нет: {baseline:F0} → {after:F0} мс. {gain.DescribeRu()} {revertText} " +
+                   "Честно: на этом маршруте оптимизация не помогает, а твики пинг на 40 мс не снижают — так не бывает.";
+        }
+
+        if (improvement is > GainVerdict.MeaningfulMs)
+        {
+            return $"Пинг изменился с {baseline:F0} до {after:F0} мс, но подтвердить это нечем. {gain.DescribeRu()} " +
+                   $"Выигрыш не заявляем — для вывода нужно не меньше {GainVerdict.MinimumSamples} окон «до» и «после»." +
+                   $"{floorTextForGain} {revertText}";
+        }
+
+        if (improvement is < -GainVerdict.MeaningfulMs)
+        {
+            return $"Стало хуже: {baseline:F0} → {after:F0} мс. {gain.DescribeRu()} Оптимизацию не оставляем: {revertText} " +
+                   "Причина в самом маршруте, а не в настройках Windows — тут помог бы только релей в обход проблемного участка.";
+        }
+
+        return $"Заметного выигрыша нет: {baseline:F0} → {after:F0} мс. {gain.SummaryRu} {revertText} " +
                "Честно: на этом маршруте оптимизация не помогает, а твики пинг на 40 мс не снижают — так не бывает.";
     }
 
@@ -1150,6 +1229,7 @@ public sealed class RealtimeOptimizer
     {
         _applied.Clear();
         _baselineWindows.Clear();
+        _baselineJitter.Clear();
         _recentWindows.Clear();
         _warnings.Clear();
         lock (_historyGate)

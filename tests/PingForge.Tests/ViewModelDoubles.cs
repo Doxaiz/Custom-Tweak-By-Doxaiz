@@ -30,6 +30,16 @@ public sealed class FakeEngineChannel : IEngineChannel
 
     public double? ImprovementMs { get; set; } = 42;
 
+    /// <summary>
+    /// Подтверждён ли выигрыш по шуму. Двойник по умолчанию говорит «да»: сценарии про измеренный
+    /// выигрыш должны получать ту же фразу, что и настоящая служба. Сценарий «разница в пределах шума»
+    /// ставит false — и окно обязано перестать хвастаться.
+    /// </summary>
+    public bool GainConfirmed { get; set; } = true;
+
+    /// <summary>Вывод службы о значимости: null — служба его не присылала.</summary>
+    public string? GainVerdictRu { get; set; }
+
     /// <summary>Лучший замер сессии: null — «ещё не измерено», а не ноль.</summary>
     public double? FloorRttMs { get; set; }
 
@@ -153,7 +163,7 @@ public sealed class FakeEngineChannel : IEngineChannel
             "Идёт контроль качества.",
             $$"""
             {"realtimeState":"active-monitoring","realtimeStateRu":"идёт контроль качества","isElevationAvailable":{{Bool(IsElevationAvailable)}},"tweakCount":47,"pendingOperations":0,
-             "gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6","baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},"qualityLabelRu":"хорошо",
+             "gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6","baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},"gainConfirmed":{{Bool(GainConfirmed)}},"gainVerdictRu":{{Text(GainVerdictRu)}},"qualityLabelRu":"хорошо",
              "floorRttMs":{{Number(FloorRttMs)}},"currentJitterMs":{{Number(CurrentJitterMs)}},"currentLossPercent":{{Number(CurrentLossPercent)}},
              "methodRu":{{Text(MethodRu)}},"baselineMethodRu":{{Text(BaselineMethodRu)}},
              "methodTag":{{Text(MethodTag)}},"baselineMethodTag":{{Text(BaselineMethodTag)}},
@@ -195,7 +205,7 @@ public sealed class FakeEngineChannel : IEngineChannel
             what,
             $$"""
             {"state":"active-monitoring","realtimeState":"active-monitoring","gameTitleRu":{{Text(GameTitleRu)}},"endpoint":"3.4.5.6",
-             "baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},
+             "baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},"improvementMs":{{Number(ImprovementMs)}},"gainConfirmed":{{Bool(GainConfirmed)}},"gainVerdictRu":{{Text(GainVerdictRu)}},
              "floorRttMs":{{Number(FloorRttMs)}},"currentJitterMs":{{Number(CurrentJitterMs)}},"currentLossPercent":{{Number(CurrentLossPercent)}},
              "methodRu":{{Text(MethodRu)}},"baselineMethodRu":{{Text(BaselineMethodRu)}},
              "methodTag":{{Text(MethodTag)}},"baselineMethodTag":{{Text(BaselineMethodTag)}},
@@ -211,7 +221,7 @@ public sealed class FakeEngineChannel : IEngineChannel
             "Оптимизация остановлена, свои изменения сняты.",
             $$"""
             {"state":"idle","realtimeState":"idle","baselineRttMs":{{Number(BaselineRttMs)}},"currentRttMs":{{Number(CurrentRttMs)}},
-             "improvementMs":{{Number(ImprovementMs)}},"everythingReverted":true,"appliedActionTitles":[]}
+             "improvementMs":{{Number(ImprovementMs)}},"gainConfirmed":{{Bool(GainConfirmed)}},"everythingReverted":true,"appliedActionTitles":[]}
             """);
     }
 }
