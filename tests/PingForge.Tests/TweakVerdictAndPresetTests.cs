@@ -107,9 +107,11 @@ public sealed class TweakVerdictAndPresetTests
     {
         var byFocus = Definitions().GroupBy(d => d.EffectiveFocus).ToDictionary(g => g.Key, g => g.Count());
 
-        Assert.Equal(12, byFocus[TweakFocus.Ping]);
+        // «Снятие троттлинга MMCSS» ушло из «Пинга» в «ФПС и кадры»: по документации оно не влияет
+        // на задержку в матче, а ограничивает фоновый трафик — держать его в «Пинге» было неправдой.
+        Assert.Equal(11, byFocus[TweakFocus.Ping]);
         Assert.Equal(7, byFocus[TweakFocus.Speed]);
-        Assert.Equal(13, byFocus[TweakFocus.Fps]);
+        Assert.Equal(14, byFocus[TweakFocus.Fps]);
         Assert.Equal(10, byFocus[TweakFocus.Input]);
         Assert.Equal(5, byFocus[TweakFocus.System]);
         Assert.Equal(47, byFocus.Values.Sum());

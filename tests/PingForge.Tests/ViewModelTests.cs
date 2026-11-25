@@ -773,9 +773,9 @@ public class ViewModelTests
         Assert.Equal(47, rows.Count);
         Assert.Equal(23, rows.Count(row => row.IsRecommended));
         Assert.Equal(23, rows.Count(row => row.EnabledByDefault));
-        Assert.Equal(19, rows.Count(row => row.IsInLowPingPreset));
+        Assert.Equal(18, rows.Count(row => row.IsInLowPingPreset));
         Assert.Equal(5, rows.Count(row => row.IsInMaxSpeedPreset));
-        Assert.Equal(23, rows.Count(row => row.IsInFpsPreset));
+        Assert.Equal(24, rows.Count(row => row.IsInFpsPreset));
         Assert.Equal(3, rows.Count(row => row.IsDangerous));
         Assert.All(rows, row =>
         {
