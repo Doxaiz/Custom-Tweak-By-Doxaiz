@@ -1379,6 +1379,30 @@ def category_group_heading(ru: str, count: int, note: str, anchor: str = "", on:
             f'<p class="groupnote">{esc(note)}</p>')
 
 
+def route_numbers(data: dict) -> tuple[int, int, int]:
+    """Игры, DNS и способы — из справочника маршрутов, а не из памяти страницы."""
+    routes = data.get("routes") or {}
+    games = routes.get("gameCount") or len(routes.get("games") or [])
+    dns = len(routes.get("dns") or [])
+    ways = len(routes.get("pathKinds") or []) or routes.get("freePathCount") or 0
+    return games, dns, ways
+
+
+def preset_triplet_text(data: dict) -> str:
+    """Числа трёх рабочих пресетов через « / »: считаются по каталогу, а не вписываются руками."""
+    wanted = ("LowLatencyGaming", "MaxThroughput", "FpsAndResponsiveness")
+    by_name = {p.get("preset"): p.get("tweakCount") for p in data.get("presets", [])}
+    return " / ".join(str(by_name[name]) for name in wanted if by_name.get(name) is not None)
+
+
+def focus_count(data: dict, prefix: str) -> int:
+    """Сколько твиков в подкатегории — по focusCounts из каталога."""
+    for item in data.get("focusCounts", []):
+        if str(item.get("focusRu", "")).lower().startswith(prefix.lower()):
+            return int(item.get("count", 0))
+    return 0
+
+
 def build(data: dict, progress: dict) -> str:
     tweaks = data["tweaks"]
     by_cat = Counter(t["categoryRu"] for t in tweaks)
@@ -1547,12 +1571,17 @@ def build(data: dict, progress: dict) -> str:
         for v in (verdict_data.get("legend") or []))
     verdict_honesty = verdict_data.get("honestyRu") or "Вердикт берётся из каталога проекта."
 
+    # Числа в текстах берутся из каталога, а не из памяти: иначе они тихо расходятся с программой.
+    # Ровно так на этой странице висело число из старого каталога — при том, что в программе их 47.
+    game_count, dns_count, ways_count = route_numbers(data)
+    preset_triplet = preset_triplet_text(data)
+
     mini_toc_for_tweaks = mini_toc(f"Что внутри раздела твиков: {len(tweaks)} карточек по подкатегориям",
-                                   focus_toc + [("tweak-presets", "Составы пресетов (19 / 5 / 23)")])
+                                   focus_toc + [("tweak-presets", f"Составы пресетов ({preset_triplet})")])
     mini_toc_for_routing = mini_toc("Что внутри раздела «Сеть и маршрут»", [
-        ("routes-games", "22 игры: процессы, регионы, порты"),
-        ("routes-dns", "5 бесплатных публичных DNS"),
-        ("routes-paths", "8 способов сократить путь"),
+        ("routes-games", f"{game_count} игры: процессы, регионы, порты"),
+        ("routes-dns", f"{dns_count} бесплатных публичных DNS"),
+        ("routes-paths", f"{ways_count} способов сократить путь"),
         ("route-howto", "Как выбирается путь и настройки замеров")])
     mini_toc_for_settings = mini_toc("Что внутри раздела «Настройки»", [
         ("consumption", "Чтобы программа не грузила компьютер"),
@@ -1617,8 +1646,8 @@ def build(data: dict, progress: dict) -> str:
 
     <div class="navgroup">Что получилось</div>
     <a class="step" href="#routing" data-group="network"><span class="stepnum">3</span>
-      <span class="steptext"><b>Сеть и маршрут</b><span>Как трафик идёт до игры, 22 игры и способы короче</span></span>
-      <span class="navbadge">22 игры</span></a>
+      <span class="steptext"><b>Сеть и маршрут</b><span>Как трафик идёт до игры, {game_count} игры и способы короче</span></span>
+      <span class="navbadge">{game_count} игры</span></a>
     <a class="step" href="#diagnostics" data-group="network"><span class="stepnum">3b</span>
       <span class="steptext"><b>Анализ и график сети</b><span>Замеры: скорость, пинг, джиттер, потери — до и после</span></span>
       <span class="navbadge">график</span></a>
@@ -1649,10 +1678,10 @@ def build(data: dict, progress: dict) -> str:
     <ul class="tight small muted">
       <li>твиков стало <b>{data["tweakCount"]}</b> — сеть, скорость, кадры, ввод, система;</li>
       <li>подкатегории «пинг / скорость / ФПС / ввод / система» с плитками-переходами;</li>
-      <li>пресеты больше не одинаковые: 19 / 5 / 23 твика по разным признакам;</li>
+      <li>пресеты больше не одинаковые: {preset_triplet} твика по разным признакам;</li>
       <li>работа в трее: меню трёх состояний и честные подсказки;</li>
       <li>экономный профиль: пауза на батарее и когда игра свёрнута;</li>
-      <li>справочник маршрутов: 22 игры, 5 бесплатных DNS, 8 способов;</li>
+      <li>справочник маршрутов: {game_count} игры, {dns_count} бесплатных DNS, {ways_count} способов;</li>
       <li>график сети: скорость, пинг, джиттер, потери, нагрузка, DNS, MTU.</li>
     </ul>
     <a class="btn small" href="https://dalink.to/doxaiz" target="_blank" rel="noopener">Поддержать автора ↗</a>
@@ -2009,7 +2038,7 @@ def build(data: dict, progress: dict) -> str:
     <div class="presetcard">
       <h4>Пресет «Максимальная скорость» <span class="cnt">{len(max_speed["tweakCodes"])}</span></h4>
       <p class="small muted">Пропускная способность: буферы приёма и передачи, окно TCP, масштабирование приёма.
-      Составы пресетов разные — 19, 5 и 23 твика, а не «одинаковые наборы».</p>
+      Составы пресетов разные — {preset_triplet} твика, а не «одинаковые наборы».</p>
       <div class="chiprow">{max_speed_chips}</div>
     </div>
     <div class="presetcard">
@@ -2650,7 +2679,7 @@ TOUR = [
     ("overview", 1, "Оптимизация", "Нажать одну кнопку и увидеть, стало ли лучше",
      "живой режим · замеры до и после · остановка с возвратом"),
     ("apply", 2, "Твики", "Настройки Windows: что делает каждая и что можно выбрать",
-     "пресеты · применение · ручной выбор 28 твиков"),
+     "пресеты · применение · ручной выбор {tweaks} твиков"),
     ("routing", 3, "Сеть и маршрут", "Как трафик идёт до игры и можно ли сократить путь",
      "выбор пути · время теста · проверки сети"),
     ("journal", 4, "Журнал и откат", "Что изменили, что получилось и как вернуть назад",
@@ -2675,10 +2704,15 @@ SECTION_CHAIN = [
 ]
 
 
-def render_toc() -> str:
-    """Оглавление из шести плиток: видно сразу, что где лежит, и работает без скриптов."""
+def render_toc(tweak_count: int) -> str:
+    """Оглавление из шести плиток: видно сразу, что где лежит, и работает без скриптов.
+
+    Число твиков приходит из каталога, а не вписано в текст плитки: страница не должна
+    обещать старое число, когда каталог давно вырос.
+    """
     tiles = []
     for anchor, num, title, desc, inside in TOUR:
+        inside = inside.format(tweaks=tweak_count) if "{tweaks}" in inside else inside
         tiles.append(
             f'<a class="toc-tile" href="#{anchor}"><span class="toc-num">{num}</span>'
             f'<span><b>{esc(title)}</b><span class="toc-desc">{esc(desc)}</span>'
@@ -2708,10 +2742,10 @@ def render_section_nav(index: int) -> str:
             f'{back}<a class="secnav-mid" href="#top">\u2191 Оглавление</a>{forward}</div>')
 
 
-def decorate(html: str) -> str:
+def decorate(html: str, tweak_count: int) -> str:
     """Вставляет оглавление в начало и переходы в конец каждой части. Проверяет, что частей ровно девять."""
     assert '<main class="content">' in html, "не нашёл начало содержимого"
-    html = html.replace('<main class="content">', '<main class="content">\n' + render_toc(), 1)
+    html = html.replace('<main class="content">', '<main class="content">\n' + render_toc(tweak_count), 1)
 
     counter = {"i": 0}
 
@@ -2755,6 +2789,9 @@ def main() -> int:
 
     data = json.loads(data_path.read_text(encoding="utf-8"))
 
+    # Числа для текстов оценки готовности — из каталога, а не из памяти.
+    game_count, dns_count, ways_count = route_numbers(data)
+
     # ── честная оценка готовности ─────────────────────────────────────────────
     progress_rows = [
         ("Ядро: модели, контракты, канонический формат значений, целостность снапшота", 7, 100,
@@ -2767,7 +2804,8 @@ def main() -> int:
         ("База данных, журнал предзаписи, снапшоты", 5, 100, "схема v4, реальная SQLite в тестах"),
         ("Оркестрация: снапшот → применение → проверка → автооткат", 8, 100,
          "включая восстановление после падения приложения"),
-        ("Каталог твиков: 47 твиков с честными описаниями, подкатегориями, вердиктами и правилами пресетов", 9, 92,
+        (f"Каталог твиков: {data['tweakCount']} твиков с честными описаниями, подкатегориями, вердиктами "
+         f"и правилами пресетов", 9, 92,
          "вердикты «стоит включать или нет» и правило «по умолчанию включено только рекомендованное» живут "
          "в коде (TweakVerdict) и проверены тестами; пресеты 19 / 5 / 23 различаются по составу"),
         ("Windows-бэкенды твиков: реестр, netsh, свойства NIC", 8, 62,
@@ -2787,12 +2825,12 @@ def main() -> int:
          "на живой Windows кнопка отвечает «игра не найдена» — это ответ работающего движка"),
         ("Слой анализа: что применить исходя из состояния сети", 7, 88,
          "советники MTU/DNS, анализатор сети и советник задержки ввода готовы и покрыты тестами"),
-        ("Задержка ввода: 10 твиков, советник и чтение устройств", 3, 65,
+        (f"Задержка ввода: {focus_count(data, 'ввод')} твиков, советник и чтение устройств", 3, 65,
          "каталог, советник и 12 тестов готовы; чтение списка устройств и интерфейс проверяются на Windows"),
         ("Трей, значки и экономный профиль потребления", 4, 80,
          "меню, подсказки и профили проверены тестами; значок создаётся и меню собирается на живой Windows — "
          "это проверяет самопроверка при каждой сборке"),
-        ("Справочник маршрутов (22 игры, 5 DNS, 8 способов) и график сети", 3, 92,
+        (f"Справочник маршрутов ({game_count} игры, {dns_count} DNS, {ways_count} способов) и график сети", 3, 92,
          "данные в коде и в макете (0.5.5: регионы/порты в карточке Игры, DNS-карточка в Твиках, один список резолверов на программу); живой замер для графика идёт из статуса оптимизации"),
         ("Чтение состояния Windows и сети (реестр, netsh, электропитание, DNS)", 3, 100,
          "читатель собран (SystemStateReader: реестр, netsh, схема питания, DNS, NDIS-фильтры) и отдаётся "
@@ -2801,7 +2839,7 @@ def main() -> int:
          "протокол канала, таблица команд, разборщик, правила доступа и «мозги» службы собраны и покрыты "
          "тестами; установка, запуск и живой разговор со службой проверяются на Windows в CI; журналы с ротацией 5 МБ×3, "
          "отчёт о падении в ProgramData\\PingForge\\crash и пакет для поддержки (задача Q) готовы и проверены самопроверкой"),
-        ("Интерфейс WPF (этот макет — его будущий вид)", 9, 93,
+        ("Интерфейс WPF (этот макет — его будущий вид)", 9, 94,
          "окно с 6 разделами, карточки твиков, регионы/DNS (0.5.5), UDP-наблюдатель ETW, трей, диалоги и файл настроек написаны и собираются; решения интерфейса "
          "покрыты тестами моделей представления; на живой Windows проверено при каждой сборке: окно открывается, "
          "6 разделов на месте, привязки работают, раскладка не сжимается, ничего не выходит за правый край "
@@ -2818,7 +2856,8 @@ def main() -> int:
          "берётся из статистики уже открытого соединения (сначала UDP-метки, затем она, и только потом пробы), "
          "а неизмеренные джиттер и потери называются словами «не измерено», а не нулями; "
          "окно и трей показывают выигрыш, разброс, потери и лучший замер сессии из одного ответа службы; "
-         "регионы/DNS, карточка «Блокировки и доступ» (замер по кнопке, восемь разных выводов, без "
+         "числа в текстах считаются из каталога и сверяются проверкой страницы (в т.ч. плитка оглавления "
+         "и карточка «Что в этой версии»), регионы/DNS, карточка «Блокировки и доступ» (замер по кнопке, восемь разных выводов, без "
          "обещаний обхода) и честный блок «Пакет для поддержки» проверены самопроверкой"),
         ("Проверка на живом железе, установщик, подпись файла", 4, 67,
          "установщик собран и в CI проверен: тихая установка, файлы, ярлыки, запись в списке программ, "
@@ -2845,7 +2884,7 @@ def main() -> int:
     html_out = insert_consumption(html_out)
     html_out = insert_routes(html_out)
     html_out = insert_network_chart(html_out, data)
-    html_out = decorate(html_out)
+    html_out = decorate(html_out, data["tweakCount"])
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html_out, encoding="utf-8")
     (out_path.parent / "catalog.json").write_text(
