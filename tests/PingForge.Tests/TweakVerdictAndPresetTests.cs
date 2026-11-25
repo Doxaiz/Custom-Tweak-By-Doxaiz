@@ -145,9 +145,12 @@ public sealed class TweakVerdictAndPresetTests
         var speed = catalog.GetByPreset(TweakProfilePreset.MaxThroughput);
         var fps = catalog.GetByPreset(TweakProfilePreset.FpsAndResponsiveness);
 
-        Assert.Equal(19, low.Count);
+        // Числа держим литералами намеренно: тест ловит случайное изменение состава пресетов.
+        // «Снятие троттлинга MMCSS» переехало из «Низкого пинга» в «Отзывчивость» осознанно:
+        // по документации оно ограничивает фоновый трафик и на задержку в матче не влияет.
+        Assert.Equal(18, low.Count);
         Assert.Equal(5, speed.Count);
-        Assert.Equal(23, fps.Count);
+        Assert.Equal(24, fps.Count);
 
         var sets = new[] { low.Select(t => t.Id).ToHashSet(), speed.Select(t => t.Id).ToHashSet(), fps.Select(t => t.Id).ToHashSet() };
         Assert.NotEqual(sets[0], sets[1]);
