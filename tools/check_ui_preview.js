@@ -496,6 +496,54 @@ setTimeout(async () => {
       ? `подпись «${testsChip.textContent.trim()}», атрибут ${testsAttr}`
       : `нет подписи с числом и нет фразы «${testsHonest}»`);
 
+  // Числа в текстах: каждое «N твиков», «N игры», «N способов», «N бесплатных DNS» на странице обязано
+  // совпадать с каталогом, из которого страница собрана. Раньше здесь висело «ручной выбор 28 твиков»
+  // при 47 в каталоге — цифру вписали руками и забыли. Теперь расхождение ловится, а не живёт годами.
+  const catalogPath = path.join(path.dirname(path.resolve(FILE)), 'catalog.json');
+  let catalog = null;
+  try {
+    catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+  } catch (e) {
+    catalog = null;
+  }
+
+  if (!catalog) {
+    check('числа в текстах сверены с каталогом', false, `нет ${catalogPath} — сверить не с чем`);
+  } else {
+    const allowedTweaks = new Set([catalog.tweakCount]);
+    (catalog.presets || []).forEach(p => allowedTweaks.add(p.tweakCount));
+    if (catalog.verdicts && catalog.verdicts.recommendCount) allowedTweaks.add(catalog.verdicts.recommendCount);
+    (catalog.focusCounts || []).forEach(f => allowedTweaks.add(f.count));
+
+    const routes = catalog.routes || {};
+    const allowedGames = new Set([routes.gameCount || (routes.games || []).length]);
+    const allowedDns = new Set([(routes.dns || []).length]);
+    const allowedWays = new Set([(routes.pathKinds || []).length, routes.freePathCount]);
+
+    // Сверяем только те блоки, которые не меняются скриптами: оглавление, боковое меню и карточку
+    // «Что в этой версии». Счётчики фильтров в разделе твиков живые («показано 0 твиков»), их считать
+    // по каталогу нельзя — и не нужно.
+    const staticBlocks = [...d.querySelectorAll('nav.toc, nav.side-nav, .side-card.whatsnew, header')];
+    const text = staticBlocks.map(block => block.textContent).join(' \n ');
+
+    const bad = [];
+    const families = [
+      { re: /(\d+)\s+твик[а-я]*/g, allowed: allowedTweaks, what: 'твиков' },
+      { re: /(\d+)\s+игр[а-я]*/g, allowed: allowedGames, what: 'игр' },
+      { re: /(\d+)\s+бесплатн[а-я]*\s+DNS/g, allowed: allowedDns, what: 'DNS' },
+      { re: /(\d+)\s+способ[а-я]*/g, allowed: allowedWays, what: 'способов' },
+    ];
+    families.forEach(family => {
+      for (const match of text.matchAll(family.re)) {
+        const value = Number(match[1]);
+        if (!family.allowed.has(value)) {
+          bad.push(`«${match[0].trim()}» (в каталоге: ${[...family.allowed].join(', ')})`);
+        }
+      }
+    });
+    check('числа в текстах сверены с каталогом', bad.length === 0, bad.slice(0, 4).join(' | '));
+  }
+
   console.log(`Файл: ${path.resolve(FILE)} (${(html.length / 1024).toFixed(0)} КБ)`);
   console.log('порядок разделов:', ids.join(' → '));
   console.log(`=== пройдено ${ok.length}, проблем ${problems.length} ===`);
