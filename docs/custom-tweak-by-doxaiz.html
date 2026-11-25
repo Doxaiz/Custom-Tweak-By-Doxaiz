@@ -273,7 +273,7 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
         <h1>Твики</h1>
         <div class="row toolbar">
           <span class="seg-title">Пресет</span>
-          <div class="seg-group"><label class="seg" for="ps-all">Всё<span class="count">47</span></label><label class="seg" for="ps-low">Низкий пинг<span class="count">19</span></label><label class="seg" for="ps-speed">Скорость<span class="count">5</span></label><label class="seg" for="ps-fps">Кадры<span class="count">23</span></label></div>
+          <div class="seg-group"><label class="seg" for="ps-all">Всё<span class="count">47</span></label><label class="seg" for="ps-low">Низкий пинг<span class="count">18</span></label><label class="seg" for="ps-speed">Скорость<span class="count">5</span></label><label class="seg" for="ps-fps">Кадры<span class="count">24</span></label></div>
           <span class="chip">состав подсвечивается</span>
         </div>
         <div class="row toolbar">
@@ -281,7 +281,7 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
           <div class="seg-group"><label class="seg" for="sel-rec">только рекомендуемое</label><label class="seg" for="sel-all">включить все</label><label class="seg" for="sel-none">отключить все</label></div>
           <span class="chip">по умолчанию включено 23 из 47</span>
         </div>
-        <h2 class="grp f-ping">Пинг и сеть <span class="count">12</span></h2>
+        <h2 class="grp f-ping">Пинг и сеть <span class="count">11</span></h2>
 <article class="tw f-ping in-low">
   <label class="sw" title="Включить твик">
     <input type="checkbox" checked aria-label="Включить: Частота подтверждений TCP (TcpAckFrequency)">
@@ -321,27 +321,6 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
       <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
         <span class="dim">стабильность без изменений</span> · записываем: <code>1</code></p>
       <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{adapter}\TCPNoDelay</code> · По умолчанию параметр отсутствует.</p>
-    </details>
-  </div>
-</article>
-<article class="tw f-ping in-low in-speed">
-  <label class="sw" title="Включить твик">
-    <input type="checkbox" checked aria-label="Включить: Снятие троттлинга сети (NetworkThrottlingIndex)">
-    <span class="sl"></span>
-  </label>
-  <div class="tw-main">
-    <div class="tw-head">
-      <span class="tw-title">Снятие троттлинга сети (NetworkThrottlingIndex)</span>
-      <span class="v v-yes">включать: да</span>
-      <span class="chip tiny">пресет: низкий пинг, скорость</span>
-    </div>
-    <p class="tw-sub">Снимает ограничение, из-за которого планировщик мультимедиа обрабатывает не более 10 пакетов за прерывание.</p>
-    <details class="tw-more">
-      <summary>Подробнее</summary>
-      <p>Стоит применять для игр с голосовым чатом и стримингом: убирает микрозадержки при пакетной обработке. Побочный эффект — немного выше нагрузка на процессор при приёме.</p>
-      <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
-        <span class="dim">стабильность без изменений</span> · записываем: <code>4294967295</code></p>
-      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\NetworkThrottlingIndex</code> · По умолчанию значение равно 10.</p>
     </details>
   </div>
 </article>
@@ -682,7 +661,28 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
     </details>
   </div>
 </article>
-<h2 class="grp f-fps">ФПС и кадры <span class="count">13</span></h2>
+<h2 class="grp f-fps">ФПС и кадры <span class="count">14</span></h2>
+<article class="tw f-fps in-speed in-fps">
+  <label class="sw" title="Включить твик">
+    <input type="checkbox" checked aria-label="Включить: Снятие троттлинга сети (NetworkThrottlingIndex)">
+    <span class="sl"></span>
+  </label>
+  <div class="tw-main">
+    <div class="tw-head">
+      <span class="tw-title">Снятие троттлинга сети (NetworkThrottlingIndex)</span>
+      <span class="v v-yes">включать: да</span>
+      <span class="chip tiny">пресет: скорость, кадры</span>
+    </div>
+    <p class="tw-sub">Пока активна задача MMCSS, сетевой стек принимает не больше 10 пакетов за миллисекунду для трафика, не относящегося к этой задаче.</p>
+    <details class="tw-more">
+      <summary>Подробнее</summary>
+      <p>Снимать ограничение имеет смысл, когда в фоне идёт загрузка или стрим: именно фон упирается в потолок по пакетам. На задержку в матче это не влияет — она определяется маршрутом до сервера, а не этим ограничением. Действует после перезагрузки.</p>
+      <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
+        <span class="dim">стабильность без изменений</span> · записываем: <code>4294967295</code></p>
+      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\NetworkThrottlingIndex</code> · По умолчанию 10; допустимый диапазон 1–70, 4294967295 — выключено.</p>
+    </details>
+  </div>
+</article>
 <article class="tw f-fps in-low in-fps">
   <label class="sw" title="Включить твик">
     <input type="checkbox" checked aria-label="Включить: Отзывчивость системы для игр (SystemResponsiveness)">
@@ -697,10 +697,10 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
     <p class="tw-sub">Доля процессорного времени, которую планировщик мультимедиа оставляет фоновым задачам.</p>
     <details class="tw-more">
       <summary>Подробнее</summary>
-      <p>Стоит применять для игр: меньше времени отдаётся фоновым задачам, игровой поток реже ждёт процессор. Если параллельно идёт захват видео или рендер, значения ниже 10 могут дать микрофризы.</p>
+      <p>Стоит применять для игр: меньше времени отдаётся фоновым задачам, игровой поток реже ждёт процессор. Значения ниже 10 бессмысленны: документация MMCSS говорит, что всё, что ниже 10, система поднимает до 20.</p>
       <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
         <span class="ok">стабильность больше</span> · записываем: <code>10</code></p>
-      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\SystemResponsiveness</code> · По умолчанию 20.</p>
+      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\SystemResponsiveness</code> · По умолчанию 20; значения ниже 10 поднимаются до 20, а 100 отключает MMCSS целиком.</p>
     </details>
   </div>
 </article>
@@ -742,7 +742,7 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
       <p>Стоит применять для игр: игровой поток реже вытесняется фоновыми задачами. Держите значения 6, а не 8: слишком высокий приоритет приводит к фризам, когда игровой поток не отдаёт процессор системе ввода.</p>
       <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
         <span class="ok">стабильность больше</span> · записываем: <code>6</code></p>
-      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games\Priority</code> · По умолчанию 2.</p>
+      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games\Priority</code> · По умолчанию 2; при категории High значение игнорируется (система подставляет 2).</p>
     </details>
   </div>
 </article>
@@ -760,10 +760,10 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
     <p class="tw-sub">Приоритет фоновых файловых операций игрового процесса.</p>
     <details class="tw-more">
       <summary>Подробнее</summary>
-      <p>Может помочь при подгрузке текстур на медленном диске. На сетевую задержку не влияет.</p>
+      <p>В документации MMCSS этот параметр помечен как неиспользуемый (not used): Windows его пишет, но ни на что не влияет. Поэтому твик лежит в каталоге как справочный — на подгрузку текстур и на сетевую задержку он не действует, и обещать эффект мы не будем.</p>
       <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
-        <span class="ok">стабильность больше</span> · записываем: <code>High</code></p>
-      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games\SFIO Priority</code> · По умолчанию «Normal».</p>
+        <span class="dim">стабильность без изменений</span> · записываем: <code>High</code></p>
+      <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games\SFIO Priority</code> · По умолчанию «Normal»; значение ни на что не влияет — так написано в документации MMCSS.</p>
     </details>
   </div>
 </article>

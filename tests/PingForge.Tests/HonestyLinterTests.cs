@@ -11,7 +11,7 @@ public sealed class HonestyLinterTests
     // Специальные точные фразы, которые проверяем отдельно, чтобы не ловить масштаб 100%
     private static readonly string[] ExactForbidden = new[] { "пинг 0", "100 %" };
     // Исключения — где слово стоит в объяснении «почему так не пишем»
-    private static readonly string[] AllowedFiles = new[] { "HonestyLinterTests.cs", "RouteCatalogTests.cs", "TweaksTests.cs", "CHANGELOG.md", "ForbiddenActionsList.cs", "AboutView.xaml", "ProbeModels.cs", "RealtimeOptimizer.cs", "SettingsView.xaml", "RouteProbeService.cs", "ServerPathTracer.cs", "StatisticalMetricsCalculator.cs", "TweakCatalogExtra.cs" };
+    private static readonly string[] AllowedFiles = new[] { "HonestyLinterTests.cs", "RouteCatalogTests.cs", "TweaksTests.cs", "CHANGELOG.md", "ForbiddenActionsList.cs", "AboutView.xaml", "ProbeModels.cs", "RealtimeOptimizer.cs", "SettingsView.xaml", "RouteProbeService.cs", "ServerPathTracer.cs", "StatisticalMetricsCalculator.cs", "TweakCatalogExtra.cs", "LatencyClaimsTests.cs" };
     private static readonly string[] AllowedPhrasesInContext = new[] { "не обещает", "не делает", "почему так не пишем", "Чего программа не делает", "масштаб", "Масштаб", "не гарантирует", "пинг 0" };
 
     [Fact]

@@ -426,7 +426,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
     <ul class="tight small muted">
       <li>твиков стало <b>47</b> — сеть, скорость, кадры, ввод, система;</li>
       <li>подкатегории «пинг / скорость / ФПС / ввод / система» с плитками-переходами;</li>
-      <li>пресеты больше не одинаковые: 19 / 5 / 23 твика по разным признакам;</li>
+      <li>пресеты больше не одинаковые: 18 / 5 / 24 твика по разным признакам;</li>
       <li>работа в трее: меню трёх состояний и честные подсказки;</li>
       <li>экономный профиль: пауза на батарее и когда игра свёрнута;</li>
       <li>справочник маршрутов: 22 игры, 5 бесплатных DNS, 8 способов;</li>
@@ -581,17 +581,17 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
         </div>
         <div class="card tight">
           <div class="between" style="margin-bottom:6px">
-            <b>Отзывчивость и кадры</b><span class="score">23</span>
+            <b>Отзывчивость и кадры</b><span class="score">24</span>
           </div>
-          <p class="small muted">Твиков в пресете: 23 из 47.
+          <p class="small muted">Твиков в пресете: 24 из 47.
           
           </p>
         </div>
         <div class="card tight">
           <div class="between" style="margin-bottom:6px">
-            <b>Низкий пинг</b><span class="score">19</span>
+            <b>Низкий пинг</b><span class="score">18</span>
           </div>
-          <p class="small muted">Твиков в пресете: 19 из 47.
+          <p class="small muted">Твиков в пресете: 18 из 47.
           
           Проходит проверку: в пресет не попадают твики с бейджем «с осторожностью».</p>
         </div>
@@ -633,7 +633,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
       <span class="dots"><i></i><i></i><i></i></span>
       <b>Применение твиков — низкий пинг</b>
       <span class="spacer"></span>
-      <span class="chip">батч из 19 твиков</span>
+      <span class="chip">батч из 18 твиков</span>
     </div>
     <div class="body">
       <div class="card tight" style="margin-top:0">
@@ -648,18 +648,18 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 
       <div class="row" style="margin:14px 0">
         <span class="small muted">Пресет:</span>
-        <span class="btn small" style="background:#1d2a40">Низкий пинг · 19</span>
+        <span class="btn small" style="background:#1d2a40">Низкий пинг · 18</span>
         <span class="btn small">Максимальная скорость · 5</span>
         <span class="btn small">Вернуть как было · 47</span>
         <span class="btn small">Свой набор</span>
       </div>
 
       <div class="row" style="margin:10px 0">
-        <span class="tag ok">будет применено: 19</span>
+        <span class="tag ok">будет применено: 18</span>
         <span class="tag">уже стоит (no-op): определится на вашей машине</span>
         <span class="tag">не поддерживается драйвером: определится на вашей машине</span>
         <span class="tag warn">требует ручной проверки: 1</span>
-        <span class="tag warn">нужен перезапуск: 1</span>
+        <span class="tag warn">нужен перезапуск: 2</span>
       </div>
 
       <h3>Анализ текущих настроек и план</h3>
@@ -683,12 +683,6 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
                 <td><b>Повторы SYN при подключении (SynRetransmissions)</b><div class="dim small">Параметр реестра</div></td>
                 <td class="small dim">HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{adapter}\SynRetransmissions</td>
                 <td><code>2</code></td>
-                <td class="small muted">статичное значение из каталога</td>
-              </tr>
-              <tr>
-                <td><b>Снятие троттлинга сети (NetworkThrottlingIndex)</b><div class="dim small">Параметр реестра</div></td>
-                <td class="small dim">HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\NetworkThrottlingIndex</td>
-                <td><code>4294967295</code></td>
                 <td class="small muted">статичное значение из каталога</td>
               </tr>
               <tr>
@@ -805,7 +799,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
   <p class="muted">Полный каталог проекта: 47 твиков. Ниже — реальные данные из кода
   (заголовки, описания, куда пишем, значение, рекомендация для игр). Клик по карточке раскрывает подробности.</p>
   <div class="section-tools"><span class="small dim">Что здесь можно сделать:</span><ul class="dotlist small"><li>найти твик поиском и фильтрами</li><li>прочитать обоснование для игр</li><li>применить только выбранные вручную</li></ul></div>
-  <details class="toc-mini"><summary>Что внутри раздела твиков: 47 карточек по подкатегориям</summary><div class="toc-mini-links"><a href="#focus-Ping">Пинг и стабильность сети</a><a href="#focus-Speed">Скорость</a><a href="#focus-Fps">ФПС и ровность кадра</a><a href="#focus-Input">Задержка ввода</a><a href="#focus-System">Система и служебные правки</a><a href="#tweak-presets">Составы пресетов (19 / 5 / 23)</a></div></details>
+  <details class="toc-mini"><summary>Что внутри раздела твиков: 47 карточек по подкатегориям</summary><div class="toc-mini-links"><a href="#focus-Ping">Пинг и стабильность сети</a><a href="#focus-Speed">Скорость</a><a href="#focus-Fps">ФПС и ровность кадра</a><a href="#focus-Input">Задержка ввода</a><a href="#focus-System">Система и служебные правки</a><a href="#tweak-presets">Составы пресетов (18 / 5 / 24)</a></div></details>
 
   <div class="grid g4">
     <div class="metric"><div class="label">Всего твиков</div><div class="value">47</div>
@@ -820,7 +814,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
       <div class="small dim">популярные советы, которые вредят</div></div>
   </div>
 
-  <div class="focusbar"><a href="#focus-Ping"><b>Пинг и стабильность сети</b> 12 шт.</a><a href="#focus-Speed"><b>Скорость</b> 7 шт.</a><a href="#focus-Fps"><b>ФПС и ровность кадра</b> 13 шт.</a><a href="#focus-Input"><b>Задержка ввода</b> 10 шт.</a><a href="#focus-System"><b>Система и служебные правки</b> 5 шт.</a></div>
+  <div class="focusbar"><a href="#focus-Ping"><b>Пинг и стабильность сети</b> 11 шт.</a><a href="#focus-Speed"><b>Скорость</b> 7 шт.</a><a href="#focus-Fps"><b>ФПС и ровность кадра</b> 14 шт.</a><a href="#focus-Input"><b>Задержка ввода</b> 10 шт.</a><a href="#focus-System"><b>Система и служебные правки</b> 5 шт.</a></div>
   <p class="small dim">Подкатегории — это ответ на вопрос «что станет лучше»: пинг, скорость, ФПС,
   ввод или общее состояние системы. Категория из каталога (стек TCP/IP, драйвер карты, планировщик)
   показана на карточке отдельной меткой.</p>
@@ -936,22 +930,22 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 
   <div class="presetbox" id="tweak-presets">
     <div class="presetcard">
-      <h4>Пресет «Низкий пинг» <span class="cnt">19</span></h4>
+      <h4>Пресет «Низкий пинг» <span class="cnt">18</span></h4>
       <p class="small muted">Только то, что сокращает задержку и джиттер: подтверждения TCP, таймеры, драйвер
       карты, DNS. Твики с бейджем «осторожно» и «не советуем» в пресет не попадают никогда — это проверяется тестом.</p>
-      <div class="chiprow"><span>Частота подтверждений TCP (TcpAckFrequency)</span><span>Отключение алгоритма Нейгла на интерфейсе (TCPNoDelay)</span><span>Повторы SYN при подключении (SynRetransmissions)</span><span>Снятие троттлинга сети (NetworkThrottlingIndex)</span><span>Отзывчивость системы для игр (SystemResponsiveness)</span><span>Категория планирования для игр (Scheduling Category)</span><span>Приоритет игровой задачи (Priority)</span><span>Отключить Energy-Efficient Ethernet</span><span>и ещё 11</span></div>
+      <div class="chiprow"><span>Частота подтверждений TCP (TcpAckFrequency)</span><span>Отключение алгоритма Нейгла на интерфейсе (TCPNoDelay)</span><span>Повторы SYN при подключении (SynRetransmissions)</span><span>Отзывчивость системы для игр (SystemResponsiveness)</span><span>Категория планирования для игр (Scheduling Category)</span><span>Приоритет игровой задачи (Priority)</span><span>Отключить Energy-Efficient Ethernet</span><span>Оптимальный MTU интерфейса</span><span>и ещё 10</span></div>
     </div>
     <div class="presetcard">
       <h4>Пресет «Максимальная скорость» <span class="cnt">5</span></h4>
       <p class="small muted">Пропускная способность: буферы приёма и передачи, окно TCP, масштабирование приёма.
-      Составы пресетов разные — 19 / 5 / 23 твика, а не «одинаковые наборы».</p>
+      Составы пресетов разные — 18 / 5 / 24 твика, а не «одинаковые наборы».</p>
       <div class="chiprow"><span>Снятие троттлинга сети (NetworkThrottlingIndex)</span><span>Буферы приёма по максимуму драйвера</span><span>Буферы передачи по максимуму драйвера</span><span>Включить RSS (масштабирование приёма)</span><span>Вернуть автонастройку окна TCP в обычный режим</span></div>
     </div>
     <div class="presetcard">
-      <h4>Пресет «Отзывчивость и кадры» <span class="cnt">23</span></h4>
+      <h4>Пресет «Отзывчивость и кадры» <span class="cnt">24</span></h4>
       <p class="small muted">Питание, фон Windows, планировщик и задержка ввода: чтобы система не отбирала ресурсы
       в бою. Берётся по правилу подкатегории, а не по ручным пометкам.</p>
-      <div class="chiprow"><span>Повторы SYN при подключении (SynRetransmissions)</span><span>Отзывчивость системы для игр (SystemResponsiveness)</span><span>Категория планирования для игр (Scheduling Category)</span><span>Приоритет игровой задачи (Priority)</span><span>Приоритет операций с файлами (SFIO Priority)</span><span>Отключить управление потоком (Flow Control)</span><span>Ускорение мыши (MouseSpeed)</span><span>Порог ускорения мыши #1 (MouseThreshold1)</span><span>и ещё 15</span></div>
+      <div class="chiprow"><span>Отключить оптимизации полноэкранного режима</span><span>Отключить запись клипов (AppCaptureEnabled)</span><span>Отключить Game DVR (запись в фоне)</span><span>Включить игровой режим Windows</span><span>Приоритет игровой задачи (Priority)</span><span>Категория планирования для игр (Scheduling Category)</span><span>Приоритет операций с файлами (SFIO Priority)</span><span>Аппаратное планирование GPU (HAGS)</span><span>и ещё 16</span></div>
     </div>
     <div class="presetcard">
       <h4>Пресет «Вернуть как было» <span class="cnt">47</span></h4>
@@ -961,7 +955,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
     </div>
   </div>
 
-  <div class="grouphd" id="focus-Ping"><h2>Пинг и стабильность сети</h2><span class="cnt">твиков: 12 · включено 6</span></div>
+  <div class="grouphd" id="focus-Ping"><h2>Пинг и стабильность сети</h2><span class="cnt">твиков: 11 · включено 5</span></div>
 <p class="groupnote">Сокращают задержку и джиттер: подтверждения TCP, таймеры, параметры драйвера карты, DNS.</p>
       <article class="tweak on" data-code="TCP_ACK_FREQUENCY"
                data-focus="Ping" data-badge="Recommended"
@@ -1083,70 +1077,6 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
                   <span class="small muted"> — твик попадёт в отчёт как «не меняли»</span></span></label>
                 <label class="pick mine"><input type="radio" name="pick-TCP_NO_DELAY">
                   <span><b>Своё значение:</b> <input type="text" value="1" aria-label="Своё значение для TCP_NO_DELAY">
-                  <span class="small muted"> — Своё значение проверится на допустимость: система получит то же, что и от штатной настройки Windows.</span></span></label>
-              </div>
-              <p class="note-inline">Это макет: переключатели никуда не записываются. В программе «применить» работает только
-              через окно со снапшотом и точкой восстановления — твик никогда не пишется в систему молча.</p>
-            </div>
-          </div>
-        </details>
-      </article>
-      <article class="tweak on" data-code="MMCSS_NETWORK_THROTTLING"
-               data-focus="Ping" data-badge="Recommended"
-               data-lowping="1" data-text="mmcss_network_throttling снятие троттлинга сети (networkthrottlingindex) снимает ограничение, из-за которого планировщик мультимедиа обрабатывает не более 10 пакетов за прерывание. стоит применять для игр с голосовым чатом и стримингом: убирает микрозадержки при пакетной обработке. побочный эффект — немного выше нагрузка на процессор при приёме. пинг">
-        <div class="t-head">
-          <label class="switch" title="Включить твик в план применения">
-            <input type="checkbox" class="t-toggle" data-recommended="1" checked
-                   aria-label="Включить твик Снятие троттлинга сети (NetworkThrottlingIndex)">
-            <span class="slider"></span>
-          </label>
-          <div class="t-titles">
-            <div class="t-title">Снятие троттлинга сети (NetworkThrottlingIndex)</div>
-            <div class="t-sub">Снимает ограничение, из-за которого планировщик мультимедиа обрабатывает не более 10 пакетов за прерывание.</div>
-          </div>
-          <div class="t-badges">
-            <span class="badge b-recommended"><span class="verdict v-yes">включать: да</span></span>
-            <span class="tag">Пинг</span>
-            <span class="tag">Питание и планировщик</span>
-            <span class="tag ok">пресеты: низкий пинг, скорость</span>
-            
-          </div>
-        </div>
-        <div class="t-state">Рекомендуем: для игр это работает и не вредит · включён в план по умолчанию</div>
-
-        <details class="t-details">
-          <summary>Подробно: что делает, зачем для игры, какие значения бывают и что писать</summary>
-          <div class="t-blocks">
-            <div class="t-block"><h4>Что делает</h4><p>Снимает ограничение, из-за которого планировщик мультимедиа обрабатывает не более 10 пакетов за прерывание.</p></div>
-            <div class="t-block"><h4>Зачем для игры и чего это стоит</h4><p>Стоит применять для игр с голосовым чатом и стримингом: убирает микрозадержки при пакетной обработке. Побочный эффект — немного выше нагрузка на процессор при приёме.</p></div>
-            <div class="t-block"><h4>Значение по умолчанию</h4><p class="muted">По умолчанию значение равно 10.</p></div>
-            <div class="t-block"><h4>Что будет записано</h4><p>Рекомендуемое: <code>4294967295</code></p></div>
-            <div class="t-block"><h4>Куда пишем</h4><p class="small"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\NetworkThrottlingIndex</code></p></div>
-            <div class="t-block"><h4>Влияние и условия</h4><p class="small">
-              <span class="impact"><span class="down">пинг ↓</span> · <span class="flat">скорость =</span> · <span class="flat">стабильность =</span></span><br>
-              <span class="small dim">MMCSS_NETWORK_THROTTLING · Параметр реестра · риск: Low ·
-              без перезапуска ·
-              требуются права администратора</span></p></div>
-
-            <div class="t-block wide"><h4>Какие значения бывают и что делает каждое</h4>
-              <div class="scroll">
-                <table>
-                  <thead><tr><th>Значение</th><th>Что означает</th><th>Когда выбирать</th></tr></thead>
-                  <tbody><tr><td class="overflow-safe"><code>4294967295</code> <span class='tag ok'>рекомендуем</span></td><td class="small">Троттлинг сети снят (0xFFFFFFFF)</td><td class="small muted">Рекомендуется: Windows не режет сетевой трафик играм</td></tr><tr><td class="overflow-safe"><code>10</code></td><td class="small">Значение по умолчанию — ограничение включено</td><td class="small muted">Возврат к заводскому поведению</td></tr><tr><td class="small muted">по умолчанию</td><td class="small muted" colspan="2">По умолчанию значение равно 10.</td></tr></tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="t-block wide"><h4>Что применить</h4>
-              <div class="valset">
-                <label class="pick"><input type="radio" name="pick-MMCSS_NETWORK_THROTTLING" checked>
-                  <span><b>Рекомендуемое:</b> <code>4294967295</code>
-                  <span class="small muted"> — значение подобрано под игры, объяснение попадёт в журнал</span></span></label>
-                <label class="pick"><input type="radio" name="pick-MMCSS_NETWORK_THROTTLING">
-                  <span><b>Оставить как есть:</b> <code>10</code>
-                  <span class="small muted"> — твик попадёт в отчёт как «не меняли»</span></span></label>
-                <label class="pick mine"><input type="radio" name="pick-MMCSS_NETWORK_THROTTLING">
-                  <span><b>Своё значение:</b> <input type="text" value="4294967295" aria-label="Своё значение для MMCSS_NETWORK_THROTTLING">
                   <span class="small muted"> — Своё значение проверится на допустимость: система получит то же, что и от штатной настройки Windows.</span></span></label>
               </div>
               <p class="note-inline">Это макет: переключатели никуда не записываются. В программе «применить» работает только
@@ -2181,11 +2111,75 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
           </div>
         </details>
       </article>
-<div class="grouphd" id="focus-Fps"><h2>ФПС и ровность кадра</h2><span class="cnt">твиков: 13 · включено 6</span></div>
+<div class="grouphd" id="focus-Fps"><h2>ФПС и ровность кадра</h2><span class="cnt">твиков: 14 · включено 7</span></div>
 <p class="groupnote">Питание, фон Windows, планировщик: чтобы система не отбирала ресурсы в бою.</p>
+      <article class="tweak on" data-code="MMCSS_NETWORK_THROTTLING"
+               data-focus="Fps" data-badge="Recommended"
+               data-lowping="0" data-text="mmcss_network_throttling снятие троттлинга сети (networkthrottlingindex) пока активна задача mmcss, сетевой стек принимает не больше 10 пакетов за миллисекунду для трафика, не относящегося к этой задаче. значение 4294967295 снимает ограничение полностью. в документации mmcss на microsoft learn этого параметра нет — он описан в материалах поддержки и документации производителей сетевых адаптеров. снимать ограничение имеет смысл, когда в фоне идёт загрузка или стрим: именно фон упирается в потолок по пакетам. на задержку в матче это не влияет — она определяется маршрутом до сервера, а не этим ограничением. действует после перезагрузки. фпс и кадры">
+        <div class="t-head">
+          <label class="switch" title="Включить твик в план применения">
+            <input type="checkbox" class="t-toggle" data-recommended="1" checked
+                   aria-label="Включить твик Снятие троттлинга сети (NetworkThrottlingIndex)">
+            <span class="slider"></span>
+          </label>
+          <div class="t-titles">
+            <div class="t-title">Снятие троттлинга сети (NetworkThrottlingIndex)</div>
+            <div class="t-sub">Пока активна задача MMCSS, сетевой стек принимает не больше 10 пакетов за миллисекунду для трафика, не относящегося к этой задаче. Значение 4294967295 снимает ограничение полностью. В документации MMCSS на Microsoft Learn этого параметра нет — он описан в материалах поддержки и документации производителей сетевых адаптеров.</div>
+          </div>
+          <div class="t-badges">
+            <span class="badge b-recommended"><span class="verdict v-yes">включать: да</span></span>
+            <span class="tag">ФПС и кадры</span>
+            <span class="tag">Питание и планировщик</span>
+            <span class="tag ok">пресеты: скорость, кадры</span>
+            <span class="tag warn">нужен перезапуск</span>
+          </div>
+        </div>
+        <div class="t-state">Рекомендуем: для игр это работает и не вредит · включён в план по умолчанию</div>
+
+        <details class="t-details">
+          <summary>Подробно: что делает, зачем для игры, какие значения бывают и что писать</summary>
+          <div class="t-blocks">
+            <div class="t-block"><h4>Что делает</h4><p>Пока активна задача MMCSS, сетевой стек принимает не больше 10 пакетов за миллисекунду для трафика, не относящегося к этой задаче. Значение 4294967295 снимает ограничение полностью. В документации MMCSS на Microsoft Learn этого параметра нет — он описан в материалах поддержки и документации производителей сетевых адаптеров.</p></div>
+            <div class="t-block"><h4>Зачем для игры и чего это стоит</h4><p>Снимать ограничение имеет смысл, когда в фоне идёт загрузка или стрим: именно фон упирается в потолок по пакетам. На задержку в матче это не влияет — она определяется маршрутом до сервера, а не этим ограничением. Действует после перезагрузки.</p></div>
+            <div class="t-block"><h4>Значение по умолчанию</h4><p class="muted">По умолчанию 10; допустимый диапазон 1–70, 4294967295 — выключено.</p></div>
+            <div class="t-block"><h4>Что будет записано</h4><p>Рекомендуемое: <code>4294967295</code></p></div>
+            <div class="t-block"><h4>Куда пишем</h4><p class="small"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\NetworkThrottlingIndex</code></p></div>
+            <div class="t-block"><h4>Влияние и условия</h4><p class="small">
+              <span class="impact"><span class="flat">пинг =</span> · <span class="flat">скорость =</span> · <span class="flat">стабильность =</span></span><br>
+              <span class="small dim">MMCSS_NETWORK_THROTTLING · Параметр реестра · риск: Low ·
+              нужен перезапуск Windows ·
+              требуются права администратора</span></p></div>
+
+            <div class="t-block wide"><h4>Какие значения бывают и что делает каждое</h4>
+              <div class="scroll">
+                <table>
+                  <thead><tr><th>Значение</th><th>Что означает</th><th>Когда выбирать</th></tr></thead>
+                  <tbody><tr><td class="overflow-safe"><code>4294967295</code> <span class='tag ok'>рекомендуем</span></td><td class="small">Троттлинг сети снят (0xFFFFFFFF)</td><td class="small muted">Рекомендуется: Windows не режет сетевой трафик играм</td></tr><tr><td class="overflow-safe"><code>10</code></td><td class="small">Значение по умолчанию — ограничение включено</td><td class="small muted">Возврат к заводскому поведению</td></tr><tr><td class="small muted">по умолчанию</td><td class="small muted" colspan="2">По умолчанию 10; допустимый диапазон 1–70, 4294967295 — выключено.</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="t-block wide"><h4>Что применить</h4>
+              <div class="valset">
+                <label class="pick"><input type="radio" name="pick-MMCSS_NETWORK_THROTTLING" checked>
+                  <span><b>Рекомендуемое:</b> <code>4294967295</code>
+                  <span class="small muted"> — значение подобрано под игры, объяснение попадёт в журнал</span></span></label>
+                <label class="pick"><input type="radio" name="pick-MMCSS_NETWORK_THROTTLING">
+                  <span><b>Оставить как есть:</b> <code>10</code>
+                  <span class="small muted"> — твик попадёт в отчёт как «не меняли»</span></span></label>
+                <label class="pick mine"><input type="radio" name="pick-MMCSS_NETWORK_THROTTLING">
+                  <span><b>Своё значение:</b> <input type="text" value="4294967295" aria-label="Своё значение для MMCSS_NETWORK_THROTTLING">
+                  <span class="small muted"> — Своё значение проверится на допустимость: система получит то же, что и от штатной настройки Windows.</span></span></label>
+              </div>
+              <p class="note-inline">Это макет: переключатели никуда не записываются. В программе «применить» работает только
+              через окно со снапшотом и точкой восстановления — твик никогда не пишется в систему молча.</p>
+            </div>
+          </div>
+        </details>
+      </article>
       <article class="tweak on" data-code="MMCSS_SYSTEM_RESPONSIVENESS"
                data-focus="Fps" data-badge="Recommended"
-               data-lowping="1" data-text="mmcss_system_responsiveness отзывчивость системы для игр (systemresponsiveness) доля процессорного времени, которую планировщик мультимедиа оставляет фоновым задачам. стоит применять для игр: меньше времени отдаётся фоновым задачам, игровой поток реже ждёт процессор. если параллельно идёт захват видео или рендер, значения ниже 10 могут дать микрофризы. фпс и кадры">
+               data-lowping="1" data-text="mmcss_system_responsiveness отзывчивость системы для игр (systemresponsiveness) доля процессорного времени, которую планировщик мультимедиа оставляет фоновым задачам. стоит применять для игр: меньше времени отдаётся фоновым задачам, игровой поток реже ждёт процессор. значения ниже 10 бессмысленны: документация mmcss говорит, что всё, что ниже 10, система поднимает до 20. фпс и кадры">
         <div class="t-head">
           <label class="switch" title="Включить твик в план применения">
             <input type="checkbox" class="t-toggle" data-recommended="1" checked
@@ -2210,8 +2204,8 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
           <summary>Подробно: что делает, зачем для игры, какие значения бывают и что писать</summary>
           <div class="t-blocks">
             <div class="t-block"><h4>Что делает</h4><p>Доля процессорного времени, которую планировщик мультимедиа оставляет фоновым задачам.</p></div>
-            <div class="t-block"><h4>Зачем для игры и чего это стоит</h4><p>Стоит применять для игр: меньше времени отдаётся фоновым задачам, игровой поток реже ждёт процессор. Если параллельно идёт захват видео или рендер, значения ниже 10 могут дать микрофризы.</p></div>
-            <div class="t-block"><h4>Значение по умолчанию</h4><p class="muted">По умолчанию 20.</p></div>
+            <div class="t-block"><h4>Зачем для игры и чего это стоит</h4><p>Стоит применять для игр: меньше времени отдаётся фоновым задачам, игровой поток реже ждёт процессор. Значения ниже 10 бессмысленны: документация MMCSS говорит, что всё, что ниже 10, система поднимает до 20.</p></div>
+            <div class="t-block"><h4>Значение по умолчанию</h4><p class="muted">По умолчанию 20; значения ниже 10 поднимаются до 20, а 100 отключает MMCSS целиком.</p></div>
             <div class="t-block"><h4>Что будет записано</h4><p>Рекомендуемое: <code>10</code></p></div>
             <div class="t-block"><h4>Куда пишем</h4><p class="small"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\SystemResponsiveness</code></p></div>
             <div class="t-block"><h4>Влияние и условия</h4><p class="small">
@@ -2224,7 +2218,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
               <div class="scroll">
                 <table>
                   <thead><tr><th>Значение</th><th>Что означает</th><th>Когда выбирать</th></tr></thead>
-                  <tbody><tr><td class="overflow-safe"><code>10</code> <span class='tag ok'>рекомендуем</span></td><td class="small">Под мультимедиа резервируется минимум ресурсов</td><td class="small muted">Рекомендуется для игр</td></tr><tr><td class="overflow-safe"><code>20</code></td><td class="small">Значение по умолчанию</td><td class="small muted">Возврат к заводскому поведению</td></tr><tr><td class="overflow-safe"><code>0</code></td><td class="small">Максимально агрессивный режим</td><td class="small muted">Не рекомендуем: может душить звук в плеерах и браузере</td></tr><tr><td class="small muted">по умолчанию</td><td class="small muted" colspan="2">По умолчанию 20.</td></tr></tbody>
+                  <tbody><tr><td class="overflow-safe"><code>10</code> <span class='tag ok'>рекомендуем</span></td><td class="small">Под мультимедиа резервируется минимум ресурсов</td><td class="small muted">Рекомендуется для игр</td></tr><tr><td class="overflow-safe"><code>20</code></td><td class="small">Значение по умолчанию</td><td class="small muted">Возврат к заводскому поведению</td></tr><tr><td class="overflow-safe"><code>0</code></td><td class="small">Максимально агрессивный режим</td><td class="small muted">Не рекомендуем: может душить звук в плеерах и браузере</td></tr><tr><td class="small muted">по умолчанию</td><td class="small muted" colspan="2">По умолчанию 20; значения ниже 10 поднимаются до 20, а 100 отключает MMCSS целиком.</td></tr></tbody>
                 </table>
               </div>
             </div>
@@ -2313,7 +2307,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
       </article>
       <article class="tweak on" data-code="GAME_TASK_PRIORITY"
                data-focus="Fps" data-badge="Recommended"
-               data-lowping="1" data-text="game_task_priority приоритет игровой задачи (priority) базовый приоритет потока для задачи mmcss «games». стоит применять для игр: игровой поток реже вытесняется фоновыми задачами. держите значения 6, а не 8: слишком высокий приоритет приводит к фризам, когда игровой поток не отдаёт процессор системе ввода. фпс и кадры">
+               data-lowping="1" data-text="game_task_priority приоритет игровой задачи (priority) базовый приоритет потока для задачи mmcss «games». стоит применять для игр: игровой поток реже вытесняется фоновыми задачами. держите значения 6, а не 8: слишком высокий приоритет приводит к фризам, когда игровой поток не отдаёт процессор системе ввода. важно: при «scheduling category» = high документация mmcss говорит, что приоритет всегда трактуется как 2, поэтому пара «high + 6» ничего не меняет — либо категория medium, либо этот параметр не трогаем. фпс и кадры">
         <div class="t-head">
           <label class="switch" title="Включить твик в план применения">
             <input type="checkbox" class="t-toggle" data-recommended="1" checked
@@ -2338,8 +2332,8 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
           <summary>Подробно: что делает, зачем для игры, какие значения бывают и что писать</summary>
           <div class="t-blocks">
             <div class="t-block"><h4>Что делает</h4><p>Базовый приоритет потока для задачи MMCSS «Games».</p></div>
-            <div class="t-block"><h4>Зачем для игры и чего это стоит</h4><p>Стоит применять для игр: игровой поток реже вытесняется фоновыми задачами. Держите значения 6, а не 8: слишком высокий приоритет приводит к фризам, когда игровой поток не отдаёт процессор системе ввода.</p></div>
-            <div class="t-block"><h4>Значение по умолчанию</h4><p class="muted">По умолчанию 2.</p></div>
+            <div class="t-block"><h4>Зачем для игры и чего это стоит</h4><p>Стоит применять для игр: игровой поток реже вытесняется фоновыми задачами. Держите значения 6, а не 8: слишком высокий приоритет приводит к фризам, когда игровой поток не отдаёт процессор системе ввода. Важно: при «Scheduling Category» = High документация MMCSS говорит, что приоритет всегда трактуется как 2, поэтому пара «High + 6» ничего не меняет — либо категория Medium, либо этот параметр не трогаем.</p></div>
+            <div class="t-block"><h4>Значение по умолчанию</h4><p class="muted">По умолчанию 2; при категории High значение игнорируется (система подставляет 2).</p></div>
             <div class="t-block"><h4>Что будет записано</h4><p>Рекомендуемое: <code>6</code></p></div>
             <div class="t-block"><h4>Куда пишем</h4><p class="small"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games\Priority</code></p></div>
             <div class="t-block"><h4>Влияние и условия</h4><p class="small">
@@ -2352,7 +2346,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
               <div class="scroll">
                 <table>
                   <thead><tr><th>Значение</th><th>Что означает</th><th>Когда выбирать</th></tr></thead>
-                  <tbody><tr><td class="overflow-safe"><code>6</code> <span class='tag ok'>рекомендуем</span></td><td class="small">Приоритет 6 — принятое игровое значение</td><td class="small muted">Рекомендуется</td></tr><tr><td class="overflow-safe"><code>2</code></td><td class="small">Часто значение по умолчанию</td><td class="small muted">Возврат к заводскому поведению</td></tr><tr><td class="overflow-safe"><code>8</code></td><td class="small">Максимум</td><td class="small muted">Риск: система может обделять другие задачи</td></tr><tr><td class="small muted">по умолчанию</td><td class="small muted" colspan="2">По умолчанию 2.</td></tr></tbody>
+                  <tbody><tr><td class="overflow-safe"><code>6</code> <span class='tag ok'>рекомендуем</span></td><td class="small">Приоритет 6 — принятое игровое значение</td><td class="small muted">Рекомендуется</td></tr><tr><td class="overflow-safe"><code>2</code></td><td class="small">Часто значение по умолчанию</td><td class="small muted">Возврат к заводскому поведению</td></tr><tr><td class="overflow-safe"><code>8</code></td><td class="small">Максимум</td><td class="small muted">Риск: система может обделять другие задачи</td></tr><tr><td class="small muted">по умолчанию</td><td class="small muted" colspan="2">По умолчанию 2; при категории High значение игнорируется (система подставляет 2).</td></tr></tbody>
                 </table>
               </div>
             </div>
@@ -2377,7 +2371,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
       </article>
       <article class="tweak" data-code="GAME_TASK_SFIO_PRIORITY"
                data-focus="Fps" data-badge="Optional"
-               data-lowping="0" data-text="game_task_sfio_priority приоритет операций с файлами (sfio priority) приоритет фоновых файловых операций игрового процесса. может помочь при подгрузке текстур на медленном диске. на сетевую задержку не влияет. фпс и кадры">
+               data-lowping="0" data-text="game_task_sfio_priority приоритет операций с файлами (sfio priority) приоритет фоновых файловых операций игрового процесса. в документации mmcss этот параметр помечен как неиспользуемый (not used): windows его пишет, но ни на что не влияет. поэтому твик лежит в каталоге как справочный — на подгрузку текстур и на сетевую задержку он не действует, и обещать эффект мы не будем. фпс и кадры">
         <div class="t-head">
           <label class="switch" title="Включить твик в план применения">
             <input type="checkbox" class="t-toggle" data-recommended="0"
@@ -2393,7 +2387,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
             <span class="tag">ФПС и кадры</span>
             <span class="tag">Питание и планировщик</span>
             <span class="tag ok">пресеты: кадры</span>
-            
+            <span class="tag warn">эффект не подтверждён</span>
           </div>
         </div>
         <div class="t-state">По желанию: зависит от вашего железа и роутера · по умолчанию выключен: решаете вы</div>
@@ -2402,12 +2396,12 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
           <summary>Подробно: что делает, зачем для игры, какие значения бывают и что писать</summary>
           <div class="t-blocks">
             <div class="t-block"><h4>Что делает</h4><p>Приоритет фоновых файловых операций игрового процесса.</p></div>
-            <div class="t-block"><h4>Зачем для игры и чего это стоит</h4><p>Может помочь при подгрузке текстур на медленном диске. На сетевую задержку не влияет.</p></div>
-            <div class="t-block"><h4>Значение по умолчанию</h4><p class="muted">По умолчанию «Normal».</p></div>
+            <div class="t-block"><h4>Зачем для игры и чего это стоит</h4><p>В документации MMCSS этот параметр помечен как неиспользуемый (not used): Windows его пишет, но ни на что не влияет. Поэтому твик лежит в каталоге как справочный — на подгрузку текстур и на сетевую задержку он не действует, и обещать эффект мы не будем.</p></div>
+            <div class="t-block"><h4>Значение по умолчанию</h4><p class="muted">По умолчанию «Normal»; значение ни на что не влияет — так написано в документации MMCSS.</p></div>
             <div class="t-block"><h4>Что будет записано</h4><p>Рекомендуемое: <code>High</code></p></div>
             <div class="t-block"><h4>Куда пишем</h4><p class="small"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games\SFIO Priority</code></p></div>
             <div class="t-block"><h4>Влияние и условия</h4><p class="small">
-              <span class="impact"><span class="flat">пинг =</span> · <span class="flat">скорость =</span> · <span class="up">стабильность ↑</span></span><br>
+              <span class="impact"><span class="flat">пинг =</span> · <span class="flat">скорость =</span> · <span class="flat">стабильность =</span></span><br>
               <span class="small dim">GAME_TASK_SFIO_PRIORITY · Параметр реестра · риск: Low ·
               без перезапуска ·
               требуются права администратора</span></p></div>
@@ -2416,7 +2410,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
               <div class="scroll">
                 <table>
                   <thead><tr><th>Значение</th><th>Что означает</th><th>Когда выбирать</th></tr></thead>
-                  <tbody><tr><td class="overflow-safe"><code>High</code> <span class='tag ok'>рекомендуем</span></td><td class="small">Высокий приоритет операций ввода-вывода для игры</td><td class="small muted">Рекомендуется</td></tr><tr><td class="overflow-safe"><code>Normal</code></td><td class="small">Значение по умолчанию</td><td class="small muted">Возврат к заводскому поведению</td></tr><tr><td class="small muted">по умолчанию</td><td class="small muted" colspan="2">По умолчанию «Normal».</td></tr></tbody>
+                  <tbody><tr><td class="overflow-safe"><code>High</code> <span class='tag ok'>рекомендуем</span></td><td class="small">Высокий приоритет операций ввода-вывода для игры</td><td class="small muted">Рекомендуется</td></tr><tr><td class="overflow-safe"><code>Normal</code></td><td class="small">Значение по умолчанию</td><td class="small muted">Возврат к заводскому поведению</td></tr><tr><td class="small muted">по умолчанию</td><td class="small muted" colspan="2">По умолчанию «Normal»; значение ни на что не влияет — так написано в документации MMCSS.</td></tr></tbody>
                 </table>
               </div>
             </div>
@@ -4659,7 +4653,7 @@ settings.json.bak-20261118-122451  ← копия «до сброса»</pre>
   <div class="card">
     <div class="between" style="margin-bottom:12px">
       <b>Готовность программы</b>
-      <span class="score">87.2%</span>
+      <span class="score">87.3%</span>
     </div>
     <div class="scroll">
       <table>
@@ -4703,9 +4697,9 @@ settings.json.bak-20261118-122451  ← копия «до сброса»</pre>
               <tr>
                 <td>Каталог твиков: 47 твиков с честными описаниями, подкатегориями, вердиктами и правилами пресетов</td>
                 <td class="num">9%</td>
-                <td class="num">92%</td>
-                <td><div class="bar"><i class="" style="width:92%"></i></div></td>
-                <td class="small muted">вердикты «стоит включать или нет» и правило «по умолчанию включено только рекомендованное» живут в коде (TweakVerdict) и проверены тестами; пресеты 19 / 5 / 23 различаются по составу</td>
+                <td class="num">94%</td>
+                <td><div class="bar"><i class="" style="width:94%"></i></div></td>
+                <td class="small muted">вердикты «стоит включать или нет» и правило «по умолчанию включено только рекомендованное» живут в коде (TweakVerdict) и проверены тестами; составы пресетов различаются — числа считаются из каталога; описания сверены с документацией Microsoft: снятие троттлинга MMCSS названо тем, чем является (ограничение фонового трафика, а не задержка в матче), правило подъёма SystemResponsiveness до 20 и правило приоритета при категории High записаны прямо, а неиспользуемый SFIO Priority помечен</td>
               </tr>
               <tr>
                 <td>Windows-бэкенды твиков: реестр, netsh, свойства NIC</td>
@@ -4789,7 +4783,7 @@ settings.json.bak-20261118-122451  ← копия «до сброса»</pre>
 
   <div class="grid g2">
     <div class="card tight">
-      <h3>Проверено тестами прямо сейчас <span class="chip" data-tests="1374">1374 автотестов</span></h3>
+      <h3>Проверено тестами прямо сейчас <span class="chip" data-tests="1381">1381 автотестов</span></h3>
       <p class="small muted">Снапшоты и откат на реальной базе, канонические форматы значений,
       разбор русского вывода netsh, гистерезис маршрутов, MAD-джиттер, DF-MTU, DNS с ловлей подмены,
       аудит запретов в каталоге, советы по MTU/DNS и разбор каталога относительно текущих настроек.</p>

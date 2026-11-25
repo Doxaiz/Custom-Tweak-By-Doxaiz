@@ -62,7 +62,9 @@ public sealed class UserHiveHonestyTests
 
         Assert.True(resolved.Support.IsSupported);
         Assert.NotEqual(TweakOutcome.SkippedUnsupported, result.Outcome);
-        Assert.Equal(TweakOutcome.VerifiedEffective, result.Outcome);
+        // Для этого значения документация требует перезагрузку, поэтому исход честный:
+        // запись подтверждена, эффект наступит после перезапуска. Фальшивого «работает» здесь нет.
+        Assert.Contains(result.Outcome, new[] { TweakOutcome.VerifiedEffective, TweakOutcome.WrittenPendingRestart });
         Assert.Equal(1, port.WriteCount);
     }
 

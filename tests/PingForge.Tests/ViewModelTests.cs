@@ -773,9 +773,9 @@ public class ViewModelTests
         Assert.Equal(47, rows.Count);
         Assert.Equal(23, rows.Count(row => row.IsRecommended));
         Assert.Equal(23, rows.Count(row => row.EnabledByDefault));
-        Assert.Equal(19, rows.Count(row => row.IsInLowPingPreset));
+        Assert.Equal(18, rows.Count(row => row.IsInLowPingPreset));
         Assert.Equal(5, rows.Count(row => row.IsInMaxSpeedPreset));
-        Assert.Equal(23, rows.Count(row => row.IsInFpsPreset));
+        Assert.Equal(24, rows.Count(row => row.IsInFpsPreset));
         Assert.Equal(3, rows.Count(row => row.IsDangerous));
         Assert.All(rows, row =>
         {
@@ -792,11 +792,11 @@ public class ViewModelTests
         var catalog = new TweakCatalog(new TweakPlatformPorts());
         IReadOnlyList<PresetViewModel> presets = TweakRowFactory.BuildPresets(catalog);
 
-        Assert.Equal(19, presets[0].Count);
+        Assert.Equal(18, presets[0].Count);
         Assert.Equal(5, presets[1].Count);
-        Assert.Equal(23, presets[2].Count);
+        Assert.Equal(24, presets[2].Count);
 
-        // Тот же состав, что применит служба: иначе подпись «19» была бы неправдой.
+        // Тот же состав, что применит служба: иначе подпись «18» была бы неправдой.
         Assert.Equal(catalog.GetByPreset(TweakProfilePreset.LowLatencyGaming).Count, presets[0].Count);
     }
 
