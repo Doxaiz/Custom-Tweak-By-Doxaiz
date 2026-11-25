@@ -1,5 +1,6 @@
 using System.Globalization;
 using PingForge.Core.Statistics;
+using Xunit;
 
 namespace PingForge.Tests;
 
