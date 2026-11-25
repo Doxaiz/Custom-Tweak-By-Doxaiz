@@ -164,11 +164,14 @@ public sealed class RealtimeOptimizationTests
     {
         var watcher = new StubWatcher(Fortnite());
         var runner = new RecordingRunner();
-        // Три окна «до»: медиана 120, затем контрольное окно «после»: 80.
-        var measurements = new ScriptedMeasurements(Measurable(122), Measurable(118), Measurable(120), Measurable(80));
+        // Восемь окон «до» с медианой 120 (столько нужно, чтобы вообще иметь право на вывод),
+        // затем контрольные окна «после»: 80. Лента кончится — дальше пойдёт Fallback 80.
+        var measurements = new ScriptedMeasurements(
+            Measurable(122), Measurable(118), Measurable(120), Measurable(121),
+            Measurable(119), Measurable(117), Measurable(123), Measurable(120));
         RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
 
-        RealtimeSnapshot snapshot = await optimizer.StartAsync();
+        RealtimeSnapshot snapshot = await optimizer.StartAsync(new RealtimeOptions(BaselineWindows: 8));
 
         Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, snapshot.State);
         Assert.Equal(120, snapshot.BaselineRttMs!.Value, 0.01);
