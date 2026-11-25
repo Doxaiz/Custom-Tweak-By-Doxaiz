@@ -13,6 +13,17 @@ const { JSDOM } = require('jsdom');
 const FILE = process.argv[2] || 'docs/pingforge-ui-preview.html';
 const html = fs.readFileSync(FILE, 'utf8');
 
+// Каталог, из которого собрана страница. Числа (твиков, подкатегорий, пресетов, «включено по умолчанию»)
+// берутся отсюда, а не вписываются в проверку: вписанная цифра молча расходится с каталогом после
+// первой правки — на «28 твиков» при 47 в каталоге это уже проходили.
+const catalogPath = path.join(path.dirname(path.resolve(FILE)), 'catalog.json');
+let CATALOG = null;
+try {
+  CATALOG = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+} catch (e) {
+  CATALOG = null;
+}
+
 const problems = [];
 const ok = [];
 const check = (name, cond, extra = '') => (cond ? ok : problems).push(name + (extra ? ' — ' + extra : ''));
@@ -74,7 +85,7 @@ setTimeout(async () => {
     menu.filter(a => a.getAttribute('aria-current') === 'true').length === 1);
 
   // ── содержимое, которое обязано остаться на месте ──────────────────────────────────────────
-  const TWEAKS = 47; // столько твиков в каталоге проекта на момент рендера
+  const TWEAKS = CATALOG ? CATALOG.tweakCount : 0; // число твиков — из каталога
   const cards = [...d.querySelectorAll('#tweaks .tweak')];
   check(`карточек твиков ${TWEAKS}`, cards.length === TWEAKS, `${cards.length}`);
   check('таблиц значений у карточек столько же, сколько карточек',
@@ -82,17 +93,20 @@ setTimeout(async () => {
     `${d.querySelectorAll('#tweaks .tweak .t-block table').length}`);
   check('строк «что применить» по три на карточку', d.querySelectorAll('#tweaks .valset .pick').length === TWEAKS * 3,
     `${d.querySelectorAll('#tweaks .valset .pick').length}`);
-  check('карточек «пинг» 12, «скорость» 7, «кадры» 13, «ввод» 10, «система» 5',
-    ['Ping:12', 'Speed:7', 'Fps:13', 'Input:10', 'System:5'].every(pair => {
-      const [focus, expected] = pair.split(':');
-      return cards.filter(c => c.dataset.focus === focus).length === Number(expected);
-    }),
-    [...new Set(cards.map(c => c.dataset.focus))].join(','));
+  const FOCUS_WIRE = { 'Пинг': 'Ping', 'Скорость': 'Speed', 'ФПС и кадры': 'Fps', 'Ввод': 'Input', 'Система': 'System' };
+  const focusExpected = ((CATALOG && CATALOG.focusCounts) || [])
+    .map(f => ({ wire: FOCUS_WIRE[f.focusRu] || f.focusRu, count: f.count }));
+  check('карточек в подкатегориях столько же, сколько в каталоге',
+    focusExpected.length > 0 && focusExpected.every(e => cards.filter(c => c.dataset.focus === e.wire).length === e.count),
+    focusExpected.map(e => `${e.wire}:${cards.filter(c => c.dataset.focus === e.wire).length}`).join(' ') ||
+      [...new Set(cards.map(c => c.dataset.focus))].join(','));
 
   // ── карточки: ползунки вместо старых details-строк ────────────────────────────────────────
   const toggles = [...d.querySelectorAll('#tweaks .t-toggle')];
   check('ползунков включения столько же, сколько карточек', toggles.length === TWEAKS, `${toggles.length}`);
-  check('по умолчанию включено только рекомендованное (23)', toggles.filter(t => t.checked).length === 23,
+  const recommendCount = CATALOG && CATALOG.verdicts ? CATALOG.verdicts.recommendCount : 0;
+  check(`по умолчанию включено только рекомендованное (${recommendCount})`,
+    recommendCount > 0 && toggles.filter(t => t.checked).length === recommendCount,
     `${toggles.filter(t => t.checked).length}`);
   check('у каждой карточки ровно один вердикт «стоит включать или нет»',
     cards.every(c => c.querySelectorAll('.verdict').length === 1),
@@ -140,9 +154,13 @@ setTimeout(async () => {
   // ── пресеты: составы обязаны быть разными (отдельное требование) ───────────────────────────
   const presetCounts = [...d.querySelectorAll('.presetcard .cnt')].map(e => parseInt(e.textContent, 10));
   check('в блоке пресетов показаны четыре состава', presetCounts.length === 4, presetCounts.join('/'));
-  check('составы пресетов разные: пинг 19, скорость 5, кадры 23', (() => {
+  const presetSizes = ['LowLatencyGaming', 'MaxThroughput', 'FpsAndResponsiveness']
+    .map(name => (((CATALOG && CATALOG.presets) || []).find(p => p.preset === name) || {}).tweakCount);
+  check(`составы пресетов разные: ${presetSizes.join(' / ')}`, (() => {
     const [low, fast, fps] = presetCounts;
-    return low === 19 && fast === 5 && fps === 23 && new Set([low, fast, fps]).size === 3;
+    return presetSizes.every(n => typeof n === 'number') &&
+      low === presetSizes[0] && fast === presetSizes[1] && fps === presetSizes[2] &&
+      new Set([low, fast, fps]).size === 3;
   })(), presetCounts.join('/'));
 
   check('кнопка сохранения конфига лежит внутри «Настроек»',
@@ -499,13 +517,7 @@ setTimeout(async () => {
   // Числа в текстах: каждое «N твиков», «N игры», «N способов», «N бесплатных DNS» на странице обязано
   // совпадать с каталогом, из которого страница собрана. Раньше здесь висело «ручной выбор 28 твиков»
   // при 47 в каталоге — цифру вписали руками и забыли. Теперь расхождение ловится, а не живёт годами.
-  const catalogPath = path.join(path.dirname(path.resolve(FILE)), 'catalog.json');
-  let catalog = null;
-  try {
-    catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
-  } catch (e) {
-    catalog = null;
-  }
+  const catalog = CATALOG;
 
   if (!catalog) {
     check('числа в текстах сверены с каталогом', false, `нет ${catalogPath} — сверить не с чем`);

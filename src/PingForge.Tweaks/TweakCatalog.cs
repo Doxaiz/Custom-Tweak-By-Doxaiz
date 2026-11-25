@@ -231,12 +231,16 @@ public sealed class TweakCatalog : ITweakCatalog
             "MMCSS_NETWORK_THROTTLING", "Снятие троттлинга сети (NetworkThrottlingIndex)", "NetworkThrottlingIndex",
             TweakCategory.PowerAndScheduler, TweakRiskLevel.Low, GameRecommendationBadge.Recommended,
             new TweakValueSource.RegistryValue(RegistryRootKind.LocalMachine, MultimediaProfile, "NetworkThrottlingIndex", TweakValueDataType.DWord),
-            "Снимает ограничение, из-за которого планировщик мультимедиа обрабатывает не более 10 пакетов за прерывание.",
-            "Стоит применять для игр с голосовым чатом и стримингом: убирает микрозадержки при пакетной обработке. " +
-            "Побочный эффект — немного выше нагрузка на процессор при приёме.",
-            "По умолчанию значение равно 10.",
-            "4294967295", TweakValueDataType.DWord, PingImpactDirection: -1, SpeedImpactDirection: 0, StabilityImpactDirection: 0,
-            IncludedInLowPingPreset: true, IncludedInMaxSpeedPreset: true),
+            "Пока активна задача MMCSS, сетевой стек принимает не больше 10 пакетов за миллисекунду для трафика, " +
+            "не относящегося к этой задаче. Значение 4294967295 снимает ограничение полностью. В документации MMCSS " +
+            "на Microsoft Learn этого параметра нет — он описан в материалах поддержки и документации производителей " +
+            "сетевых адаптеров.",
+            "Снимать ограничение имеет смысл, когда в фоне идёт загрузка или стрим: именно фон упирается в потолок " +
+            "по пакетам. На задержку в матче это не влияет — она определяется маршрутом до сервера, а не этим " +
+            "ограничением. Действует после перезагрузки.",
+            "По умолчанию 10; допустимый диапазон 1–70, 4294967295 — выключено.",
+            "4294967295", TweakValueDataType.DWord, PingImpactDirection: 0, SpeedImpactDirection: 0, StabilityImpactDirection: 0,
+            IncludedInLowPingPreset: false, IncludedInMaxSpeedPreset: true, RebootRequired: true, IncludedInFpsPreset: true),
 
         new(
             "MMCSS_SYSTEM_RESPONSIVENESS", "Отзывчивость системы для игр (SystemResponsiveness)", "SystemResponsiveness",
@@ -244,8 +248,8 @@ public sealed class TweakCatalog : ITweakCatalog
             new TweakValueSource.RegistryValue(RegistryRootKind.LocalMachine, MultimediaProfile, "SystemResponsiveness", TweakValueDataType.DWord),
             "Доля процессорного времени, которую планировщик мультимедиа оставляет фоновым задачам.",
             "Стоит применять для игр: меньше времени отдаётся фоновым задачам, игровой поток реже ждёт процессор. " +
-            "Если параллельно идёт захват видео или рендер, значения ниже 10 могут дать микрофризы.",
-            "По умолчанию 20.",
+            "Значения ниже 10 бессмысленны: документация MMCSS говорит, что всё, что ниже 10, система поднимает до 20.",
+            "По умолчанию 20; значения ниже 10 поднимаются до 20, а 100 отключает MMCSS целиком.",
             "10", TweakValueDataType.DWord, PingImpactDirection: 0, SpeedImpactDirection: 0, StabilityImpactDirection: 1,
             IncludedInLowPingPreset: true, IncludedInMaxSpeedPreset: false),
 
@@ -265,8 +269,10 @@ public sealed class TweakCatalog : ITweakCatalog
             new TweakValueSource.RegistryValue(RegistryRootKind.LocalMachine, MultimediaGames, "Priority", TweakValueDataType.DWord),
             "Базовый приоритет потока для задачи MMCSS «Games».",
             "Стоит применять для игр: игровой поток реже вытесняется фоновыми задачами. Держите значения 6, а не 8: " +
-            "слишком высокий приоритет приводит к фризам, когда игровой поток не отдаёт процессор системе ввода.",
-            "По умолчанию 2.",
+            "слишком высокий приоритет приводит к фризам, когда игровой поток не отдаёт процессор системе ввода. " +
+            "Важно: при «Scheduling Category» = High документация MMCSS говорит, что приоритет всегда трактуется " +
+            "как 2, поэтому пара «High + 6» ничего не меняет — либо категория Medium, либо этот параметр не трогаем.",
+            "По умолчанию 2; при категории High значение игнорируется (система подставляет 2).",
             "6", TweakValueDataType.DWord, PingImpactDirection: 0, SpeedImpactDirection: 0, StabilityImpactDirection: 1,
             IncludedInLowPingPreset: true, IncludedInMaxSpeedPreset: false),
 
@@ -275,10 +281,12 @@ public sealed class TweakCatalog : ITweakCatalog
             TweakCategory.PowerAndScheduler, TweakRiskLevel.Low, GameRecommendationBadge.Optional,
             new TweakValueSource.RegistryValue(RegistryRootKind.LocalMachine, MultimediaGames, "SFIO Priority", TweakValueDataType.String),
             "Приоритет фоновых файловых операций игрового процесса.",
-            "Может помочь при подгрузке текстур на медленном диске. На сетевую задержку не влияет.",
-            "По умолчанию «Normal».",
-            "High", TweakValueDataType.String, PingImpactDirection: 0, SpeedImpactDirection: 0, StabilityImpactDirection: 1,
-            IncludedInLowPingPreset: false, IncludedInMaxSpeedPreset: false),
+            "В документации MMCSS этот параметр помечен как неиспользуемый (not used): Windows его пишет, но ни на что " +
+            "не влияет. Поэтому твик лежит в каталоге как справочный — на подгрузку текстур и на сетевую задержку " +
+            "он не действует, и обещать эффект мы не будем.",
+            "По умолчанию «Normal»; значение ни на что не влияет — так написано в документации MMCSS.",
+            "High", TweakValueDataType.String, PingImpactDirection: 0, SpeedImpactDirection: 0, StabilityImpactDirection: 0,
+            IncludedInLowPingPreset: false, IncludedInMaxSpeedPreset: false, EffectUnconfirmedOnModernWindows: true),
 
         // ─────────────── Дополнительные свойства сетевого адаптера ───────────────
         new(

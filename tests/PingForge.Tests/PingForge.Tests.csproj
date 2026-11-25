@@ -76,6 +76,7 @@
     <None Include="..\..\tools\render_ui_preview.py" Link="checked-render-ui-preview.py" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\tools\check_ui_preview.js" Link="checked-check-ui-preview.js" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\PingForge.Orchestration\Realtime\RealtimeOptimizer.cs" Link="checked-RealtimeOptimizer.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\ЗАДЕРЖКА.md" Link="checked-latency-doc.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\scripts\uninstall-service.ps1" Link="checked-uninstall-service.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
