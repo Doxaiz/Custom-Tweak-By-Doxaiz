@@ -226,7 +226,10 @@ public sealed class SessionHistoryTests
         SessionHistoryRow completed = sessions.Rows[1];
         Assert.True(completed.IsCompleted);
         Assert.Contains("было 120 мс → стало 95 мс", completed.ResultRu);
-        Assert.Contains("лучше на 25", completed.ResultRu);
+        // Прошлые записи хранят разницу медиан без значимости: «лучше на 25» было бы обещанием,
+        // поэтому строка говорит, что именно измерено, и что подтверждения в записи нет.
+        Assert.Contains("медиана ниже на 25", completed.ResultRu);
+        Assert.Contains("а не подтверждённый выигрыш", completed.ResultRu);
         Assert.Contains("способ: живой поток игры (пассивные метки)", completed.ResultRu);
         Assert.DoesNotContain("способ:", unfinished.ResultRu);
     }

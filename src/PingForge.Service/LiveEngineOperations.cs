@@ -192,7 +192,11 @@ public sealed class LiveEngineOperations : IEngineOperations
             DescribeMethod(snapshot?.FinalMethodTag),
             DescribeMethod(snapshot?.BaselineMethodTag),
             DescribeTag(snapshot?.FinalMethodTag),
-            DescribeTag(snapshot?.BaselineMethodTag)));
+            DescribeTag(snapshot?.BaselineMethodTag),
+            // Подтверждён ли выигрыш по шуму: без этого флага окно писало «стало лучше на 1 мс»
+            // там, где разброс замера был 5 мс, то есть засчитывало шум.
+            snapshot?.GainConfirmed ?? false,
+            snapshot?.GainVerdictRu));
 
         return await Task.FromResult(EngineOperationResult.Success(message, data)).ConfigureAwait(false);
     }
@@ -533,7 +537,9 @@ public sealed class LiveEngineOperations : IEngineOperations
             DescribeMethod(snapshot.FinalMethodTag),
             DescribeMethod(snapshot.BaselineMethodTag),
             DescribeTag(snapshot.FinalMethodTag),
-            DescribeTag(snapshot.BaselineMethodTag)));
+            DescribeTag(snapshot.BaselineMethodTag),
+            snapshot.GainConfirmed,
+            snapshot.GainVerdictRu));
 
         return new EngineOperationResult(snapshot.State != RealtimeOptimizationState.Failed, startMessage, startData);
     }
@@ -1230,7 +1236,9 @@ public sealed class LiveEngineOperations : IEngineOperations
         string? MethodRu = null,
         string? BaselineMethodRu = null,
         string? MethodTag = null,
-        string? BaselineMethodTag = null);
+        string? BaselineMethodTag = null,
+        bool GainConfirmed = false,
+        string? GainVerdictRu = null);
 
     /// <summary>Точка графика: все числа необязательные — «не измерялось» остаётся null, а не нулём.</summary>
     private sealed record ChartSampleData(
@@ -1375,7 +1383,9 @@ public sealed class LiveEngineOperations : IEngineOperations
         string? MethodRu,
         string? BaselineMethodRu,
         string? MethodTag,
-        string? BaselineMethodTag);
+        string? BaselineMethodTag,
+        bool GainConfirmed = false,
+        string? GainVerdictRu = null);
 
     private sealed record ProfileData(string ProfileWire, string ProfileRu, int MeasurementsPerMinute);
 

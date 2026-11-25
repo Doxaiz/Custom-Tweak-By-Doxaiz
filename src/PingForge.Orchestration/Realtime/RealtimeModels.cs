@@ -245,15 +245,22 @@ public sealed record RealtimeSnapshot(
     IReadOnlyList<string> Warnings,
     DateTime UpdatedUtc,
     string BaselineMethodTag = "",
-    string FinalMethodTag = "")
+    string FinalMethodTag = "",
+    // Выигрыш засчитан только тогда, когда разница медиан выше шума (95% ДИ не накрывает ноль).
+    // Без этого флага «стало лучше» — это разница в 0,6 мс при разбросе 5 мс, то есть шум.
+    bool GainConfirmed = false,
+    string GainVerdictRu = "")
 {
     public bool IsRunning => State is RealtimeOptimizationState.ActiveMonitoring
         or RealtimeOptimizationState.Degraded
         or RealtimeOptimizationState.ApplyingActions
         or RealtimeOptimizationState.ChoosingRoute;
 
-    /// <summary>Честный вывод: выигрыш есть только тогда, когда он измерен и больше 0.</summary>
-    public bool HasMeasuredImprovement => ImprovementMs is > 0.5;
+    /// <summary>
+    /// Честный вывод: выигрыш есть только тогда, когда разница медиан выше шума замера.
+    /// Раньше здесь стоял порог 0,5 мс — он засчитывал шум как результат.
+    /// </summary>
+    public bool HasMeasuredImprovement => GainConfirmed && ImprovementMs is > 0;
 }
 
 /// <summary>Итог сессии: «до», «после», что применялось и что было снято.</summary>

@@ -202,6 +202,30 @@ public class ViewModelTests
     }
 
     [Fact]
+    public async Task Разница_в_пределах_шума_не_называется_улучшением_в_окне()
+    {
+        // Служба прислала число (1,2 мс), но не подтвердила значимость: при разбросе замера в 5 мс
+        // такая разница — шум. Окно обязано сказать «в пределах шума», а не «стало лучше на 1,2 мс».
+        var channel = new FakeEngineChannel
+        {
+            BaselineRttMs = 120,
+            CurrentRttMs = 118.8,
+            ImprovementMs = 1.2,
+            GainConfirmed = false,
+            GainVerdictRu = "Разница в пределах шума: медиана 120 → 118,8 мс, 95% ДИ [-1,4; 3,1] накрывает ноль.",
+        };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Equal(1.2, main.ImprovementMs!.Value, 0.01);
+        Assert.False(main.GainConfirmed);
+        Assert.Contains("разница в пределах шума", main.RttLineRu);
+        Assert.DoesNotContain("стало лучше", main.RttLineRu);
+        Assert.Contains("в пределах шума", main.GainVerdictRu!, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Задержка_не_измерена_и_не_показывается_как_ноль()
     {
         var channel = new FakeEngineChannel

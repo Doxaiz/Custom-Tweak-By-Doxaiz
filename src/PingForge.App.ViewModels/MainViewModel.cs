@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using PingForge.Analysis.Charting;
+using PingForge.Core.Statistics;
 using PingForge.Orchestration;
 using PingForge.Service.Protocol;
 
@@ -42,6 +43,8 @@ public sealed class MainViewModel : ObservableObject
     private string? _liveMethodTag;
     private string? _liveBaselineMethodTag;
     private double? _improvementMs;
+    private bool _gainConfirmed;
+    private string? _gainVerdictRu;
     private double? _floorRttMs;
     private double? _currentJitterMs;
     private double? _currentLossPercent;
@@ -259,6 +262,23 @@ public sealed class MainViewModel : ObservableObject
         private set => Set(ref _improvementMs, value);
     }
 
+    /// <summary>
+    /// Выигрыш подтверждён по шуму замера (95% ДИ разницы медиан не накрывает ноль).
+    /// Пока флага нет, окно не имеет права писать «стало лучше»: цифра может быть шумом.
+    /// </summary>
+    public bool GainConfirmed
+    {
+        get => _gainConfirmed;
+        private set => Set(ref _gainConfirmed, value);
+    }
+
+    /// <summary>Подробный вывод службы: сколько окон, какой интервал, что со стабильностью.</summary>
+    public string? GainVerdictRu
+    {
+        get => _gainVerdictRu;
+        private set => Set(ref _gainVerdictRu, value);
+    }
+
     /// <summary>Лучший замер сессии — «физический предел пути». null — ещё не измерено, а не ноль.</summary>
     public double? FloorRttMs
     {
@@ -398,8 +418,19 @@ public sealed class MainViewModel : ObservableObject
     public string RttLineRu => BaselineRttMs is null || CurrentRttMs is null
         ? "Задержка: не измерена"
         : $"Задержка: было {BaselineRttMs:0.#} мс, сейчас {CurrentRttMs:0.#} мс" +
-          (ImprovementMs is > 0.5 ? $", стало лучше на {ImprovementMs:0.#} мс" : ", заметного выигрыша нет") +
+          ImprovementPhraseRu +
           NumbersTailRu;
+
+    /// <summary>
+    /// Фраза о выигрыше. «Стало лучше» произносится только тогда, когда служба подтвердила, что
+    /// разница медиан выше шума замера. Разница в 1 мс при разбросе 5 мс — это шум, и так и написано.
+    /// </summary>
+    private string ImprovementPhraseRu => ImprovementMs switch
+    {
+        null => ", заметного выигрыша нет",
+        var gain when GainConfirmed && gain > GainVerdict.MeaningfulMs => $", стало лучше на {gain:0.#} мс (разница выше шума)",
+        _ => ", заметного выигрыша нет: разница в пределах шума"
+    };
 
     /// <summary>
     /// Разброс, потери и предел пути словами. Неизмеренное называется «не измерено»: подставлять
@@ -610,6 +641,9 @@ public sealed class MainViewModel : ObservableObject
             BaselineRttMs = ReadNumber(root, "baselineRttMs");
             CurrentRttMs = ReadNumber(root, "currentRttMs");
             ImprovementMs = ReadNumber(root, "improvementMs");
+            GainConfirmed = root.TryGetProperty("gainConfirmed", out System.Text.Json.JsonElement confirmedElement)
+                && confirmedElement.ValueKind == System.Text.Json.JsonValueKind.True;
+            GainVerdictRu = ReadText(root, "gainVerdictRu");
             FloorRttMs = ReadNumber(root, "floorRttMs");
             CurrentJitterMs = ReadNumber(root, "currentJitterMs");
             CurrentLossPercent = ReadNumber(root, "currentLossPercent");

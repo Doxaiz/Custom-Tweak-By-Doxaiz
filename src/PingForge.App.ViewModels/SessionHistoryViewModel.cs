@@ -74,19 +74,22 @@ public sealed record SessionHistoryRow(
             double difference = ImprovementMs ?? before - after;
             string line = $"было {before:0.#} мс → стало {after:0.#} мс";
 
-            // Пара снята разными способами: разница может быть свойством способа, а не действий.
-            string caveat = MethodsDiffer
-                ? "; разница может быть от способа замера, а не от действий"
-                : string.Empty;
+            // В записи хранится разница медиан, а не её значимость: был ли это выигрыш выше шума,
+            // из истории сессий не видно. Поэтому строка называет ровно то, что измерено, и говорит
+            // прямо, чего в записи нет, — иначе «лучше на 1 мс» читалось бы как результат оптимизации.
+            string caveat = (MethodsDiffer
+                    ? "; разница может быть от способа замера, а не от действий"
+                    : string.Empty)
+                + "; это разница медиан, а не подтверждённый выигрыш";
 
             if (difference > 0.5)
             {
-                return line + $", лучше на {difference:0.#} мс" + method + caveat;
+                return line + $", медиана ниже на {difference:0.#} мс" + method + caveat;
             }
 
             if (difference < -0.5)
             {
-                return line + $", хуже на {-difference:0.#} мс" + method + caveat;
+                return line + $", медиана выше на {-difference:0.#} мс" + method + caveat;
             }
 
             return line + ", заметного выигрыша нет" + method + caveat;

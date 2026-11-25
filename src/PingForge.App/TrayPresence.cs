@@ -102,7 +102,11 @@ public sealed class TrayPresence : IDisposable
             [],
             DateTime.UtcNow,
             BaselineMethodTag: _app.MainScreen.LiveBaselineMethodTag ?? string.Empty,
-            FinalMethodTag: _app.MainScreen.LiveMethodTag ?? string.Empty);
+            FinalMethodTag: _app.MainScreen.LiveMethodTag ?? string.Empty,
+            // Значок в трее показывает те же числа, что и окно, и честность у них общая:
+            // без подтверждения значимости выигрыш не считается измеренным.
+            GainConfirmed: _app.MainScreen.GainConfirmed,
+            GainVerdictRu: _app.MainScreen.GainVerdictRu ?? string.Empty);
     }
 
     private async void Execute(TrayCommand command)
