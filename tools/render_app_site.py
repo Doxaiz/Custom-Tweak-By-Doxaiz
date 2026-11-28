@@ -93,7 +93,7 @@ def tweak_card(t: dict) -> str:
     <p class="tw-sub">{esc(trim(t["whatItDoesRu"], 150))}</p>
     <details class="tw-more">
       <summary>Подробнее</summary>
-      <p>{esc(trim(t["gamingJustificationRu"], 260))}</p>
+      <p>{esc(trim(t["gamingJustificationRu"], 232))}</p>
       <p class="meta">{impact(t["ping"], "пинг")} · {impact(t["speed"], "скорость")} ·
         {impact(t["stability"], "стабильность")} · записываем: {value}</p>
       <p class="meta dim"><code>{esc(t["resourceLocator"])}</code> · {esc(trim(t["defaultValueNoteRu"], 90))}</p>
@@ -197,17 +197,17 @@ def build(data: dict) -> str:
         return f'<div class="stat {tone}"><b>{esc(value)}</b><span>{esc(label)}</span></div>'
 
     stats = "".join([
-        stat("78 мс", "пинг сейчас", "good"),
+        stat("78 мс", "пинг", "good"),
         stat("−42 мс", "было 120 мс"),
         stat("2,4 мс", "джиттер"),
         stat("0,0 %", "потери"),
         stat("92 Мбит/с", "скорость"),
-        stat("360", "проб за минуту"),
+        stat("360", "проб"),
     ])
 
     actions = "".join(
         f'<li><span class="act-n">{i}</span><span class="act-body"><b>{esc(a["titleRu"])}</b>'
-        f'<span class="dim">{esc(trim(a["detailRu"], 120))}</span></span></li>'
+        f'<span class="dim">{esc(trim(a["detailRu"], 96))}</span></span></li>'
         for i, a in enumerate(data["realtime"]["plannerActions"], start=1))
 
     profile_cards = "".join(
@@ -325,18 +325,16 @@ def build(data: dict) -> str:
       <section class="page" id="page-optimize">
         <div class="page-head">
           <h1>Оптимизация соединения</h1>
-          <span class="chip live"><i class="dot"></i>идёт замер</span>
         </div>
         <div class="hero">
           <div class="hero-left">
             <span class="hero-kicker"><i></i>живой поток игры</span>
             <div class="hero-num"><b>78</b><span>мс</span><em>−42 мс · было 120 мс</em></div>
-            <p class="dim small">Медиана живого потока, не лучший кадр. ICMP и TCP одновременно:
-              окно 60 секунд, 360 проб.</p>
+            <p class="dim small">Медиана живого потока, не лучший кадр.</p>
             <div class="hero-actions">
               <button class="pb"><span class="pb-icon">▶</span>Оптимизировать соединение</button>
             </div>
-            <p class="dim small">Fortnite · 3.4.5.6:9000 · маршрут только для игрового сервера · QoS DSCP 46 · 6 твиков из 47</p>
+            <p class="dim small">Fortnite · 3.4.5.6:9000</p>
           </div>
           <div class="hero-right">
             <div class="stats">{stats}</div>
@@ -344,7 +342,7 @@ def build(data: dict) -> str:
               <span class="ps-node">вы</span><i class="ps-line"></i>
               <span class="ps-node">роутер</span><i class="ps-line"></i>
               <span class="ps-node">провайдер</span><i class="ps-line hot"></i>
-              <span class="ps-node end">сервер игры</span>
+              <span class="ps-node end">сервер</span>
             </div>
           </div>
         </div>
@@ -470,7 +468,7 @@ def build(data: dict) -> str:
 
   <footer class="foot">
     <span>{esc(product["name"])}</span>
-    <span class="dim">Визуальный макет интерфейса. Данные — из каталога проекта: {len(tweaks)} твиков, {len(routes["games"])} игр, {len(routes["dns"])} DNS, {len(perf)} профиля.</span>
+    <span class="dim">Визуальный макет интерфейса. Данные — из каталога проекта.</span>
   </footer>
 </div>
 

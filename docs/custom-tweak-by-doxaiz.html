@@ -282,26 +282,24 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
       <section class="page" id="page-optimize">
         <div class="page-head">
           <h1>Оптимизация соединения</h1>
-          <span class="chip live"><i class="dot"></i>идёт замер</span>
         </div>
         <div class="hero">
           <div class="hero-left">
             <span class="hero-kicker"><i></i>живой поток игры</span>
             <div class="hero-num"><b>78</b><span>мс</span><em>−42 мс · было 120 мс</em></div>
-            <p class="dim small">Медиана живого потока, не лучший кадр. ICMP и TCP одновременно:
-              окно 60 секунд, 360 проб.</p>
+            <p class="dim small">Медиана живого потока, не лучший кадр.</p>
             <div class="hero-actions">
               <button class="pb"><span class="pb-icon">▶</span>Оптимизировать соединение</button>
             </div>
-            <p class="dim small">Fortnite · 3.4.5.6:9000 · маршрут только для игрового сервера · QoS DSCP 46 · 6 твиков из 47</p>
+            <p class="dim small">Fortnite · 3.4.5.6:9000</p>
           </div>
           <div class="hero-right">
-            <div class="stats"><div class="stat good"><b>78 мс</b><span>пинг сейчас</span></div><div class="stat "><b>−42 мс</b><span>было 120 мс</span></div><div class="stat "><b>2,4 мс</b><span>джиттер</span></div><div class="stat "><b>0,0 %</b><span>потери</span></div><div class="stat "><b>92 Мбит/с</b><span>скорость</span></div><div class="stat "><b>360</b><span>проб за минуту</span></div></div>
+            <div class="stats"><div class="stat good"><b>78 мс</b><span>пинг</span></div><div class="stat "><b>−42 мс</b><span>было 120 мс</span></div><div class="stat "><b>2,4 мс</b><span>джиттер</span></div><div class="stat "><b>0,0 %</b><span>потери</span></div><div class="stat "><b>92 Мбит/с</b><span>скорость</span></div><div class="stat "><b>360</b><span>проб</span></div></div>
             <div class="path-strip">
               <span class="ps-node">вы</span><i class="ps-line"></i>
               <span class="ps-node">роутер</span><i class="ps-line"></i>
               <span class="ps-node">провайдер</span><i class="ps-line hot"></i>
-              <span class="ps-node end">сервер игры</span>
+              <span class="ps-node end">сервер</span>
             </div>
           </div>
         </div>
@@ -461,7 +459,7 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
     <p class="tw-sub">Подбирает MTU пробами с запретом фрагментации и записывает найденное значение для сетевого подключения.</p>
     <details class="tw-more">
       <summary>Подробнее</summary>
-      <p>Стоит применять, если провайдер использует PPPoE или туннель: при завышенном MTU часть пакетов дробится или гибнет, что выглядит как «пинг скачет» и обрывы в матче. Значение вычисляется замерами до игрового сервера, а не берётся из интернета.</p>
+      <p>Стоит применять, если провайдер использует PPPoE или туннель: при завышенном MTU часть пакетов дробится или гибнет, что выглядит как «пинг скачет» и обрывы в матче.</p>
       <p class="meta"><span class="ok">пинг лучше</span> · <span class="dim">скорость без изменений</span> ·
         <span class="ok">стабильность больше</span> · записываем: подберут замеры</p>
       <p class="meta dim"><code>netsh int ipv4 subinterface∥mtu</code> · MTU задаёт провайдер; программа лишь приводит интерфейс в соответствие с реально…</p>
@@ -757,7 +755,7 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
     <p class="tw-sub">Пока активна задача MMCSS, сетевой стек принимает не больше 10 пакетов за миллисекунду для трафика, не относящегося к этой задаче.</p>
     <details class="tw-more">
       <summary>Подробнее</summary>
-      <p>Снимать ограничение имеет смысл, когда в фоне идёт загрузка или стрим: именно фон упирается в потолок по пакетам. На задержку в матче это не влияет — она определяется маршрутом до сервера, а не этим ограничением. Действует после перезагрузки.</p>
+      <p>Снимать ограничение имеет смысл, когда в фоне идёт загрузка или стрим: именно фон упирается в потолок по пакетам. На задержку в матче это не влияет — она определяется маршрутом до сервера, а не этим ограничением.</p>
       <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
         <span class="dim">стабильность без изменений</span> · записываем: <code>4294967295</code></p>
       <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\NetworkThrottlingIndex</code> · По умолчанию 10; допустимый диапазон 1–70, 4294967295 — выключено.</p>
@@ -841,7 +839,7 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
     <p class="tw-sub">Приоритет фоновых файловых операций игрового процесса.</p>
     <details class="tw-more">
       <summary>Подробнее</summary>
-      <p>В документации MMCSS этот параметр помечен как неиспользуемый (not used): Windows его пишет, но ни на что не влияет. Поэтому твик лежит в каталоге как справочный — на подгрузку текстур и на сетевую задержку он не действует, и обещать эффект мы не будем.</p>
+      <p>В документации MMCSS этот параметр помечен как неиспользуемый (not used): Windows его пишет, но ни на что не влияет. Поэтому твик лежит в каталоге как справочный — на подгрузку текстур и на сетевую задержку он не действует</p>
       <p class="meta"><span class="dim">пинг без изменений</span> · <span class="dim">скорость без изменений</span> ·
         <span class="dim">стабильность без изменений</span> · записываем: <code>High</code></p>
       <p class="meta dim"><code>HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games\SFIO Priority</code> · По умолчанию «Normal»; значение ни на что не влияет — так написано в документации MMCSS.</p>
@@ -1030,7 +1028,7 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
     <p class="tw-sub">Выключает службу обслуживания памяти, которая подгружает нужное заранее.</p>
     <details class="tw-more">
       <summary>Подробнее</summary>
-      <p>Вместе с Prefetch это любимый совет в подборках «отключи службы — станет быстрее». На практике страдает загрузка локаций и открытый мир, а выигрыш если и есть, то только на очень медленном жёстком диске в паре с малым объёмом памяти.</p>
+      <p>Вместе с Prefetch это любимый совет в подборках «отключи службы — станет быстрее». На практике страдает загрузка локаций и открытый мир, а выигрыш если и есть</p>
       <p class="meta"><span class="dim">пинг без изменений</span> · <span class="ok">скорость лучше</span> ·
         <span class="ok">стабильность лучше</span> · записываем: <code>0</code></p>
       <p class="meta dim"><code>HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\PrefetchParameters\EnableSuperfetch</code> · По умолчанию включено.</p>
@@ -1471,7 +1469,7 @@ label.seg .count{background:#0d1524;border-radius:7px;padding:1px 6px;font-size:
 
   <footer class="foot">
     <span>Custom Tweak By Doxaiz</span>
-    <span class="dim">Визуальный макет интерфейса. Данные — из каталога проекта: 47 твиков, 22 игр, 5 DNS, 3 профиля.</span>
+    <span class="dim">Визуальный макет интерфейса. Данные — из каталога проекта.</span>
   </footer>
 </div>
 
