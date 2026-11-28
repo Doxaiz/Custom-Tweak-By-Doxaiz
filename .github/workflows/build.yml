@@ -117,11 +117,34 @@ jobs:
           python tools/render_app_site.py docs/catalog.json docs/custom-tweak-by-doxaiz.html
         shell: pwsh
 
-      - name: Витрины — проверки
+      # Проверки разнесены по шагам, а упавшие проверки пишутся ещё и аннотацией: по имени шага
+      # сразу видно, что сломалось (макет или витрина), а текст «✗ …» остаётся в аннотациях даже
+      # когда журнал прогона недоступен.
+      - name: Витрины — jsdom
         run: |
           npm install jsdom --no-save --silent
-          node tools/check_ui_preview.js docs/pingforge-ui-preview.html
-          node tools/check_app_site.js docs/custom-tweak-by-doxaiz.html
+          if (-not (Test-Path node_modules/jsdom)) {
+            Write-Host "::error title=jsdom::пакет jsdom не установился — проверки макета не запустятся"
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Витрины — проверки подробного макета
+        run: |
+          node tools/check_ui_preview.js docs/pingforge-ui-preview.html 2>&1 | Tee-Object -Variable output
+          if ($LASTEXITCODE -ne 0) {
+            $output | Where-Object { $_ -match '✗|проблем' } | ForEach-Object { Write-Host "::error title=макет::$_" }
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Витрины — проверки витрины
+        run: |
+          node tools/check_app_site.js docs/custom-tweak-by-doxaiz.html 2>&1 | Tee-Object -Variable output
+          if ($LASTEXITCODE -ne 0) {
+            $output | Where-Object { $_ -match '✗|проблем' } | ForEach-Object { Write-Host "::error title=витрина::$_" }
+            exit 1
+          }
         shell: pwsh
 
       - name: Программа — компактная сборка (нужен .NET 10)
