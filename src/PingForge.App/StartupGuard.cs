@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Threading;
+using PingForge.Core.Diagnostics;
 
 namespace PingForge.App;
 
@@ -21,10 +22,12 @@ namespace PingForge.App;
 /// </summary>
 public static class StartupLog
 {
-    private const long MaxBytes = 512 * 1024;
+    private const long MaxBytes = RollingLogFile.DefaultMaxBytes;
+    private const int MaxFiles = RollingLogFile.DefaultMaxFiles;
     private const uint AttachParentProcess = 0xFFFFFFFF;
 
     private static readonly object Gate = new();
+    private static RollingLogFile? _logFile;
     private static readonly DateTime StartedAt = DateTime.Now;
 
     private static string? _path;
@@ -103,9 +106,10 @@ public static class StartupLog
                 string path = Path;
                 if (path.Length > 0)
                 {
-                    RotateIfHuge(path);
-                    string text = File.Exists(path) ? Environment.NewLine + line : line;
-                    File.AppendAllText(path, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                    // Метка UTF-8 нужна ради чтения журнала в старых редакторах и PowerShell:
+                    // без неё русский текст превращается в «кракозябры», а журнал читают люди.
+                    _logFile ??= new RollingLogFile(path, MaxBytes, MaxFiles, writeByteOrderMark: true);
+                    _logFile.Append(line);
                 }
                 else
                 {
@@ -126,22 +130,6 @@ public static class StartupLog
             {
                 // Консоль могла закрыться — не наша забота.
             }
-        }
-    }
-
-    private static void RotateIfHuge(string path)
-    {
-        try
-        {
-            var info = new FileInfo(path);
-            if (info.Exists && info.Length > MaxBytes)
-            {
-                File.Move(path, path + ".old", overwrite: true);
-            }
-        }
-        catch (Exception)
-        {
-            // Не смогли повернуть файл — не беда, допишем в текущий.
         }
     }
 
@@ -237,11 +225,19 @@ public static class CrashGuard
             Report("Ошибка в фоновой задаче", e.Exception);
             e.SetObserved();
         };
+
+        // Команды окна (кнопки) — тоже путь к ошибке. Без этого исключение из async void-команды
+        // приходило как «ошибка в работе программы» без указания, что именно нажали.
+        ViewModels.AsyncRelayCommand.OnFailure = (whatRu, ex) => Report(whatRu, ex);
     }
 
     public static void Report(string whatRu, Exception ex)
     {
         StartupLog.Problem(whatRu, ex);
+
+        // Отчёт о падении пишется всегда — и в тихом режиме тоже: самопроверка на сборочной машине
+        // должна оставлять такой же файл, как у человека, иначе разбирать её сбой нечем.
+        CrashReportWriteResult crash = WriteCrashFile(whatRu, ex);
 
         if (Silent)
         {
@@ -254,11 +250,16 @@ public static class CrashGuard
                 ? $"Подробности записаны в файл:{Environment.NewLine}{StartupLog.Path}"
                 : $"Журнал записать не удалось: {StartupLog.ProblemRu}";
 
+            string crashLine = crash.Written
+                ? $"Отчёт об ошибке: {crash.PathRu}"
+                : $"Отчёт об ошибке записать не удалось: {crash.ProblemRu}";
+
             MessageBox.Show(
                 $"Программа столкнулась с ошибкой.{Environment.NewLine}{Environment.NewLine}" +
                 $"{whatRu}: {ex.GetType().Name}{Environment.NewLine}{ex.Message}{Environment.NewLine}{Environment.NewLine}" +
-                $"{logLine}{Environment.NewLine}{Environment.NewLine}" +
-                "Если программа не запускается совсем — приложите этот файл, когда напишете о проблеме." +
+                $"{logLine}{Environment.NewLine}{crashLine}{Environment.NewLine}{Environment.NewLine}" +
+                "Оба файла лежат на вашем диске; программа никуда их не отправляет. Приложите отчёт " +
+                "об ошибке, если напишете о проблеме — или соберите «пакет для поддержки» в разделе «О программе»." +
                 Environment.NewLine +
                 "Программа ничего не меняла в системе: любое изменение делается только по нажатию кнопки.",
                 "Custom Tweak By Doxaiz — ошибка",
@@ -269,5 +270,87 @@ public static class CrashGuard
         {
             // Если и окно с ошибкой не показать — остаётся журнал.
         }
+    }
+
+    /// <summary>
+    /// Записать текстовый отчёт о падении в <c>ProgramData\PingForge\crash</c>. Ничего не бросает:
+    /// этот код работает уже во время падения, и второе исключение здесь недопустимо.
+    ///
+    /// В отчёт идут последние строки журнала запуска и журнала службы — по ним видно, что программа
+    /// делала перед ошибкой. Ни настроек, ни путей к играм в нём нет: отчёт может уехать в чужой
+    /// почтовый ящик, и лишнего в нём быть не должно.
+    /// </summary>
+    private static CrashReportWriteResult WriteCrashFile(string whatRu, Exception ex)
+    {
+        try
+        {
+            // Пути берутся из одного места — того же, откуда их берёт «пакет для поддержки»:
+            // отчёт о падении и пакет обязаны находить одни и те же журналы.
+            string dataDirectory = SupportPackageFactory.DataDirectory;
+
+            var context = new CrashReportContext(
+                AppVersionRu: SupportPackageFactory.AppVersion(),
+                WindowsRu: $"{Environment.OSVersion.VersionString}, 64-разрядная: {Environment.Is64BitOperatingSystem}",
+                ProcessPathRu: Environment.ProcessPath);
+
+            CrashReportWriteResult result = CrashReportWriter.Write(
+                SupportPackageFactory.CrashDirectory,
+                whatRu,
+                ex,
+                context,
+                ReadLogTail(SupportPackageFactory.StartupLogPath, dataDirectory),
+                maxLogLines: 50);
+
+            if (result.Written)
+            {
+                StartupLog.Note($"Отчёт об ошибке записан: {result.PathRu}");
+            }
+            else
+            {
+                StartupLog.Warn($"Отчёт об ошибке не записался: {result.ProblemRu}");
+            }
+
+            return result;
+        }
+        catch (Exception failure)
+        {
+            // Отчёт о падении не имеет права уронить программу ещё раз.
+            StartupLog.Warn($"Отчёт об ошибке не записался: {failure.GetType().Name}: {failure.Message}");
+            return CrashReportWriteResult.Failed($"{failure.GetType().Name}: {failure.Message}");
+        }
+    }
+
+    /// <summary>Последние строки обоих журналов. Чего прочитать не удалось — того просто нет в отчёте.</summary>
+    private static List<string> ReadLogTail(string appLogPath, string dataDirectory)
+    {
+        var lines = new List<string>();
+
+        foreach ((string title, string path) in new[]
+                 {
+                     ("журнал запуска окна", appLogPath),
+                     ("журнал службы", Path.Combine(dataDirectory, "service.log")),
+                 })
+        {
+            lines.Add($"── {title}: {(string.IsNullOrWhiteSpace(path) ? "путь неизвестен" : path)}");
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                {
+                    string[] all = File.ReadAllLines(path);
+                    lines.AddRange(CrashReportText.TakeTail(all, 25));
+                }
+                else
+                {
+                    lines.Add("файла нет");
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                lines.Add($"не прочитался: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        return lines;
     }
 }

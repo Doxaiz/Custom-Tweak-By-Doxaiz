@@ -74,10 +74,22 @@ public sealed class RegistryValueAccessor : IValueAccessor
         return new RegistryLocation(_root, path, _valueName);
     }
 
-    public Task<TweakSupport> CheckSupportAsync(TweakTarget target, CancellationToken ct = default) =>
-        Task.FromResult(IsAdapterScoped && target.AdapterInterfaceGuid is null
-            ? TweakSupport.Unsupported("Активный сетевой адаптер не определён — параметр применить некуда.")
-            : TweakSupport.Supported(ResolveLocation(target).ToString()));
+    public Task<TweakSupport> CheckSupportAsync(TweakTarget target, CancellationToken ct = default)
+    {
+        if (IsAdapterScoped && target.AdapterInterfaceGuid is null)
+        {
+            return Task.FromResult(TweakSupport.Unsupported(
+                "Активный сетевой адаптер не определён — параметр применить некуда."));
+        }
+
+        // Ветка пользователя проверяется отдельно: если порт не знает, чей это профиль, настройку
+        // лучше не «применить» в профиль службы. Отказ виден в интерфейсе с причиной — это честнее,
+        // чем зелёная галочка, которую человек не найдёт в Windows.
+        string? userHiveProblem = _root == RegistryRootKind.CurrentUser ? _port.DescribeUserHiveProblem() : null;
+        return Task.FromResult(userHiveProblem is null
+            ? TweakSupport.Supported(ResolveLocation(target).ToString())
+            : TweakSupport.Unsupported(userHiveProblem));
+    }
 
     public async Task<(bool Exists, string? Raw)> ReadAsync(TweakTarget target, CancellationToken ct = default)
     {

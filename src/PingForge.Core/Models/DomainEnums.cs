@@ -166,7 +166,10 @@ public enum OptimizationEngineState
 /// <summary>Каким способом реально получено измерение. Всегда попадает в отчёт.</summary>
 public enum ProbeMethodUsed
 {
-    /// <summary>Живой TCP-поток игры: SIO_TCP_INFO / GetPerTcpConnectionEStats, без лишних пакетов.</summary>
+    /// <summary>
+    /// Живой TCP-поток игры: статистика уже открытого соединения (iphlpapi, TCP_ESTATS_PATH).
+    /// Ни одного пакета сверх трафика игры не отправляется.
+    /// </summary>
     LiveTcpEstats,
 
     /// <summary>Живой UDP-поток игры: пассивные метки времени на ответах сервера.</summary>

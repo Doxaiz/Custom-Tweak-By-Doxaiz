@@ -31,6 +31,14 @@
     <ProjectReference Include="..\PingForge.Service\PingForge.Service.csproj" />
     <ProjectReference Include="..\PingForge.Orchestration\PingForge.Orchestration.csproj" />
     <ProjectReference Include="..\PingForge.Tweaks\PingForge.Tweaks.csproj" />
+    <!-- Задача F: анализ подключается к продукту. Слой Windows даёт советникам настоящие порты
+         (реестр, PnP, свойства сетевых карт), Probing — честные замеры MTU и DNS по нажатию. -->
+    <ProjectReference Include="..\PingForge.Analysis\PingForge.Analysis.csproj" />
+    <ProjectReference Include="..\PingForge.Tweaks.Windows\PingForge.Tweaks.Windows.csproj" />
+    <ProjectReference Include="..\PingForge.Probing\PingForge.Probing.csproj" />
+    <!-- Справочник игр и DNS (задача D): самопроверка окна сверяет карточки с каталогом. -->
+    <ProjectReference Include="..\PingForge.Routing\PingForge.Routing.csproj" />
+    <ProjectReference Include="..\PingForge.Network.Windows\PingForge.Network.Windows.csproj" />
   </ItemGroup>
 
 </Project>

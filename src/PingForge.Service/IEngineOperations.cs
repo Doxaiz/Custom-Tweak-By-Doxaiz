@@ -62,4 +62,39 @@ public interface IEngineOperations
     /// <summary>Измерить пути до игрового сервера через сохранённые узлы (задача B). Отказ по умолчанию — тот же честный.</summary>
     Task<EngineOperationResult> MeasureRoutingPathsAsync(CancellationToken ct = default) =>
         Task.FromResult(EngineOperationResult.Failure("Слой маршрутизации не подключён: измерять пути нечем."));
+
+    /// <summary>
+    /// Проверка следов перед удалением (задача T): что программа меняла, не осталось ли незакрытых
+    /// операций и есть ли снапшоты для отката. Без журнала — честный отказ, а не пустой ответ.
+    /// </summary>
+    Task<EngineOperationResult> UninstallCheckAsync(CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Журнал изменений не подключён: проверить следы перед удалением нечем."));
+
+    /// <summary>
+    /// История сессий оптимизации (задача J). Без базы — честный отказ, а не «сессий не было»:
+    /// пустая история и непрочитанная история — разные вещи.
+    /// </summary>
+    Task<EngineOperationResult> SessionsAsync(int limit, CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("История сессий не подключена: показать записи нечем."));
+
+    /// <summary>Очистить историю сессий; журнал изменений системы не трогается.</summary>
+    Task<EngineOperationResult> ClearSessionsAsync(CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("История сессий не подключена: очищать нечего."));
+
+    /// <summary>Вернуть один твик из снапшота (задача K): остальные твики не трогаются.</summary>
+    Task<EngineOperationResult> RollbackSingleTweakAsync(string tweakCode, string? snapshotId, CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Откат одного твика не подключён."));
+
+    Task<EngineOperationResult> ReturnAllAsync(CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Возврат всего не подключён."));
+
+    Task<EngineOperationResult> GetStorageInfoAsync(CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Информация о базе не подключена."));
+
+    Task<EngineOperationResult> CleanupSnapshotsAsync(int keepLast = 10, int olderThanDays = 30, CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Чистка снапшотов не подключена."));
+
+    /// <summary>Восстановление базы из последней копии (задача U). Без подтверждения — отказ.</summary>
+    Task<EngineOperationResult> RestoreDatabaseAsync(bool confirm, CancellationToken ct = default) =>
+        Task.FromResult(EngineOperationResult.Failure("Восстановление базы из копии не подключено."));
 }

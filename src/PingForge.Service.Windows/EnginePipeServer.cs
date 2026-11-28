@@ -21,6 +21,15 @@ namespace PingForge.Service.Windows;
 /// </summary>
 public sealed class EnginePipeServer
 {
+    /// <summary>
+    /// Сколько ждём кадр от подключившегося клиента. Клиент присылает команду сразу после подключения,
+    /// поэтому молчание — это либо оборванная связь, либо чужой процесс, который занял канал и молчит.
+    /// Без этого предела один такой процесс останавливал канал для всех: канал обслуживает по одному
+    /// подключению, и ожидание кадра ничем не ограничивалось. Канал чтения открыт любому интерактивному
+    /// пользователю, так что «занял и молчу» было доступно без прав администратора.
+    /// </summary>
+    public static readonly TimeSpan FrameWaitTimeout = TimeSpan.FromSeconds(30);
+
     private readonly EngineDispatcher _dispatcher;
     private readonly Action<string> _log;
 
@@ -116,7 +125,20 @@ public sealed class EnginePipeServer
                 string? frame;
                 try
                 {
-                    frame = await EngineFrameCodec.ReadAsync(pipe, ct).ConfigureAwait(false);
+                    // Предел только на ожидание кадра. Сама команда может идти сколько нужно:
+                    // замер пути или применение твиков занимают минуты, и это не «молчание клиента».
+                    using var frameWait = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    frameWait.CancelAfter(FrameWaitTimeout);
+                    try
+                    {
+                        frame = await EngineFrameCodec.ReadAsync(pipe, frameWait.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        _log($"Клиент молчит {FrameWaitTimeout.TotalSeconds:0} с и не прислал ни одного кадра: " +
+                             "закрываю связь, канал свободен для остальных.");
+                        break;
+                    }
                 }
                 catch (EngineProtocolViolationException ex)
                 {

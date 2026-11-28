@@ -24,9 +24,11 @@ if hasattr(sys.stdout, "reconfigure"):
 
 CSS = """
 :root{
-  --bg:#0b0f16; --bg2:#111826; --card:#141c2b; --line:#1f2b3f; --line2:#2a3852;
-  --text:#e8eef8; --muted:#93a3bd; --dim:#6b7c99;
-  --accent:#3ea6ff; --accent2:#7c5cff; --ok:#31c48d; --warn:#f0b429; --bad:#f2545b; --info:#38bdf8;
+  /* Палитра — ровно та же, что в App.xaml: макет показывает программу, а не «похожий на неё»
+     сайт. Совпадение проверяет tools/check_ui_preview.js, сверяя эти значения с темой. */
+  --bg:#070b14; --bg2:#0d1930; --card:#111a2a; --line:#1e2a42; --line2:#24405c;
+  --text:#e9effb; --muted:#8fa1bd; --dim:#7b8fa8;
+  --accent:#4ade80; --accent2:#38bdf8; --ok:#4ade80; --warn:#f2c94c; --bad:#f2545b; --info:#38bdf8;
   --radius:14px;
 }
 *{box-sizing:border-box}
@@ -69,15 +71,15 @@ p{margin:8px 0}
 .g4{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .between{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12.5px;background:#0e1622;border:1px solid var(--line);
+code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12.5px;background:#0b1220;border:1px solid var(--line);
   border-radius:6px;padding:1.5px 6px;color:#bcd3f7;word-break:break-all}
 .metric{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:14px}
 .metric .label{font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
 .metric .value{font-size:23px;font-weight:700;margin-top:6px}
 .metric .value.na{color:var(--dim);font-size:18px;font-weight:600}
-.btn{border:1px solid var(--line2);background:#182234;color:var(--text);font:inherit;font-weight:600;
+.btn{border:1px solid var(--line2);background:#16203a;color:var(--text);font:inherit;font-weight:600;
   padding:11px 18px;border-radius:11px;cursor:pointer;display:inline-block}
-.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#04101f}
+.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#04121d}
 .btn.big{font-size:16px;padding:15px 26px;border-radius:13px}
 .btn.small{padding:7px 12px;font-size:13.5px;border-radius:9px}
 .btn[disabled]{opacity:.55;cursor:not-allowed}
@@ -102,25 +104,30 @@ tr:hover>td{background:#121a29}
 td.num,th.num{text-align:right;font-family:"Cascadia Mono",Consolas,monospace}
 .scroll{overflow-x:auto}
 
-input[type=text],select{font:inherit;color:var(--text);background:#0e1622;border:1px solid var(--line2);
+input[type=text],select{font:inherit;color:var(--text);background:#0b1220;border:1px solid var(--line2);
   border-radius:9px;padding:9px 11px;min-width:180px}
 label.check{display:flex;gap:9px;align-items:flex-start;cursor:pointer}
 input[type=checkbox]{margin-top:3px;width:17px;height:17px;accent-color:var(--accent)}
 
 .callout{border-left:3px solid var(--accent);background:#101a2b;border-radius:0 12px 12px 0;padding:13px 16px;margin:14px 0}
+/* Примеры файлов: то, что программа реально пишет. Цвета — только из темы. */
+.snippet{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0 0;
+  font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.5;color:var(--text);
+  white-space:pre-wrap;word-break:break-word}
+.snippet .dim{color:var(--dim)}
 .callout.warn{border-left-color:var(--warn)}
 .callout.ok{border-left-color:var(--ok)}
 .callout.bad{border-left-color:var(--bad)}
-.callout b{color:#fff}
+.callout b{color:var(--text)}
 
 .window{background:var(--bg2);border:1px solid var(--line2);border-radius:16px;overflow:hidden;margin:14px 0;
   box-shadow:0 18px 50px rgba(0,0,0,.45)}
-.window .titlebar{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#0e1622;border-bottom:1px solid var(--line)}
+.window .titlebar{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#0b1220;border-bottom:1px solid var(--line)}
 .window .dots{display:flex;gap:6px}
 .window .dots i{width:11px;height:11px;border-radius:50%;display:block;background:#31405c}
 .window .body{padding:18px}
 
-.bar{height:9px;border-radius:999px;background:#0e1622;border:1px solid var(--line);overflow:hidden;min-width:110px}
+.bar{height:9px;border-radius:999px;background:#0b1220;border:1px solid var(--line);overflow:hidden;min-width:110px}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
 .bar i.done{background:linear-gradient(90deg,#2f9e6f,var(--ok))}
 .bar i.none{background:#26334a}
@@ -145,7 +152,7 @@ details.tweak[hidden]{display:none}
 
 .calc{display:grid;gap:16px;grid-template-columns:1fr 1fr}
 @media(max-width:820px){.calc{grid-template-columns:1fr}}
-.calc .col{background:#0e1622;border:1px solid var(--line);border-radius:12px;padding:14px}
+.calc .col{background:#0b1220;border:1px solid var(--line);border-radius:12px;padding:14px}
 .calc label{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin:10px 0 2px}
 .calc input[type=range]{width:100%;padding:0}
 .score{font-size:26px;font-weight:700}
@@ -165,14 +172,14 @@ nav.side-nav{display:flex;flex-direction:column;gap:4px}
 nav.side-nav a.step{display:flex;gap:11px;align-items:flex-start;padding:9px 11px;border-radius:11px;
   border:1px solid transparent;color:var(--muted)}
 .stepnum{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;
-  border-radius:7px;background:#182234;border:1px solid var(--line2);font-size:11.5px;font-weight:700;color:var(--muted)}
+  border-radius:7px;background:#16203a;border:1px solid var(--line2);font-size:11.5px;font-weight:700;color:var(--muted)}
 nav.side-nav a.step .steptext{display:flex;flex-direction:column;line-height:1.25}
 nav.side-nav a.step .steptext b{color:var(--text);font-size:14.5px;font-weight:650}
 nav.side-nav a.step .steptext span{font-size:12px;color:var(--dim)}
 nav.side-nav a.step:hover{background:#121a29;border-color:var(--line)}
 nav.side-nav a.step[aria-current="true"]{background:#16223a;border-color:var(--line2)}
 nav.side-nav a.step[aria-current="true"] .stepnum{background:linear-gradient(135deg,var(--accent),var(--accent2));
-  border-color:transparent;color:#04101f}
+  border-color:transparent;color:#04121d}
 .side-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px;
   display:flex;flex-direction:column;gap:9px}
 .side-card .btn{width:100%;text-align:center}
@@ -207,12 +214,12 @@ a.up:hover{color:var(--text)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
 h2.parthead{font-size:20px;margin:22px 0 6px;padding-top:14px;border-top:1px solid var(--line)}
 .simple{border-left:3px solid var(--ok);background:#0f1a17;border-radius:0 12px 12px 0;padding:12px 15px;margin:14px 0}
-.simple b{color:#fff}
+.simple b{color:var(--text)}
 .three{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin:12px 0}
-.three .step{background:#0e1622;border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.three .step{background:#0b1220;border:1px solid var(--line);border-radius:12px;padding:13px 15px}
 .three .step b{display:block;color:var(--text);margin-bottom:4px}
 .three .step .n{display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;
-  border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04101f;
+  border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04121d;
   font-weight:700;font-size:12.5px;margin-bottom:7px}
 .glossary dt{font-weight:700;margin-top:10px}
 .glossary dd{margin:2px 0 0;color:var(--muted);font-size:13.5px}
@@ -243,13 +250,13 @@ nav.side-nav a.step[aria-current="true"]{background:#16223a;border-color:var(--l
 nav.side-nav a.step[aria-current="true"]::before{content:"";position:absolute;left:-9px;top:11px;bottom:11px;
   width:3px;border-radius:3px;background:linear-gradient(180deg,var(--accent),var(--accent2))}
 nav.side-nav a.step .stepnum{flex:0 0 24px;width:24px;height:24px;border-radius:9px;display:grid;place-items:center;
-  font-size:12.5px;font-weight:700;color:var(--muted);background:#0e1622;border:1px solid var(--line);margin-top:1px}
-nav.side-nav a.step[aria-current="true"] .stepnum{color:#04101f;border-color:transparent;
+  font-size:12.5px;font-weight:700;color:var(--muted);background:#0b1220;border:1px solid var(--line);margin-top:1px}
+nav.side-nav a.step[aria-current="true"] .stepnum{color:#04121d;border-color:transparent;
   background:linear-gradient(135deg,var(--accent),var(--accent2))}
 nav.side-nav a.step .steptext{flex:1}
 nav.side-nav a.step .steptext span{color:var(--dim);font-size:11.5px;margin-top:2px}
 nav.side-nav a.step .navbadge{flex:0 0 auto;align-self:flex-start;margin-top:2px;font-size:11px;font-weight:650;
-  color:var(--muted);background:#0e1622;border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+  color:var(--muted);background:#0b1220;border:1px solid var(--line);border-radius:999px;padding:1px 8px}
 nav.side-nav a.step[aria-current="true"] .navbadge{color:var(--text);border-color:var(--line2)}
 
 .side-tip{margin-top:14px;padding:11px 13px;border:1px dashed var(--line2);border-radius:12px;
@@ -266,7 +273,7 @@ a.toc-tile{display:flex;gap:12px;align-items:flex-start;text-decoration:none;col
   transition:border-color .15s,transform .15s,background .15s}
 a.toc-tile:hover{border-color:var(--line2);background:#131c2c;transform:translateY(-2px)}
 a.toc-tile .toc-num{flex:0 0 28px;width:28px;height:28px;border-radius:10px;display:grid;place-items:center;
-  font-weight:700;font-size:13.5px;color:#04101f;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+  font-weight:700;font-size:13.5px;color:#04121d;background:linear-gradient(135deg,var(--accent),var(--accent2))}
 a.toc-tile b{display:block;font-size:14.5px}
 a.toc-tile .toc-desc{display:block;color:var(--muted);font-size:13px;margin-top:3px}
 a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:6px}
@@ -275,7 +282,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .secnav{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:26px 0 8px;padding-top:14px;
   border-top:1px dashed var(--line);font-size:13px}
 .secnav a,.secnav span.end{border:1px solid var(--line);border-radius:10px;padding:7px 12px;color:var(--muted);
-  background:#0e1622}
+  background:#0b1220}
 .secnav a:hover{color:var(--text);border-color:var(--line2)}
 .secnav .secnav-mid{margin:0 auto}
 .secnav span.end{color:var(--dim)}
@@ -286,7 +293,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .toc-mini > summary{cursor:pointer;padding:10px 13px;font-size:13px;font-weight:640;color:var(--text)}
 .toc-mini[open] > summary{border-bottom:1px solid var(--line);background:#101a29}
 .toc-mini-links{display:flex;flex-wrap:wrap;gap:8px;padding:11px 13px}
-.toc-mini-links a{background:#0e1622;border:1px solid var(--line);border-radius:999px;padding:5px 11px;
+.toc-mini-links a{background:#0b1220;border:1px solid var(--line);border-radius:999px;padding:5px 11px;
   font-size:12.5px;color:var(--muted)}
 .toc-mini-links a:hover{border-color:var(--line2);color:var(--text)}
 .whatsnew{border-color:var(--line2)}
@@ -306,7 +313,7 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .chart{background:#0c1420;border:1px solid var(--line);border-radius:12px;padding:10px 12px 6px}
 .chart h4{margin:2px 0 6px;font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .chart svg{display:block;width:100%;height:auto}
-.chart .axis{fill:#7f8ea8;font-size:9px}
+.chart .axis{fill:#7b8fa8;font-size:9px}
 .chart .grid{stroke:#1c2534;stroke-width:.6}
 .legend{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0 0;font-size:11.5px;color:var(--muted)}
 .legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
@@ -328,16 +335,16 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .switch .slider::before{content:"";position:absolute;width:19px;height:19px;left:4px;top:3px;border-radius:50%;
   background:#93a3bd;transition:.18s}
 .switch input:checked + .slider{background:linear-gradient(135deg,var(--ok),var(--accent));border-color:transparent}
-.switch input:checked + .slider::before{transform:translateX(21px);background:#04101f}
+.switch input:checked + .slider::before{transform:translateX(21px);background:#04121d}
 .switch input:focus-visible + .slider{outline:2px solid var(--accent);outline-offset:2px}
 .switch input:disabled + .slider{opacity:.6}
 .t-state{font-size:12px;color:var(--dim);margin-top:6px;text-align:center}
 .tweak.on .t-state{color:var(--ok)}
 .t-details{border-top:1px solid var(--line)}
-.t-details > summary{cursor:pointer;padding:9px 14px;font-size:13px;color:var(--muted);background:#0e1622}
+.t-details > summary{cursor:pointer;padding:9px 14px;font-size:13px;color:var(--muted);background:#0b1220}
 .t-details > summary:hover{color:var(--text)}
 .t-blocks{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));padding:12px 14px 16px}
-.t-block{background:#0e1622;border:1px solid var(--line);border-radius:12px;padding:12px 14px;max-width:100%;overflow-wrap:anywhere}
+.t-block{background:#0b1220;border:1px solid var(--line);border-radius:12px;padding:12px 14px;max-width:100%;overflow-wrap:anywhere}
 .t-block.wide{grid-column:1/-1}
 .t-block h4{margin:0 0 6px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .t-block p{margin:0;font-size:13.5px;overflow-wrap:anywhere}
@@ -357,8 +364,13 @@ a.toc-tile .toc-inside{display:block;color:var(--dim);font-size:12px;margin-top:
 .presetcard{background:#0f1725;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .presetcard h4{margin:0 0 4px;font-size:14px}
 .presetcard .cnt{color:var(--accent);font-weight:700}
+.scaleopts{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.scaleopts label{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);border:1px solid var(--line2);border-radius:999px;padding:6px 13px;cursor:pointer}
+.scaleopts input{margin:0;accent-color:var(--accent)}
+.scaleopts label:has(input:checked){color:var(--text);border-color:var(--accent);background:#18243c;font-weight:600}
 .chiprow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.chiprow span{background:#0e1622;border:1px solid var(--line);border-radius:8px;padding:2px 7px;font-size:11.5px;color:var(--muted)}
+.chiprow span{background:#0b1220;border:1px solid var(--line);border-radius:8px;padding:2px 7px;font-size:11.5px;color:var(--muted)}
+.chiprow span.on{background:#16223a;border-color:var(--line2);color:var(--text);font-weight:650}
 .overflow-safe{overflow-wrap:anywhere;word-break:break-word}
 """
 
@@ -825,9 +837,10 @@ def tweak_card(t: dict, index: int) -> str:
 
     options = VALUE_OPTIONS.get(t["code"], [])
     recommended = t["recommendedRawValue"]
+    rec_badge = " <span class='tag ok'>рекомендуем</span>"
     option_rows = "".join(
         f'<tr><td class="overflow-safe"><code>{esc(value)}</code>'
-        f'{" <span class=\'tag ok\'>рекомендуем</span>" if value == recommended and not t["isComputed"] else ""}</td>'
+        f'{rec_badge if value == recommended and not t["isComputed"] else ""}</td>'
         f'<td class="small">{esc(meaning)}</td><td class="small muted">{esc(when)}</td></tr>'
         for value, meaning, when in options)
     if option_rows:
@@ -1015,11 +1028,11 @@ def network_chart(data: dict) -> str:
         for i in indicators)
 
     panels = "".join([
-        _chart("Скорость приёма", "Мбит/с", 120, [("было", "#7f8ea8", "down_before"),
+        _chart("Скорость приёма", "Мбит/с", 120, [("было", "#7b8fa8", "down_before"),
                                                    ("стало", "#4ade80", "down_after")]),
-        _chart("Задержка: средняя", "мс", 60, [("было", "#7f8ea8", "ping_before"),
+        _chart("Задержка: средняя", "мс", 60, [("было", "#7b8fa8", "ping_before"),
                                                                 ("стало", "#38bdf8", "ping_after")]),
-        _chart("Джиттер (MAD) — разброс задержки", "мс", 12, [("было", "#7f8ea8", "jitter_before"),
+        _chart("Джиттер (MAD) — разброс задержки", "мс", 12, [("было", "#7b8fa8", "jitter_before"),
                                                         ("стало", "#a78bfa", "jitter_after")]),
         _chart("Потери пакетов", "%", 4, [("было", "#f87171", "loss_before"),
                                           ("стало", "#4ade80", "loss_after")], bars=True),
@@ -1073,8 +1086,9 @@ def routes_block(data: dict) -> str:
     dns = r.get("dns") or []
     paths = r.get("pathKinds") or []
 
+    free_tag = " <span class='tag ok'>бесплатная</span>"
     game_rows = "".join(
-        f'<tr><td><b>{esc(g["gameRu"])}</b>{" <span class=\'tag ok\'>бесплатная</span>" if g.get("isFreeToPlay") else ""}</td>'
+        f'<tr><td><b>{esc(g["gameRu"])}</b>{free_tag if g.get("isFreeToPlay") else ""}</td>'
         f'<td class="small"><code class="overflow-safe">{esc(g["processName"])}</code></td>'
         f'<td class="small">{esc(", ".join(g.get("regionsRu") or []) or "регионы не публикуются")}</td>'
         f'<td class="small">{esc("; ".join(g.get("portsRu") or []) or "официальных портов нет — определяется замером")}</td>'
@@ -1093,10 +1107,11 @@ def routes_block(data: dict) -> str:
     free_names = ", ".join(k.lower() for k in (r.get("freePathKindsRu") or [p["kindRu"] for p in free]))
     warn_marks = ("Осторожно", "Не советуем")
 
+    free_label = "<br><span class='tag ok'>бесплатный способ</span>"
     path_rows = "".join(
         f'<tr><td><b>{esc(p["kindRu"])}</b></td><td class="small">{esc(p.get("whatRu", ""))}</td>'
         f'<td class="small">{esc(p.get("costRu", ""))}'
-        f'{"<br><span class=\'tag ok\'>бесплатный способ</span>" if p.get("isFree") or str(p.get("costRu", "")).startswith("0 ₽") else ""}</td>'
+        f'{free_label if p.get("isFree") or str(p.get("costRu", "")).startswith("0 ₽") else ""}</td>'
         f'<td class="small {("warn" if p.get("safetyRu", "").startswith(warn_marks) else "ok")}">'
         f'{esc(p.get("safetyRu", ""))}</td></tr>'
         for p in paths)
@@ -1130,6 +1145,55 @@ def routes_block(data: dict) -> str:
   <p class="small muted">Порт нужен не для «ускорения», а чтобы программа измеряла задержку именно до игрового
   трафика и не трогала всё остальное. Если разработчик портов не публикует, программа работает от факта:
   смотрит, куда реально идёт соединение, и измеряет этот адрес.</p>
+
+  <div class="card tight" style="margin-top:12px">
+    <h3 id="routes-custom-game">Своя игра: подойдёт и файл с рабочего стола</h3>
+    <p class="small muted">«Добавить игру» открывает папку рабочего стола и показывает не только .exe: ярлык игры
+    и файл ссылки тоже подойдут. Из ярлыка программа читает путь к настоящему .exe и говорит, на что именно
+    указывает выбор — «Ярлык ведёт на «MyGame.exe»» — и только потом добавляет игру. Если ярлык ведёт на удалённую
+    игру, на лаунчер, или выбран обычный документ, игра не добавляется, а причина написана словами: что именно
+    не так и что выбрать вместо этого. После добавления программа называет процесс, который будет искать
+    (<code>mygame.exe</code>), и честно говорит, когда служба его увидит: уже запущенную игру — сразу, остальные —
+    когда игра запустится. Регионы, порты и маршрут показываются по тому же правилу, что у встроенных игр;
+    анти-чит у своей игры помечен «не проверялся», а не «безопасно».</p>
+
+    <div class="callout" style="margin-top:12px">
+      <b>Примеры того, что человек увидит</b> — дословно из программы, а не пересказ:
+      <ul class="small" style="margin:8px 0 0 18px;padding:0">
+        <li><span class="tag ok">добавлено</span> «Ярлык ведёт на «MyGame.exe». Своя игра «Моя игра» добавлена. Процесс
+        «mygame.exe» появится в списке, когда игра запустится.»</li>
+        <li><span class="tag ok">добавлено</span> «Процесс «mygame.exe» уже запущен — служба видит его в списке процессов.»</li>
+        <li><span class="tag warn">отказ</span> «Игра не добавлена: «заметки.txt» (.txt) — не программа и не ярлык.
+        Игра запускается .exe; ярлык с рабочего стола подойдёт — программа найдёт .exe по нему.»</li>
+        <li><span class="tag warn">отказ</span> «Игра не добавлена: ярлык ведёт на «…\Deleted\GoneGame.exe», но такого
+        файла на диске нет: игра перемещена или удалена. Укажите сам .exe игры.»</li>
+        <li><span class="tag warn">отказ</span> «Игра не добавлена: «steam.exe» — служебный процесс или лаунчер,
+        а не игра: такие процессы программа игрой не называет.»</li>
+      </ul>
+    </div>
+
+    <h3 style="margin-top:16px">Что будет, если выбрать…</h3>
+    <div class="scroll">
+      <table id="routes-pick-examples">
+        <thead><tr><th>Что выбрали</th><th>Что скажет программа</th><th>Итог</th></tr></thead>
+        <tbody>
+          <tr><td><code>MyGame.exe</code></td><td class="small">«Своя игра «MyGame» добавлена. Процесс «mygame.exe» появится в списке, когда игра запустится.»</td><td><span class="tag ok">добавлено</span></td></tr>
+          <tr><td>ярлык <code>MyGame.lnk</code></td><td class="small">«Ярлык ведёт на «MyGame.exe». Своя игра «MyGame» добавлена…»</td><td><span class="tag ok">добавлено</span></td></tr>
+          <tr><td>ярлык на ярлык</td><td class="small">два ярлыка подряд разбираются: «Ярлык ведёт на «MyGame.lnk». Ярлык ведёт на «MyGame.exe».»</td><td><span class="tag ok">добавлено</span></td></tr>
+          <tr><td>ярлык на <code>steam.exe</code></td><td class="small">«steam.exe» — служебный процесс или лаунчер, а не игра: такие процессы программа игрой не называет.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td>ярлык на <code>start.bat</code></td><td class="small">«Ярлык ведёт на «start.bat» — это скрипт, а не игра: скрипт запускает что-то другое, и процесс игры называется иначе. Укажите сам .exe игры.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td>ярлык на удалённую игру</td><td class="small">«…но такого файла на диске нет: игра перемещена или удалена. Укажите сам .exe игры.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td>круг из ярлыков</td><td class="small">«Цепочка ярлыков начинается с «Второй.lnk» и не доходит до файла игры. Укажите сам .exe игры…»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td><code>MyGame-Setup.msi</code></td><td class="small">«…— установщик, а не игра. Сначала установите игру, потом укажите её .exe.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td><code>MyGame-portable.zip</code></td><td class="small">«…— архив с игрой, а не игра. Распакуйте его и укажите .exe внутри.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td><code>run.cmd</code></td><td class="small">«…— это скрипт, а не игра: скрипт запускает что-то другое, и процесс игры называется иначе.»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td>файл ссылки на <code>.exe</code></td><td class="small">«Ссылка ведёт на «MyGame.exe». Своя игра добавлена…»</td><td><span class="tag ok">добавлено</span></td></tr>
+          <tr><td>файл ссылки на сайт</td><td class="small">«Ссылка ведёт не на файл игры, а на «https://example.com/play». Укажите сам .exe игры или её ярлык…»</td><td><span class="tag warn">отказ</span></td></tr>
+          <tr><td><code>заметки.txt</code></td><td class="small">«…— не программа и не ярлык. Игра запускается .exe; ярлык с рабочего стола подойдёт — программа найдёт .exe по нему.»</td><td><span class="tag warn">отказ</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
   <h3 id="routes-dns">Бесплатные публичные DNS</h3>
   <div class="scroll">
@@ -1303,12 +1367,40 @@ def up_link() -> str:
     return '<a class="up" href="#top">\u2191 к списку разделов</a>'
 
 
-def category_group_heading(ru: str, count: int, note: str, anchor: str = "") -> str:
-    """Заголовок группы карточек: сколько твиков и зачем эта подкатегория нужна."""
+def category_group_heading(ru: str, count: int, note: str, anchor: str = "", on: int = 0) -> str:
+    """Заголовок группы карточек: сколько твиков, сколько из них включено и зачем группа нужна.
+
+    Число включённых считается по бейджам каталога ровно так же, как в программе: по умолчанию
+    включено рекомендованное. Поэтому подпись не может разойтись с карточками.
+    """
     id_attr = f' id="{esc(anchor)}"' if anchor else ""
     return (f'<div class="grouphd"{id_attr}><h2>{esc(ru)}</h2>'
-            f'<span class="cnt">твиков: {count}</span></div>\n'
+            f'<span class="cnt">твиков: {count} · включено {on}</span></div>\n'
             f'<p class="groupnote">{esc(note)}</p>')
+
+
+def route_numbers(data: dict) -> tuple[int, int, int]:
+    """Игры, DNS и способы — из справочника маршрутов, а не из памяти страницы."""
+    routes = data.get("routes") or {}
+    games = routes.get("gameCount") or len(routes.get("games") or [])
+    dns = len(routes.get("dns") or [])
+    ways = len(routes.get("pathKinds") or []) or routes.get("freePathCount") or 0
+    return games, dns, ways
+
+
+def preset_triplet_text(data: dict) -> str:
+    """Числа трёх рабочих пресетов через « / »: считаются по каталогу, а не вписываются руками."""
+    wanted = ("LowLatencyGaming", "MaxThroughput", "FpsAndResponsiveness")
+    by_name = {p.get("preset"): p.get("tweakCount") for p in data.get("presets", [])}
+    return " / ".join(str(by_name[name]) for name in wanted if by_name.get(name) is not None)
+
+
+def focus_count(data: dict, prefix: str) -> int:
+    """Сколько твиков в подкатегории — по focusCounts из каталога."""
+    for item in data.get("focusCounts", []):
+        if str(item.get("focusRu", "")).lower().startswith(prefix.lower()):
+            return int(item.get("count", 0))
+    return 0
 
 
 def build(data: dict, progress: dict) -> str:
@@ -1384,12 +1476,15 @@ def build(data: dict, progress: dict) -> str:
           {"Проходит проверку: в пресет не попадают твики с бейджем «с осторожностью»." if p["preset"] in ("LowLatencyGaming", "MaxThroughput") else ""}</p>
         </div>""" for p in sorted(data["presets"], key=lambda x: x["preset"]))
 
+    comp_tag = "<span class='tag'>вычисляется замерами</span>"
+    static_note = "статичное значение из каталога"
+    computed_note = "значение считается пробами до вашего игрового сервера"
     apply_rows = "".join(f"""
               <tr>
                 <td><b>{esc(t["titleRu"])}</b><div class="dim small">{esc(t["mechanismRu"])}</div></td>
                 <td class="small dim">{esc(t["resourceLocator"])}</td>
-                <td>{"<span class=\'tag\'>вычисляется замерами</span>" if t["isComputed"] else "<code>" + esc(t["recommendedRawValue"]) + "</code>"}</td>
-                <td class="small muted">{"значение считается пробами до вашего игрового сервера" if t["isComputed"] else "статичное значение из каталога"}</td>
+                <td>{comp_tag if t["isComputed"] else "<code>" + esc(t["recommendedRawValue"]) + "</code>"}</td>
+                <td class="small muted">{computed_note if t["isComputed"] else static_note}</td>
               </tr>"""
         for t in [x for x in tweaks if x["code"] in low_ping["tweakCodes"]])
 
@@ -1404,6 +1499,20 @@ def build(data: dict, progress: dict) -> str:
     dns_rows = "".join(
         f'<tr><td>{esc(c["name"])}</td><td><code>{esc(c["primary"])}</code></td><td><code>{esc(c["secondary"])}</code></td></tr>'
         for c in data["probing"]["dnsCandidates"])
+
+    # Число автотестов приходит из журнала прогона (TRX): страница собрана в том же прогоне, и цифру
+    # нельзя вписать руками — иначе она врёт через месяц, как вписала «169» при 1147 настоящих.
+    tests_total = progress.get("testsTotal") or 0
+    tests_chip = (
+        f'<span class="chip" data-tests="{tests_total}">{tests_total} автотестов</span>'
+        if tests_total > 0
+        else '<span class="chip dim">число — из журнала прогона</span>')
+    tests_note = (
+        ''
+        if tests_total > 0
+        else '<p class="note-inline">Число автотестов здесь не вписано: оно берётся из журнала прогона '
+             'сборки, а эта страница собрана без него. Список выше — то, что тесты проверяют, '
+             'и он не зависит от числа.</p>')
 
     progress_rows = "".join(f"""
               <tr>
@@ -1438,13 +1547,16 @@ def build(data: dict, progress: dict) -> str:
         items = cards_by_focus.get(code)
         if not items:
             continue
-        grouped.append(category_group_heading(ru, len(items), note, anchor=f"focus-{code}"))
+        grouped.append(category_group_heading(
+            ru, len(items), note, anchor=f"focus-{code}",
+            on=sum(1 for t in items if t.get("badge") == "Recommended")))
         grouped.extend(tweak_card(t, i) for i, t in enumerate(items))
     for code, items in cards_by_focus.items():
         if code in {c for c, _, _ in focus_order}:
             continue
-        grouped.append(category_group_heading(items[0].get("focusRu", "Прочее"), len(items),
-                                               "Подкатегория из каталога."))
+        grouped.append(category_group_heading(
+            items[0].get("focusRu", "Прочее"), len(items), "Подкатегория из каталога.",
+            on=sum(1 for t in items if t.get("badge") == "Recommended")))
         grouped.extend(tweak_card(t, i) for i, t in enumerate(items))
 
     cards_grouped = "\n".join(grouped)
@@ -1459,12 +1571,17 @@ def build(data: dict, progress: dict) -> str:
         for v in (verdict_data.get("legend") or []))
     verdict_honesty = verdict_data.get("honestyRu") or "Вердикт берётся из каталога проекта."
 
+    # Числа в текстах берутся из каталога, а не из памяти: иначе они тихо расходятся с программой.
+    # Ровно так на этой странице висело число из старого каталога — при том, что в программе их 47.
+    game_count, dns_count, ways_count = route_numbers(data)
+    preset_triplet = preset_triplet_text(data)
+
     mini_toc_for_tweaks = mini_toc(f"Что внутри раздела твиков: {len(tweaks)} карточек по подкатегориям",
-                                   focus_toc + [("tweak-presets", "Составы пресетов (19 / 5 / 23)")])
+                                   focus_toc + [("tweak-presets", f"Составы пресетов ({preset_triplet})")])
     mini_toc_for_routing = mini_toc("Что внутри раздела «Сеть и маршрут»", [
-        ("routes-games", "22 игры: процессы, регионы, порты"),
-        ("routes-dns", "5 бесплатных публичных DNS"),
-        ("routes-paths", "8 способов сократить путь"),
+        ("routes-games", f"{game_count} игры: процессы, регионы, порты"),
+        ("routes-dns", f"{dns_count} бесплатных публичных DNS"),
+        ("routes-paths", f"{ways_count} способов сократить путь"),
         ("route-howto", "Как выбирается путь и настройки замеров")])
     mini_toc_for_settings = mini_toc("Что внутри раздела «Настройки»", [
         ("consumption", "Чтобы программа не грузила компьютер"),
@@ -1497,7 +1614,7 @@ def build(data: dict, progress: dict) -> str:
   <div class="appbar-inner">
     <div class="logo">
       <span class="mark">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#04101f" stroke-width="2.6" stroke-linecap="round">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#04121d" stroke-width="2.6" stroke-linecap="round">
           <path d="M3 17l5-7 4 4 4-8 5 6"/>
         </svg>
       </span>
@@ -1529,8 +1646,8 @@ def build(data: dict, progress: dict) -> str:
 
     <div class="navgroup">Что получилось</div>
     <a class="step" href="#routing" data-group="network"><span class="stepnum">3</span>
-      <span class="steptext"><b>Сеть и маршрут</b><span>Как трафик идёт до игры, 22 игры и способы короче</span></span>
-      <span class="navbadge">22 игры</span></a>
+      <span class="steptext"><b>Сеть и маршрут</b><span>Как трафик идёт до игры, {game_count} игры и способы короче</span></span>
+      <span class="navbadge">{game_count} игры</span></a>
     <a class="step" href="#diagnostics" data-group="network"><span class="stepnum">3b</span>
       <span class="steptext"><b>Анализ и график сети</b><span>Замеры: скорость, пинг, джиттер, потери — до и после</span></span>
       <span class="navbadge">график</span></a>
@@ -1561,10 +1678,10 @@ def build(data: dict, progress: dict) -> str:
     <ul class="tight small muted">
       <li>твиков стало <b>{data["tweakCount"]}</b> — сеть, скорость, кадры, ввод, система;</li>
       <li>подкатегории «пинг / скорость / ФПС / ввод / система» с плитками-переходами;</li>
-      <li>пресеты больше не одинаковые: 19 / 5 / 23 твика по разным признакам;</li>
+      <li>пресеты больше не одинаковые: {preset_triplet} твика по разным признакам;</li>
       <li>работа в трее: меню трёх состояний и честные подсказки;</li>
       <li>экономный профиль: пауза на батарее и когда игра свёрнута;</li>
-      <li>справочник маршрутов: 22 игры, 5 бесплатных DNS, 8 способов;</li>
+      <li>справочник маршрутов: {game_count} игры, {dns_count} бесплатных DNS, {ways_count} способов;</li>
       <li>график сети: скорость, пинг, джиттер, потери, нагрузка, DNS, MTU.</li>
     </ul>
     <a class="btn small" href="https://dalink.to/doxaiz" target="_blank" rel="noopener">Поддержать автора ↗</a>
@@ -1700,6 +1817,9 @@ def build(data: dict, progress: dict) -> str:
   </div>
 
   <h2>Пресеты</h2>
+  <p class="small muted">Состав каждого пресета берётся из того же вызова каталога, которым пользуется служба:
+  число в подписи и список твиков не могут разойтись. Кнопка <b>«Показать состав»</b> отбирает карточки
+  пресета и ничего не применяет — ползунки остаются там, где стояли.</p>
   <div class="grid g3">{preset_cards}</div>
   {up_link()}
 </section>
@@ -1707,6 +1827,8 @@ def build(data: dict, progress: dict) -> str:
 <section class="tab" id="apply">
   {section_head(2, "Применить твики", "часть 1 — окно применения")}
   <p class="muted">Отдельное окно: сначала анализ текущих настроек и предложение точки восстановления, потом изменения.</p>
+  <p class="small muted">Подтверждение называет не только число, но и состав выбора по назначению —
+  «Пинг и сеть — 5 · Кадры — 4 · Ввод — 3»: число правок ввода вместо сетевых человек видит до нажатия «Применить».</p>
 
   <div class="simple">
     <b>Простыми словами.</b> Твик — это одна настройка Windows. Применяются они не молча: сначала программа
@@ -1796,6 +1918,27 @@ def build(data: dict, progress: dict) -> str:
   <p class="small dim">Подкатегории — это ответ на вопрос «что станет лучше»: пинг, скорость, ФПС,
   ввод или общее состояние системы. Категория из каталога (стек TCP/IP, драйвер карты, планировщик)
   показана на карточке отдельной меткой.</p>
+
+  <div class="card tight">
+    <h4>Порядок и поиск</h4>
+    <p class="small muted" style="margin:6px 0 0">Порядок меняет только последовательность карточек,
+    поиск — видимую часть списка. Отметки и пресеты при этом не трогаются: поиск не применяет и не
+    сбрасывает ничего. В заголовке группы стоит «твиков: N · включено M» — M считается по ползункам.</p>
+    <div class="chiprow" style="margin-top:10px">
+      <span class="on">По назначению — выбрано</span>
+      <span>Сначала полезное</span>
+      <span>По алфавиту</span>
+    </div>
+    <p class="small dim" style="margin:12px 0 0">Фильтры — это не порядок и не поиск: они убирают из списка
+    то, что не подходит. Включать можно несколько сразу, и отметки с пресетами они не меняют.</p>
+    <div class="chiprow" style="margin-top:8px">
+      <span>Только рекомендуемое</span>
+      <span>Скрыть «не советуем»</span>
+      <span>Только из пресетов</span>
+    </div>
+    <p class="small dim" style="margin:8px 0 0">Поиск идёт по названию, описанию, коду и назначению —
+    например, «DNS» или «TCP_ACK». Ничего не нашлось — так и написано, а не «показан весь каталог».</p>
+  </div>
 
   <div class="card tight">
     <h4>Остальные метки на карточке</h4>
@@ -1895,7 +2038,7 @@ def build(data: dict, progress: dict) -> str:
     <div class="presetcard">
       <h4>Пресет «Максимальная скорость» <span class="cnt">{len(max_speed["tweakCodes"])}</span></h4>
       <p class="small muted">Пропускная способность: буферы приёма и передачи, окно TCP, масштабирование приёма.
-      Составы пресетов разные — 19, 5 и 23 твика, а не «одинаковые наборы».</p>
+      Составы пресетов разные — {preset_triplet} твика, а не «одинаковые наборы».</p>
       <div class="chiprow">{max_speed_chips}</div>
     </div>
     <div class="presetcard">
@@ -2117,6 +2260,37 @@ def build(data: dict, progress: dict) -> str:
     скорость света и маршрут провайдера от настроек Windows не зависят.</p>
   </div>
 
+  <h2 id="access-check">Блокировки и доступ: замер по кнопке, без обещаний обхода</h2>
+  <div class="card tight">
+    <p class="small">Обхода блокировок в программе нет: у неё нет ни туннеля, ни релея, ни перехвата пакетов.
+    Поэтому в разделе «Оптимизация» стоит не «кнопка обхода», а проверка доступа: один обычный запрос, как
+    у браузера, и честный вывод о том, что видно на вашем пути до сайта. До нажатия кнопки не уходит ни один пакет.</p>
+    <div class="scroll" style="margin-top:10px">
+      <table>
+        <thead><tr><th>Вывод</th><th>Что произошло</th><th>Следующий шаг</th></tr></thead>
+        <tbody>
+          <tr><td><b>Доступ есть</b></td><td>TLS-рукопожатие прошло, сертификат предъявлен</td>
+            <td class="muted">Ничего не делать. Если браузер не открывает — дело в браузере или в сайте</td></tr>
+          <tr><td><b>TLS-рукопожатие оборвано</b></td><td>TCP открылся, сертификат не пришёл</td>
+            <td class="muted">Два варианта: фильтрация по имени сайта или сервер сам рвёт соединение.
+              По одному запросу они не различаются — программа так и говорит</td></tr>
+          <tr><td><b>TLS-рукопожатие молчит</b></td><td>TCP открылся, ответа нет до таймаута</td>
+            <td class="muted">Похоже на тихое отбрасывание; так же ведёт себя перегруженный сервер</td></tr>
+          <tr><td><b>Вместо сайта пришла заглушка</b></td><td>На обычный HTTP пришёл 451 или ответ с признаками страницы-заглушки</td>
+            <td class="muted">Это уже не догадка: ответ подменён. Обхода в программе нет — смена DNS, другая сеть,
+              отдельное средство обхода DPI или VPN, решение за вами</td></tr>
+          <tr><td><b>Порт закрыт / нет ответа</b></td><td>Соединение отвергнуто или не установилось</td>
+            <td class="muted">Обычно это не блокировка: выключенный сервер, файрвол, обрыв на пути</td></tr>
+          <tr><td><b>Имя не разрешилось</b></td><td>DNS не дал адреса</td>
+            <td class="muted">Подмена или фильтрация DNS, опечатка в имени или недоступный DNS-сервер</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small muted" style="margin-top:10px">Самопроверка при каждой сборке делает такой же замер
+    живьём и пишет строку «ДОСТУП:»: если строки нет — сборка падает, значит карточка перестала соединяться.
+    Чего проверка не измеряет: QUIC/HTTP3 по UDP и скорость — только TCP, TLS и обычный HTTP.</p>
+  </div>
+
   <h2 id="input-codes">Проверки советника задержки ввода (коды из кода программы)</h2>
   <div class="card tight">
     <div class="scroll">
@@ -2189,6 +2363,75 @@ def build(data: dict, progress: dict) -> str:
       «требуется ручная проверка» и появляется кнопка «Починить сеть».</p>
     </div>
   </div>
+
+  <div class="card tight" style="margin-top:12px">
+    <h3>Выгрузка в CSV</h3>
+    <p class="small muted">Кнопка «Экспорт CSV» пишет таблицу целиком во временный файл рядом и подменяет его одним
+    движением: недописанной выгрузки не остаётся. Существующий файл программа не затирает молча — второй экспорт
+    с тем же именем честно скажет, что имя занято. Значения, которые таблица приняла бы за формулу («=», «+», «@»,
+    табуляция, минус перед текстом), помечены апострофом: это текст, а не вычисление. Число строк подписано
+    по-русски — «1 строка», «3 строки», «20 строк».</p>
+  </div>
+
+  <h3 id="journal-files" style="margin-top:16px">Примеры файлов, которые оставляет программа</h3>
+  <p class="small muted">Шесть разных файлов. Ни один из них программа никуда не отправляет — все лежат на вашем диске.</p>
+  <div class="grid g2">
+    <div class="card tight">
+      <b>Журнал с поворотом</b>
+      <pre class="snippet">2026-11-18 12:24:51 Слушаю канал (права администратора: есть)
+2026-11-18 12:25:02 Команда «optimize»: готово — маршрут до 3.4.5.6
+2026-11-18 12:25:34 Клиент отключился
+<span class="dim">service.log      5 МБ — текущий
+service.log.1    5 МБ — предыдущий
+service.log.2    5 МБ — самый старый, следующий поворот его удалит</span></pre>
+      <p class="small muted">Строка не рвётся: поворот идёт до записи, а не посреди неё. Если повернуть не удалось (файл занят),
+      программа дописывает в текущий — лишняя строка лучше потерянной.</p>
+    </div>
+    <div class="card tight">
+      <b>Выгрузка журнала: journal-20261118-122451.csv</b>
+      <pre class="snippet">Дата,Твик,Код,Предыдущее,Применено,Проверено,Статус
+2026-10-16 12:10:00,Отключение алгоритма Нейгла,TCP_NO_DELAY,0,1,1,Применено
+2026-10-16 12:09:00,'=HYPERLINK("http://зло"),DNS_CACHE,0,1,1,Применено</pre>
+      <p class="small muted">Апостроф в начале — защита от формулы: таблица покажет текст, а не вычисление.</p>
+    </div>
+    <div class="card tight">
+      <b>Экспорт настроек: PingForge-настройки.json</b>
+      <pre class="snippet">{{{{
+  "SchemaVersion": 1,
+  "ExportedUtc": "2026-11-18T12:24:51.208Z",
+  "NoteRu": "Пути к играм проверьте на новом компьютере.",
+  "Settings": {{ "PerfProfile": "balanced", "CloseToTray": true }}
+}}}}</pre>
+      <p class="small muted">Пишется целиком во временный файл и подменяет прежний: половины копии не остаётся.</p>
+    </div>
+    <div class="card tight">
+      <b>Отчёт о падении: crash-20261118-123456-789.txt</b>
+      <pre class="snippet">Custom Tweak By Doxaiz — отчёт об ошибке
+Этот файл лежит на вашем диске. Программа никуда его не отправляет.
+
+Время: 2026-11-18 12:34:56
+Что случилось: проверка записи отчёта
+── Версии и окружение ──
+Окно: 1.0.0 · Служба: 1.0.0 · Windows 11</pre>
+      <p class="small muted">Два падения в одну миллисекунду не съедают отчёты друг друга: второй так и скажет, что имя занято.</p>
+    </div>
+    <div class="card tight">
+      <b>Пакет для поддержки: PingForge-поддержка-20261118-122451.zip</b>
+      <pre class="snippet">service.log   последние 500 строк из 12 480 — показаны не все
+сводка.txt    версии, права, что проверяла программа
+crash/…txt    отчёт о падении, если он был
+<span class="dim">предел 20 МБ: слишком большой журнал выкидывается,
+и план говорит, почему именно</span></pre>
+      <p class="small muted">Внутри адреса игровых серверов и пути к файлам на этом компьютере — пакет никуда не уходит сам.
+      Собирается рядом и подменяет прежний целиком: сбой не оставит человека без старого пакета.</p>
+    </div>
+    <div class="card tight">
+      <b>Резервная копия при сбросе: settings.json.bak-20261118-122451</b>
+      <pre class="snippet">settings.json                 ← текущие настройки
+settings.json.bak-20261118-122451  ← копия «до сброса»</pre>
+      <p class="small muted">Снапшоты и журнал при сбросе не удаляются — и это написано в вопросе до нажатия.</p>
+    </div>
+  </div>
   {up_link()}
 </section>
 
@@ -2235,7 +2478,7 @@ def build(data: dict, progress: dict) -> str:
         <span class="btn small">Выбрать файл…</span>
         <span class="small dim">или вставьте текст профиля в поле ниже</span>
       </div>
-      <textarea rows="12" spellcheck="false" style="width:100%;font-family:'Cascadia Mono',Consolas,monospace;font-size:12.5px;background:#0e1622;color:var(--text);border:1px solid var(--line2);border-radius:9px;padding:10px">{cfg_example}</textarea>
+      <textarea rows="12" spellcheck="false" style="width:100%;font-family:'Cascadia Mono',Consolas,monospace;font-size:12.5px;background:#0b1220;color:var(--text);border:1px solid var(--line2);border-radius:9px;padding:10px">{cfg_example}</textarea>
       <div class="row" style="margin-top:10px">
         <span class="btn primary">Проверить и применить</span>
         <span class="btn">Отмена</span>
@@ -2247,6 +2490,21 @@ def build(data: dict, progress: dict) -> str:
   </div>
 
   {{consumption_block}}
+
+  <!-- Масштаб интерфейса: та же карточка, что в программе (раздел «Настройки»). -->
+  <div class="card">
+    <h3>Масштаб интерфейса</h3>
+    <p class="small muted">Раскладка пересобирается, текст остаётся резким, карточки тянутся.
+    Окно не меньше 860×560 точек при 100 %; при 125 % и 150 % минимум окна растёт вместе с содержимым
+    и не выходит за рабочую область экрана. Выбранный масштаб запоминается в настройках.</p>
+    <div class="scaleopts" role="group" aria-label="Масштаб интерфейса">
+      <label><input type="radio" name="uiscale" checked><span>100 %</span></label>
+      <label><input type="radio" name="uiscale"><span>125 %</span></label>
+      <label><input type="radio" name="uiscale"><span>150 %</span></label>
+    </div>
+    <p class="note-inline">Контраст основного текста #E9EFFB на фоне #070B14 — 17,1:1, подписей #8FA1BD — 7,5:1:
+    выше требования AA (4,5:1) и выше AAA (7:1) для обычного текста.</p>
+  </div>
 
   <h2 id="settings-misc">Прочее</h2>
   <div class="card tight">
@@ -2275,13 +2533,14 @@ def build(data: dict, progress: dict) -> str:
     <b>Зачем этот раздел.</b> Здесь честно написано, что уже работает, что написано, но не проверено на живых
     Windows-машинах, и чего пока нет. Так вы не примете макет за готовую программу.
   </div>
-  <p class="muted">Оценка по объёму работы до состояния «этим можно пользоваться» (PingForge Lite).
+  <p class="muted">Сколько работы осталось до состояния «этим можно пользоваться». Программа одна:
+  отдельной «Lite»-версии нет — всё, что ниже, относится к ней же.
   «Готово» — честная оценка с учётом того, что проверено автотестами, а что только написано.</p>
   {section_tools(["строки с весом и процентом готовности", "что покрыто автотестами", "что стоит следующим в очереди"])}
 
   <div class="card">
     <div class="between" style="margin-bottom:12px">
-      <b>Готовность PingForge Lite</b>
+      <b>Готовность программы</b>
       <span class="score">{progress["total"]:.1f}%</span>
     </div>
     <div class="scroll">
@@ -2300,10 +2559,11 @@ def build(data: dict, progress: dict) -> str:
 
   <div class="grid g2">
     <div class="card tight">
-      <h3>Проверено тестами прямо сейчас</h3>
-      <p class="small muted">169 автотестов: снапшоты и откат на реальной базе, канонические форматы значений,
+      <h3>Проверено тестами прямо сейчас {tests_chip}</h3>
+      <p class="small muted">Снапшоты и откат на реальной базе, канонические форматы значений,
       разбор русского вывода netsh, гистерезис маршрутов, MAD-джиттер, DF-MTU, DNS с ловлей подмены,
       аудит запретов в каталоге, советы по MTU/DNS и разбор каталога относительно текущих настроек.</p>
+      {tests_note}
     </div>
     <div class="card tight">
       <h3>Проверено только компилятором</h3>
@@ -2317,7 +2577,7 @@ def build(data: dict, progress: dict) -> str:
 <section class="tab" id="about">
   {part_head(6, "Что программа не делает", "часть 2 — запреты и их причина")}
   <p class="muted">Список запретов — часть продукта, а не мелкий шрифт. В проекте он проверяется автотестом каталога.</p>
-  {section_tools(["список запретов из кода", "чем заменены «чит»-подходы", "про подпись драйвера и анти-читы"])}
+  {section_tools(["список запретов из кода", "чем заменены «чит»-подходы", "про подпись драйвера и анти-читы", "про подпись файла и SmartScreen"])}
 
   <div class="grid g2">
     <div class="card">
@@ -2340,6 +2600,22 @@ def build(data: dict, progress: dict) -> str:
         <li>Изменения не делаются без подтверждения и без снапшота.</li>
       </ul>
     </div>
+  </div>
+
+  <div class="card">
+    <h3>Подпись файла: что Windows покажет и почему</h3>
+    <p class="small muted">Строка о подписи не пишется в коде — программа читает подпись своего файла
+    и говорит, что видит. В этом макете показан неподписанный файл, как в текущих релизах.</p>
+    <ul class="tight small muted">
+      <li>Windows покажет «Windows protected your PC»: «Подробнее» → «Выполнить в любом случае»,
+        издателем в запросе прав будет «Неизвестный издатель».</li>
+      <li><b>Сертификат EV этого не исправил бы.</b> С 2024 года тип сертификата на предупреждение SmartScreen
+        не влияет: доверие набирается загрузками, и OV с EV копят его одинаково.</li>
+      <li>В Windows 11 при включённом Smart App Control неподписанный файл не запускается вовсе — кнопки
+        «всё равно запустить» там нет. Обходить эту защиту программа не советует.</li>
+      <li>Что делать: сверить SHA-256 с <code>SHA256SUMS.txt</code> из релиза
+        (<code>Get-FileHash -Algorithm SHA256</code>) и брать файл только из раздела Releases.</li>
+    </ul>
   </div>
 
   <h2>Лицензии третьих сторон</h2>
@@ -2379,8 +2655,9 @@ def build(data: dict, progress: dict) -> str:
   нарушений запретов и проблем каталога: {len(data["catalogProblems"]) + len(data["safetyProblems"])}.<br>
   Страница самодостаточна: без внешних скриптов, шрифтов и картинок. Если скрипты в предпросмотре отключены,
   все разделы показаны подряд — содержимое то же.<br>
-  Продуктовое имя для релиза — <b>Custom Tweak by Doxaiz</b>; в коде и заголовке макета пока рабочее имя
-  PingForge, переименование отложено осознанно (docs/NAMING.md).
+  Программа одна — <b>Custom Tweak by Doxaiz</b>. Отдельной «Lite», «Pro» или второй программы нет и не
+  планируется: всё, что описано на странице, — она же. В коде, в имени службы и в её папке данных осталось
+  рабочее имя PingForge; переименование отложено осознанно — имена службы и базы уже стоят на дисках у людей.
 </footer>
 
 </main>
@@ -2402,7 +2679,7 @@ TOUR = [
     ("overview", 1, "Оптимизация", "Нажать одну кнопку и увидеть, стало ли лучше",
      "живой режим · замеры до и после · остановка с возвратом"),
     ("apply", 2, "Твики", "Настройки Windows: что делает каждая и что можно выбрать",
-     "пресеты · применение · ручной выбор 28 твиков"),
+     "пресеты · применение · ручной выбор {tweaks} твиков"),
     ("routing", 3, "Сеть и маршрут", "Как трафик идёт до игры и можно ли сократить путь",
      "выбор пути · время теста · проверки сети"),
     ("journal", 4, "Журнал и откат", "Что изменили, что получилось и как вернуть назад",
@@ -2427,10 +2704,15 @@ SECTION_CHAIN = [
 ]
 
 
-def render_toc() -> str:
-    """Оглавление из шести плиток: видно сразу, что где лежит, и работает без скриптов."""
+def render_toc(tweak_count: int) -> str:
+    """Оглавление из шести плиток: видно сразу, что где лежит, и работает без скриптов.
+
+    Число твиков приходит из каталога, а не вписано в текст плитки: страница не должна
+    обещать старое число, когда каталог давно вырос.
+    """
     tiles = []
     for anchor, num, title, desc, inside in TOUR:
+        inside = inside.format(tweaks=tweak_count) if "{tweaks}" in inside else inside
         tiles.append(
             f'<a class="toc-tile" href="#{anchor}"><span class="toc-num">{num}</span>'
             f'<span><b>{esc(title)}</b><span class="toc-desc">{esc(desc)}</span>'
@@ -2460,10 +2742,10 @@ def render_section_nav(index: int) -> str:
             f'{back}<a class="secnav-mid" href="#top">\u2191 Оглавление</a>{forward}</div>')
 
 
-def decorate(html: str) -> str:
+def decorate(html: str, tweak_count: int) -> str:
     """Вставляет оглавление в начало и переходы в конец каждой части. Проверяет, что частей ровно девять."""
     assert '<main class="content">' in html, "не нашёл начало содержимого"
-    html = html.replace('<main class="content">', '<main class="content">\n' + render_toc(), 1)
+    html = html.replace('<main class="content">', '<main class="content">\n' + render_toc(tweak_count), 1)
 
     counter = {"i": 0}
 
@@ -2478,56 +2760,118 @@ def decorate(html: str) -> str:
     return html
 
 
+def tests_from_args(args: list[str]) -> int:
+    """Число автотестов из журнала прогона: `--tests N` или `--tests=N`.
+
+    Ноль означает «прогона не было»: тогда страница честно говорит, что числа нет, вместо того чтобы
+    показать вписанную когда-то цифру. Дробное и отрицательное не принимаем: число тестов — целое.
+    """
+    for index, arg in enumerate(args):
+        value: str | None = None
+        if arg == "--tests" and index + 1 < len(args):
+            value = args[index + 1]
+        elif arg.startswith("--tests="):
+            value = arg.split("=", 1)[1]
+        if value is None:
+            continue
+        try:
+            number = int(value.strip())
+        except ValueError:
+            return 0
+        return number if number > 0 else 0
+    return 0
+
+
 def main() -> int:
     data_path = Path(sys.argv[1] if len(sys.argv) > 1 else "/var/tmp/catalog.json")
     out_path = Path(sys.argv[2] if len(sys.argv) > 2 else "docs/pingforge-ui-preview.html")
+    tests_total = tests_from_args(sys.argv[3:])
 
     data = json.loads(data_path.read_text(encoding="utf-8"))
+
+    # Числа для текстов оценки готовности — из каталога, а не из памяти.
+    game_count, dns_count, ways_count = route_numbers(data)
 
     # ── честная оценка готовности ─────────────────────────────────────────────
     progress_rows = [
         ("Ядро: модели, контракты, канонический формат значений, целостность снапшота", 7, 100,
          "19 тестов на форматы и хеши"),
-        ("Пробы и статистика: ICMP/TCP, MAD-джиттер, DF-MTU, DNS-бенчмарк, трассировка", 8, 85,
-         "логика покрыта тестами; на живом железе не прогонялось"),
+        ("Пробы и статистика: ICMP/TCP, MAD-джиттер, DF-MTU, DNS-бенчмарк, трассировка", 8, 89,
+         "логика покрыта тестами; замер доступа (DNS → TCP → TLS → HTTP) проверен живьём в самопроверке "
+         "и в CI строкой «ДОСТУП:»; значимость выигрыша считается по доверительному интервалу, а не "
+         "по порогу на глаз, и это доказано живьём строкой «ШУМ:» — одинаковые условия обязаны дать "
+         "«в пределах шума»; остальные пробы на живом железе не прогонялись"),
         ("Скоринг маршрутов, фейловер, планировщик изменений", 7, 80,
          "маршрут ставится и снимается командой route с проверкой и откатом; переключение на живой машине не проверялось"),
         ("База данных, журнал предзаписи, снапшоты", 5, 100, "схема v4, реальная SQLite в тестах"),
         ("Оркестрация: снапшот → применение → проверка → автооткат", 8, 100,
          "включая восстановление после падения приложения"),
-        ("Каталог твиков: 47 штук с честными описаниями, подкатегориями, вердиктами и правилами пресетов", 9, 92,
+        (f"Каталог твиков: {data['tweakCount']} твиков с честными описаниями, подкатегориями, вердиктами "
+         f"и правилами пресетов", 9, 94,
          "вердикты «стоит включать или нет» и правило «по умолчанию включено только рекомендованное» живут "
-         "в коде (TweakVerdict) и проверены тестами; пресеты 19 / 5 / 23 различаются по составу"),
-        ("Windows-бэкенды твиков: реестр, netsh, свойства NIC", 8, 45,
-         "код написан, типы проверены сборкой; поведение проверяется только на Windows"),
-        ("Сетевой слой: детектор игр, маршрут для игры, политика QoS (DSCP 46)", 7, 90,
-         "движок собран целиком: поиск игрового потока, настоящие пробы ICMP и TCP, маршрут и QoS, "
-         "откат и фоновый контроль каждые 2 с по профилю; на живой Windows кнопка отвечает «игра не найдена» — "
-         "это ответ работающего движка, а не заглушки"),
+         "в коде (TweakVerdict) и проверены тестами; составы пресетов различаются — числа считаются из каталога; "
+         "описания сверены с документацией Microsoft: снятие троттлинга MMCSS названо тем, чем является "
+         "(ограничение фонового трафика, а не задержка в матче), правило подъёма SystemResponsiveness до 20 "
+         "и правило приоритета при категории High записаны прямо, а неиспользуемый SFIO Priority помечен"),
+        ("Windows-бэкенды твиков: реестр, netsh, свойства NIC", 8, 62,
+         "реестр проверен живьём: служба применила три твика — два в ветке пользователя и один машинный, — "
+         "смоук напечатал «было / стало / что увидела система», повторное применение после отката совпало "
+         "с исходными значениями, а сторонний процесс прочитал значения своим глазом; настройки пользователя "
+         "пишутся в профиль того, кто попросил (HKEY_USERS\\<SID>), а если профиль неизвестен — честный отказ "
+         "вместо записи в профиль службы; netsh проверен живьём так же: значение менялось службой (autotuninglevel "
+         "restricted → normal) и возвращалось откатом, а смотрел на это свой netsh проверяющего; свойства "
+         "сетевого адаптера программа на живой Windows читает (самопроверка называет значение, ничего не меняя), "
+         "но записи в свойство NIC живого подтверждения пока нет"),
+        ("Сетевой слой: детектор игр, маршрут для игры, политика QoS (DSCP 46)", 7, 95,
+         "движок собран целиком + UDP-наблюдатель ETW (0.5.5: события 42/43/58/59, 30с/4096, отсечение своих/приватных), "
+         "решение автовыбора кэшируется по процессу+адресу:порту (DecisionKey); служба считает задержку живого UDP-потока "
+         "по парам «отправка → ответ» из этих же событий — без лишних пакетов (на синтетических событиях проверено тестами, "
+         "живой игры в CI не было — поэтому оценка не выросла: код есть, живого подтверждения нет); "
+         "на живой Windows кнопка отвечает «игра не найдена» — это ответ работающего движка"),
         ("Слой анализа: что применить исходя из состояния сети", 7, 88,
          "советники MTU/DNS, анализатор сети и советник задержки ввода готовы и покрыты тестами"),
-        ("Задержка ввода: 10 твиков, советник и чтение устройств", 3, 65,
+        (f"Задержка ввода: {focus_count(data, 'ввод')} твиков, советник и чтение устройств", 3, 65,
          "каталог, советник и 12 тестов готовы; чтение списка устройств и интерфейс проверяются на Windows"),
         ("Трей, значки и экономный профиль потребления", 4, 80,
          "меню, подсказки и профили проверены тестами; значок создаётся и меню собирается на живой Windows — "
          "это проверяет самопроверка при каждой сборке"),
-        ("Справочник маршрутов (22 игры, 5 DNS, 8 способов) и график сети", 3, 80,
-         "данные в коде и в макете; живой замер для графика появится с интерфейсом"),
+        (f"Справочник маршрутов ({game_count} игры, {dns_count} DNS, {ways_count} способов) и график сети", 3, 92,
+         "данные в коде и в макете (0.5.5: регионы/порты в карточке Игры, DNS-карточка в Твиках, один список резолверов на программу); живой замер для графика идёт из статуса оптимизации"),
         ("Чтение состояния Windows и сети (реестр, netsh, электропитание, DNS)", 3, 100,
          "читатель собран (SystemStateReader: реестр, netsh, схема питания, DNS, NDIS-фильтры) и отдаётся "
          "службой командой system-state; чтение настоящей Windows проверяется в CI утилитой EngineSmoke"),
-        ("Служба Windows, права, канал связи с интерфейсом", 8, 70,
-         "протокол канала, таблица 12 команд, разборщик, правила доступа и «мозги» службы собраны и покрыты "
-         "тестами (92 проверки); установка, запуск и живой разговор со службой проверяются на Windows в CI"),
-        ("Интерфейс WPF (этот макет — его будущий вид)", 9, 88,
-         "окно с разделами, карточки твиков, трей, диалоги и файл настроек написаны и собираются; решения интерфейса "
+        ("Служба Windows, права, канал связи с интерфейсом", 8, 78,
+         "протокол канала, таблица команд, разборщик, правила доступа и «мозги» службы собраны и покрыты "
+         "тестами; установка, запуск и живой разговор со службой проверяются на Windows в CI; журналы с ротацией 5 МБ×3, "
+         "отчёт о падении в ProgramData\\PingForge\\crash и пакет для поддержки (задача Q) готовы и проверены самопроверкой"),
+        ("Интерфейс WPF (этот макет — его будущий вид)", 9, 95,
+         "окно с 6 разделами, карточки твиков, регионы/DNS (0.5.5), UDP-наблюдатель ETW, трей, диалоги и файл настроек написаны и собираются; решения интерфейса "
          "покрыты тестами моделей представления; на живой Windows проверено при каждой сборке: окно открывается, "
-         "пять разделов на месте, привязки работают, раскладка не сжимается, тексты переносятся, значок в трее "
-         "создаётся, снимок окна кладётся в артефакты"),
-        ("Проверка на живом железе, установщик, подпись EV", 4, 55,
-         "установщик собран и в CI целиком проверен: тихая установка, файлы, ярлыки, запись в списке программ, "
-         "служба, удаление без следов; программа после установки запускается и находит службу; остались проверка "
-         "на машинах пользователей и подпись EV"),
+         "6 разделов на месте, привязки работают, раскладка не сжимается, ничего не выходит за правый край "
+         "окна — на штатной и минимальной ширине, ни одна надпись не обрезана в своей рамке, сокращённое "
+         "многоточием читается целиком в подсказке, тексты переносятся, "
+         "у каждого поля ввода и списка есть имя для экранного диктора — без него диктор говорит «поле "
+         "редактирования» и человек не знает, что вписывать "
+         "(и разметка проверяется правилами: текст в горизонтальной панели обязан иметь предел ширины, "
+         "у поля ввода и списка обязано быть имя, а у надписи, которая может сократиться многоточием, — "
+         "подсказка с полным текстом), значок в трее "
+         "создаётся, снимок окна кладётся в артефакты; сравнение двух сессий отказывается сравнивать одну "
+         "и ту же сессию, сессии без известного адреса сервера и разные серверы, а журнал сессий называет "
+         "способ замера — живой TCP- или UDP-поток, ICMP-эхо, TCP-рукопожатие; задержка живого TCP-потока "
+         "берётся из статистики уже открытого соединения (сначала UDP-метки, затем она, и только потом пробы), "
+         "а неизмеренные джиттер и потери называются словами «не измерено», а не нулями; "
+         "окно и трей показывают выигрыш, разброс, потери и лучший замер сессии из одного ответа службы; "
+         "фраза «стало лучше» произносится только при подтверждённой значимости, а разница в пределах "
+         "шума так и называется; "
+         "числа в текстах считаются из каталога и сверяются проверкой страницы (в т.ч. плитка оглавления "
+         "и карточка «Что в этой версии»), регионы/DNS, карточка «Блокировки и доступ» (замер по кнопке, восемь разных выводов, без "
+         "обещаний обхода) и честный блок «Пакет для поддержки» проверены самопроверкой"),
+        ("Проверка на живом железе, установщик, подпись файла", 4, 67,
+         "установщик собран и в CI проверен: тихая установка, файлы, ярлыки, запись в списке программ, "
+         "служба, удаление без следов; программа после установки запускается и находит службу; подпись своего "
+         "файла программа читает сама и называет честно (подписан/кем), строка «ПОДПИСЬ:» проверяется в CI, "
+         "а тексты про SmartScreen и Smart App Control сверены с документацией Microsoft (EV больше не обходит "
+         "предупреждение); живая проверка UDP-игр и пакета поддержки — самое дорогое непроверенное место"),
     ]
     weight_sum = sum(w for _, w, _, _ in progress_rows)
     assert weight_sum == 100, f"сумма весов должна быть 100, а не {weight_sum}"
@@ -2535,6 +2879,7 @@ def main() -> int:
     progress = {
         "rows": [{"name": n, "weight": w, "done": d, "note": note} for n, w, d, note in progress_rows],
         "total": total,
+        "testsTotal": tests_total,
     }
 
     # данные для вставок: справочник маршрутов, профили потребления, меню трея
@@ -2546,7 +2891,7 @@ def main() -> int:
     html_out = insert_consumption(html_out)
     html_out = insert_routes(html_out)
     html_out = insert_network_chart(html_out, data)
-    html_out = decorate(html_out)
+    html_out = decorate(html_out, data["tweakCount"])
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html_out, encoding="utf-8")
     (out_path.parent / "catalog.json").write_text(
@@ -2554,7 +2899,8 @@ def main() -> int:
 
     print(f"Готово: {out_path} ({len(html_out) // 1024} КБ)")
     print(f"Твиков в макете: {data['tweakCount']}")
-    print(f"Готовность PingForge Lite: {total:.1f}%")
+    print(f"Готовность программы: {total:.1f}%")
+    print("Автотестов из прогона: " + (str(tests_total) if tests_total > 0 else "не передано"))
     return 0
 
 

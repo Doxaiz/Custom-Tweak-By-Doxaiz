@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
 using PingForge.Probing;
@@ -75,12 +75,24 @@ public interface IDnsBenchmarkRunner
 public sealed class DnsResolverBenchmarkRunner : IDnsBenchmarkRunner
 {
     private readonly DnsResolverBenchmarker _benchmarker;
+    private readonly IReadOnlyList<(string Name, string Primary, string Secondary)>? _candidates;
 
-    public DnsResolverBenchmarkRunner(DnsResolverBenchmarker benchmarker) =>
+    /// <param name="benchmarker">Бенчмарк, который выполняет сами замеры резолверов.</param>
+    /// <param name="candidates">
+    /// Какие резолверы мерить. Продукт передаёт сюда GameRouteCatalog.FreeDnsRoutes: список
+    /// резолверов один на «Твики», «Проверить сеть» и совет DNS. null — архивный набор бенчмаркера
+    /// (нужен только старым вызовам и тестам).
+    /// </param>
+    public DnsResolverBenchmarkRunner(
+        DnsResolverBenchmarker benchmarker,
+        IReadOnlyList<(string Name, string Primary, string Secondary)>? candidates = null)
+    {
         _benchmarker = benchmarker ?? throw new ArgumentNullException(nameof(benchmarker));
+        _candidates = candidates;
+    }
 
     public Task<IReadOnlyList<DnsResolverBenchmarkResult>> RunAsync(CancellationToken ct = default) =>
-        _benchmarker.BenchmarkAsync(ct: ct);
+        _benchmarker.BenchmarkAsync(_candidates, ct);
 }
 
 /// <summary>

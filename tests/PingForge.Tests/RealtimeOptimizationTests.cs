@@ -1,4 +1,5 @@
 using PingForge.Core.Models;
+using PingForge.Core.Statistics;
 using PingForge.Orchestration.Realtime;
 using Xunit;
 
@@ -29,6 +30,23 @@ public sealed class RealtimeOptimizationTests
         // Таблица соединений читается один раз: объяснение приходит от того же прохода.
         Assert.Equal(1, watcher.Calls);
     }
+    [Fact]
+    public async Task Поток_не_измеряется_отказ_называет_игру_и_адрес()
+    {
+        // Игру нашли, а замер не вышел (меню, фильтрация ICMP, чужой путь). Отказ обязан назвать игру
+        // и адрес: иначе человек не понимает, ту ли игру вообще нашли, и «не измеряется» нечем проверить.
+        var watcher = new StubWatcher(Fortnite());
+        var measurements = new ScriptedMeasurements { Fallback = Unmeasurable() };
+        var optimizer = new RealtimeOptimizer(watcher, measurements, new RecordingRunner());
+
+        RealtimeSnapshot snapshot = await optimizer.StartAsync();
+
+        Assert.Equal(RealtimeOptimizationState.Failed, snapshot.State);
+        Assert.Contains("Fortnite", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("3.4.5.6:9000", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("не измеряется", snapshot.StatusRu, StringComparison.Ordinal);
+    }
+
     private sealed class StubWatcher : IGameFlowWatcher
     {
         public StubWatcher(params GameFlowInfo[] flows) => Flows = flows;
@@ -87,8 +105,17 @@ public sealed class RealtimeOptimizationTests
         public List<string> Reverted { get; } = new();
         public HashSet<string> FailToApply { get; } = new();
 
+        /// <summary>Общий журнал в порядке вызовов: по нему видно, что снятие было РАНЬШЕ добавления.</summary>
+        public List<string> Events { get; } = new();
+
+        /// <summary>Действия, которые реально дошли до исполнителя: узел маршрута виден только здесь.</summary>
+        public List<OptimizationActionDescriptor> Seen { get; } = new();
+
         public Task<OptimizationActionOutcome> ApplyAsync(OptimizationActionDescriptor action, CancellationToken ct = default)
         {
+            Seen.Add(action);
+            Events.Add("apply:" + action.ActionId);
+
             if (FailToApply.Contains(action.ActionId))
             {
                 return Task.FromResult(OptimizationActionOutcome.Fail("тестовый отказ применения"));
@@ -100,6 +127,7 @@ public sealed class RealtimeOptimizationTests
 
         public Task<OptimizationActionOutcome> RevertAsync(OptimizationActionDescriptor action, CancellationToken ct = default)
         {
+            Events.Add("revert:" + action.ActionId);
             Reverted.Add(action.ActionId);
             return Task.FromResult(OptimizationActionOutcome.Ok("снято"));
         }
@@ -116,7 +144,10 @@ public sealed class RealtimeOptimizationTests
     }
 
     private static PathMeasurement Measurable(double rtt, double jitter = 2, double loss = 0) =>
-        new(true, rtt, jitter, loss, 12, "Замер живого потока игры (SIO_TCP_INFO).");
+        new(true, rtt, jitter, loss, 12, "Замер живого потока игры (статистика TCP-соединения).");
+
+    private static PathMeasurement Unmeasurable() =>
+        PathMeasurement.Unmeasurable("Ни одна проба не вернулась: узел скрыт за фильтрацией.");
 
     private static GameFlowInfo Fortnite(AntiCheatStatus antiCheat = AntiCheatStatus.VerifiedSafe) =>
         new(4242, "FortniteClient-Win64-Shipping", "Fortnite", "3.4.5.6", 9000, "UDP", antiCheat);
@@ -133,23 +164,36 @@ public sealed class RealtimeOptimizationTests
     {
         var watcher = new StubWatcher(Fortnite());
         var runner = new RecordingRunner();
-        // Три окна «до»: медиана 120, затем контрольное окно «после»: 80.
-        var measurements = new ScriptedMeasurements(Measurable(122), Measurable(118), Measurable(120), Measurable(80));
+        // Восемь окон «до» с медианой 120 (столько нужно, чтобы вообще иметь право на вывод),
+        // затем контрольные окна «после»: 80. Лента кончится — дальше пойдёт Fallback 80.
+        var measurements = new ScriptedMeasurements(
+            Measurable(122), Measurable(118), Measurable(120), Measurable(121),
+            Measurable(119), Measurable(117), Measurable(123), Measurable(120));
         RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
 
-        RealtimeSnapshot snapshot = await optimizer.StartAsync();
+        RealtimeSnapshot snapshot = await optimizer.StartAsync(new RealtimeOptions(BaselineWindows: 8));
 
         Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, snapshot.State);
         Assert.Equal(120, snapshot.BaselineRttMs!.Value, 0.01);
         Assert.Equal(80, snapshot.CurrentRttMs!.Value, 0.01);
         Assert.Equal(40, snapshot.ImprovementMs!.Value, 0.01);
-        Assert.True(snapshot.HasMeasuredImprovement);
         Assert.Equal("Fortnite", snapshot.GameTitleRu);
         Assert.Equal("3.4.5.6:9000", snapshot.Endpoint);
         Assert.Equal("Терпимо", snapshot.QualityLabelRu);
         Assert.Contains("стало 80", snapshot.StatusRu);
+        // Одно контрольное окно — ещё не статистика: «выигрыш» объявляется только после того,
+        // как наберётся не меньше GainVerdict.MinimumSamples окон «после» и разница переживёт шум.
+        Assert.False(snapshot.HasMeasuredImprovement);
         Assert.Contains(runner.Applied, a => a == "route:game-server");
         Assert.Contains(runner.Applied, a => a == "qos:dscp-46");
+
+        for (int i = 0; i < GainVerdict.MinimumSamples; i++)
+        {
+            snapshot = await optimizer.TickOnceAsync();
+        }
+
+        Assert.True(snapshot.HasMeasuredImprovement);
+        Assert.Contains("подтверждён", snapshot.StatusRu, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -230,6 +274,434 @@ public sealed class RealtimeOptimizationTests
         Assert.Contains(optimizer.Current.Warnings, w => w.Contains("Переключение пути", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(optimizer.Current.Warnings, w => w.Contains("Релей Франкфурт", StringComparison.Ordinal));
         Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, optimizer.Current.State);
+
+        // Прежний маршрут снимается ДО добавления нового: иначе исполнитель упрётся в свой же /32
+        // и «переключение» осталось бы на старом узле.
+        int revertedAt = runner.Events.IndexOf("revert:route:direct");
+        int appliedAt = runner.Events.IndexOf("apply:route:relay:fra");
+        Assert.True(revertedAt >= 0 && appliedAt >= 0, string.Join(", ", runner.Events));
+        Assert.True(revertedAt < appliedAt, string.Join(", ", runner.Events));
+    }
+
+    [Fact]
+    public async Task Переключение_на_резерв_идёт_в_его_узел_а_не_в_узел_прежнего_пути()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        var paths = new StubPathOptions(
+            new RealtimePathOption("node:10.8.0.1", "«WG» — основной", true, "10.8.0.1",
+                new OptimizationActionDescriptor("route:game-server", OptimizationActionKind.RouteForGame, "Маршрут через «WG»", "тест", RouteNextHop: "10.8.0.1")),
+            new RealtimePathOption("node:10.0.0.5", "«LTE» — резерв", true, "10.0.0.5",
+                new OptimizationActionDescriptor("route:game-server:runner-up", OptimizationActionKind.RouteForGame, "Маршрут через «LTE»", "тест", RouteNextHop: "10.0.0.5")));
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(130, jitter: 30, loss: 5),
+            Measurable(132, jitter: 31, loss: 6));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(DegradedWindowsBeforeSwitch: 2));
+
+        // Основной путь замеров назвал провайдер: активен именно он, а не «первый попавшийся».
+        Assert.Contains(runner.Applied, a => a == "route:game-server");
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        OptimizationActionDescriptor switched = Assert.Single(runner.Seen, a => a.ActionId == "route:game-server:runner-up");
+        Assert.Equal("10.0.0.5", switched.RouteNextHop);
+        Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, optimizer.Current.State);
+    }
+
+    private static StubPathOptions MeasuredPaths(
+        double activeMs,
+        double alternativeMs,
+        double? activeSpreadMs = null,
+        double? alternativeSpreadMs = null) => new(
+        new RealtimePathOption("node:10.8.0.1", "«WG» (10.8.0.1)", true, "10.8.0.1",
+            new OptimizationActionDescriptor("route:game-server", OptimizationActionKind.RouteForGame, "Маршрут через «WG»", "тест", RouteNextHop: "10.8.0.1"),
+            MedianRttMs: activeMs, SpreadMs: activeSpreadMs),
+        new RealtimePathOption("node:10.0.0.5", "«LTE» (10.0.0.5) — резерв", true, "10.0.0.5",
+            new OptimizationActionDescriptor("route:game-server:runner-up", OptimizationActionKind.RouteForGame, "Маршрут через «LTE»", "тест", RouteNextHop: "10.0.0.5"),
+            MedianRttMs: alternativeMs, SpreadMs: alternativeSpreadMs));
+
+    [Fact]
+    public async Task Поиск_пути_быстрее_переключает_когда_альтернатива_ощутимо_быстрее()
+    {
+        // Так ведут себя игровые ускорители: пока текущий путь в норме, они всё равно перепроверяют
+        // альтернативы и уходят на ту, что быстрее. Мы делаем это по измеренным числам сессии,
+        // а не по «AI-предсказанию», и не чаще, чем раз в несколько минут.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 38);
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(HealthyWindowsBetweenRouteReviews: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.Contains("route:game-server:runner-up", runner.Applied);
+        Assert.Contains("route:game-server", runner.Reverted);
+        Assert.Contains(optimizer.Current.Warnings, w => w.Contains("Поиск пути быстрее", StringComparison.Ordinal));
+        Assert.Contains("в этой сессии замеров он на", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, optimizer.Current.State);
+    }
+
+    [Fact]
+    public async Task Поиск_пути_быстрее_не_дёргает_маршрут_когда_выигрыш_в_пределах_порога()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 44.2);
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(HealthyWindowsBetweenRouteReviews: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.DoesNotContain("route:game-server:runner-up", runner.Applied);
+        Assert.Contains("не быстрее текущего", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, optimizer.Current.State);
+    }
+
+    [Fact]
+    public async Task Неизмеренный_разброс_назван_словами_а_не_посчитан_нулём()
+    {
+        // У путей нет измеренного разброса: порог остаётся по марже, и об этом сказано прямо —
+        // иначе «выигрыш больше шума» было бы утверждением о шуме, которого никто не видел.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 44.2);
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(HealthyWindowsBetweenRouteReviews: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.Contains(ThresholdNotes.NoiseUnmeasuredRu, optimizer.Current.StatusRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Измеренный_шум_путей_поднимает_порог_и_маршрут_не_дёргается()
+    {
+        // Разброс обоих путей измерен и велик: выигрыш 7 мс при пороге 13 мс — это шум, а не победа.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(
+            activeMs: 45, alternativeMs: 38, activeSpreadMs: 12, alternativeSpreadMs: 13);
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(HealthyWindowsBetweenRouteReviews: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.DoesNotContain("route:game-server:runner-up", runner.Applied);
+        Assert.Contains("пороге 13", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.DoesNotContain(ThresholdNotes.NoiseUnmeasuredRu, optimizer.Current.StatusRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Переключение_с_неизмеренным_разбросом_честно_оговаривает_шум()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 38);
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(HealthyWindowsBetweenRouteReviews: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.Contains("route:game-server:runner-up", runner.Applied);
+        Assert.Contains(optimizer.Current.Warnings, w => w.Contains(ThresholdNotes.NoiseUnmeasuredRu, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Если_свежие_замеры_не_нашли_узла_быстрее_прямого_об_этом_сказано()
+    {
+        // Узел мог «перестать помогать»: тогда держать маршрут через него — самообман, но снять
+        // маршрут на ходу нельзя. Честный ответ: сказать об этом и предложить остановить оптимизацию.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        var paths = new StubPathOptions(); // ни одного измеренного варианта
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(HealthyWindowsBetweenRouteReviews: 1));
+        await optimizer.TickOnceAsync();
+
+        Assert.Contains("не нашли узла быстрее прямого пути", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("остановкой оптимизации", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, optimizer.Current.State);
+    }
+
+    [Fact]
+    public async Task Поиск_пути_быстрее_уважает_паузу_после_переключения()
+    {
+        // Переключение — это разрыв соединения в игре. Поэтому после любого перехода даём маршруту
+        // пожить: даже если замеры нашли путь ещё быстрее, раньше паузы не уходим.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 38);
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(80), Measurable(80),
+            Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(HealthyWindowsBetweenRouteReviews: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+        Assert.Contains("route:game-server:runner-up", runner.Applied);
+
+        // Появился «ещё более быстрый» третий путь — но пауза после переключения не прошла.
+        paths.Options =
+        [
+            paths.Options[1],
+            paths.Options[0],
+            new RealtimePathOption("node:10.0.0.9", "«третий» (10.0.0.9)", true, "10.0.0.9",
+                new OptimizationActionDescriptor("route:game-server:third", OptimizationActionKind.RouteForGame, "Маршрут через «третий»", "тест", RouteNextHop: "10.0.0.9"),
+                MedianRttMs: 20)
+        ];
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.DoesNotContain("route:game-server:third", runner.Applied);
+        Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, optimizer.Current.State);
+    }
+
+    [Fact]
+    public async Task После_переключения_на_быстрый_путь_прежний_остаётся_рабочим_кандидатом()
+    {
+        // Ушли на путь быстрее — он не «плохой», а просто медленнее. Значит, при просадке нового
+        // контроль имеет право вернуться на прежний: он не помечен как неудачный.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 38);
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(80), Measurable(80),
+            Measurable(150, jitter: 40, loss: 9),
+            Measurable(151, jitter: 41, loss: 10));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(HealthyWindowsBetweenRouteReviews: 2, DegradedWindowsBeforeSwitch: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+        Assert.Contains("route:game-server:runner-up", runner.Applied);
+
+        // Просадка нового пути: возвращаемся на прежний — он рабочий, а не «провалившийся».
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.Equal(2, runner.Applied.Count(a => a == "route:game-server"));
+        Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, optimizer.Current.State);
+    }
+
+    [Fact]
+    public async Task Отказ_нового_маршрута_возвращает_прежний_и_говорит_правду()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        runner.FailToApply.Add("route:game-server:runner-up");
+
+        var paths = new StubPathOptions(
+            new RealtimePathOption("node:10.8.0.1", "«WG» — основной", true, "10.8.0.1",
+                new OptimizationActionDescriptor("route:game-server", OptimizationActionKind.RouteForGame, "Маршрут через «WG»", "тест", RouteNextHop: "10.8.0.1")),
+            new RealtimePathOption("node:10.0.0.5", "«LTE» — резерв", true, "10.0.0.5",
+                new OptimizationActionDescriptor("route:game-server:runner-up", OptimizationActionKind.RouteForGame, "Маршрут через «LTE»", "тест", RouteNextHop: "10.0.0.5")));
+
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(140, jitter: 40, loss: 8),
+            Measurable(141, jitter: 41, loss: 9));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(DegradedWindowsBeforeSwitch: 2));
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        // Прежний маршрут вернули: без этого человек остался бы вообще без маршрута к серверу игры.
+        Assert.Equal(2, runner.Applied.Count(a => a == "route:game-server"));
+        Assert.Contains(optimizer.Current.Warnings, w => w.Contains("Прежний маршрут возвращён", StringComparison.Ordinal));
+        Assert.Contains("не применился", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Equal(RealtimeOptimizationState.Degraded, optimizer.Current.State);
+    }
+
+    [Fact]
+    public async Task Неизмеренный_джиттер_не_превращается_в_ноль()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+
+        // Живой замер без джиттера и потерь: это «нет данных», а не «ноль». Подставлять нули значило бы
+        // нарисовать человеку идеальную сеть, которую никто не мерил.
+        PathMeasurement unmeasured = new(true, 120, null, null, 12, "живой поток игры (TCP-статистика)");
+        var measurements = new ScriptedMeasurements(unmeasured, unmeasured, unmeasured, unmeasured, unmeasured);
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+        await optimizer.StartAsync(new RealtimeOptions(DegradedWindowsBeforeSwitch: 2));
+        RealtimeSnapshot snapshot = await optimizer.TickOnceAsync();
+
+        Assert.Null(snapshot.CurrentJitterMs);
+        Assert.Null(snapshot.CurrentLossPercent);
+        Assert.Contains("джиттер не измерено", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("потери не измерено", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("джиттер 0", snapshot.StatusRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Просадка_по_RTT_видна_даже_когда_джиттер_и_потери_не_измерены()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+
+        var measurements = new ScriptedMeasurements(
+            new PathMeasurement(true, 80, null, null, 12, "живой поток игры (TCP-статистика)"),
+            new PathMeasurement(true, 80, null, null, 12, "живой поток игры (TCP-статистика)"),
+            new PathMeasurement(true, 80, null, null, 12, "живой поток игры (TCP-статистика)"),
+            new PathMeasurement(true, 80, null, null, 12, "живой поток игры (TCP-статистика)"),
+            new PathMeasurement(true, 130, null, null, 12, "живой поток игры (TCP-статистика)"),
+            new PathMeasurement(true, 131, null, null, 12, "живой поток игры (TCP-статистика)"));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+        await optimizer.StartAsync(new RealtimeOptions(DegradedWindowsBeforeSwitch: 2));
+        await optimizer.TickOnceAsync();
+        RealtimeSnapshot snapshot = await optimizer.TickOnceAsync();
+
+        // Пустые поля не скрывают просадку: RTT вырос на 50 мс, и это видно без джиттера с потерями.
+        Assert.Equal(RealtimeOptimizationState.Degraded, snapshot.State);
+        Assert.Contains("джиттер не измерено", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("потери не измерено", snapshot.StatusRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task На_путь_где_уже_было_хуже_второй_раз_не_переключаемся()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        var paths = new StubPathOptions(
+            new RealtimePathOption("node:10.8.0.1", "«WG» — основной", true, "10.8.0.1",
+                new OptimizationActionDescriptor("route:game-server", OptimizationActionKind.RouteForGame, "Маршрут через «WG»", "тест", RouteNextHop: "10.8.0.1")),
+            new RealtimePathOption("node:10.0.0.5", "«LTE» — резерв", true, "10.0.0.5",
+                new OptimizationActionDescriptor("route:game-server:runner-up", OptimizationActionKind.RouteForGame, "Маршрут через «LTE»", "тест", RouteNextHop: "10.0.0.5")));
+
+        // Сначала просадка основного (переход на резерв), затем просадка резерва: обратно на
+        // «плохой» основной не идём — это был бы флаппинг на ровном месте.
+        var measurements = new ScriptedMeasurements(
+            Measurable(80), Measurable(80), Measurable(80), Measurable(80),
+            Measurable(130, jitter: 30, loss: 5),
+            Measurable(132, jitter: 31, loss: 6),
+            Measurable(160, jitter: 50, loss: 10),
+            Measurable(161, jitter: 51, loss: 11));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(DegradedWindowsBeforeSwitch: 2));
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+        Assert.Single(runner.Seen, a => a.ActionId == "route:game-server:runner-up");
+
+        await optimizer.TickOnceAsync();
+        await optimizer.TickOnceAsync();
+
+        Assert.Single(runner.Seen, a => a.ActionId == "route:game-server"); // применений основного ровно одно — в начале
+        Assert.Contains("других путей не осталось", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Equal(RealtimeOptimizationState.Degraded, optimizer.Current.State);
+    }
+
+    [Fact]
+    public async Task Сервер_сменился_маршрут_переставляется_а_числа_начинаются_заново()
+    {
+        // Матчмейкер выдал другой сервер, игра не перезапускалась: прежний /32 указывает на адрес,
+        // где игры уже нет. Маршрут обязан переехать, а «до» — мериться заново: старый пинг
+        // к другому серверу к новому не относится.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 38);
+
+        var measurements = new ScriptedMeasurements(Measurable(80), Measurable(80), Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(WindowsBetweenServerChecks: 1));
+        Assert.Equal("3.4.5.6:9000", optimizer.Current.Endpoint);
+
+        watcher.Flows = [Fortnite() with { RemoteEndpoint = "34.16.9.77", RemotePort = 9001 }];
+
+        await optimizer.TickOnceAsync();
+
+        Assert.Equal("34.16.9.77:9001", optimizer.Current.Endpoint);
+        Assert.Contains("Сервер игры сменился", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("34.16.9.77:9001", optimizer.Current.StatusRu, StringComparison.Ordinal);
+        Assert.Equal(2, runner.Applied.Count(a => a == "route:game-server")); // прежний адрес и новый
+        Assert.Contains("route:game-server", runner.Reverted);
+        Assert.Null(optimizer.Current.BaselineRttMs); // «до» к новому серверу ещё не измерено
+
+        // Отчёт при остановке не заявляет выигрыш: базовая линия относится к прежнему серверу.
+        RealtimeStopReport report = await optimizer.StopAsync();
+        Assert.Null(report.BaselineRttMs);
+        Assert.Contains("недоступны", report.HonestSummaryRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("Пинг снизился", report.HonestSummaryRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Пока_прежний_адрес_виден_у_игры_сервер_не_считается_сменившимся()
+    {
+        // У игры бывает не одно соединение (матч + служебное). Пока прежний адрес на месте,
+        // переставлять маршрут нельзя: «новое» соединение может быть вовсе не тем сервером.
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        StubPathOptions paths = MeasuredPaths(activeMs: 45, alternativeMs: 38);
+        var measurements = new ScriptedMeasurements(Measurable(80), Measurable(80), Measurable(80), Measurable(80));
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner, paths);
+        await optimizer.StartAsync(new RealtimeOptions(WindowsBetweenServerChecks: 1));
+
+        watcher.Flows =
+        [
+            Fortnite(),
+            Fortnite() with { RemoteEndpoint = "34.16.9.77", RemotePort = 9001 }
+        ];
+
+        await optimizer.TickOnceAsync();
+
+        Assert.Equal("3.4.5.6:9000", optimizer.Current.Endpoint);
+        Assert.Single(runner.Applied, a => a == "route:game-server");
+        Assert.Empty(runner.Reverted);
+        Assert.DoesNotContain("сменился", optimizer.Current.StatusRu, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -308,6 +780,34 @@ public sealed class RealtimeOptimizationTests
     }
 
     [Fact]
+    public async Task Разница_внутри_шума_не_объявляется_выигрышем()
+    {
+        // Базовая линия и контрольные окна «дышат» на ±6 мс — это обычный Wi-Fi. Медиана после
+        // применения стала ниже на 0,5 мс, то есть внутри шума: старая логика с порогом 0,5 мс
+        // назвала бы это выигрышем, а программа обязана сказать «в пределах шума».
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        var measurements = new ScriptedMeasurements(
+            Measurable(114), Measurable(126), Measurable(120), Measurable(118), Measurable(122),
+            Measurable(115), Measurable(125), Measurable(119));
+        measurements.Fallback = Measurable(119.5);
+
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+        await optimizer.StartAsync(new RealtimeOptions(BaselineWindows: 8));
+
+        RealtimeSnapshot snapshot = optimizer.Current;
+        for (int i = 0; i < GainVerdict.MinimumSamples; i++)
+        {
+            snapshot = await optimizer.TickOnceAsync();
+        }
+
+        Assert.False(snapshot.HasMeasuredImprovement);
+        Assert.Contains("в пределах шума", snapshot.StatusRu, StringComparison.Ordinal);
+        Assert.Contains("в пределах шума", snapshot.GainVerdictRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("подтверждён", snapshot.StatusRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FailedAction_IsReported_AndOtherActionsStillApply()
     {
         var watcher = new StubWatcher(Fortnite());
@@ -360,4 +860,88 @@ public sealed class RealtimeOptimizationTests
         Assert.Contains(plan.Notes, n => n.Contains("не проверялась", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(plan.Notes, n => n.Contains("отдельное окно со снапшотом", StringComparison.OrdinalIgnoreCase));
     }
+
+    // ── Задача F: история замеров для графика сети ────────────────────────────────────────────
+
+    [Fact]
+    public async Task История_замеров_хранит_окна_сессии_а_провалы_остаются_null()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        // Три окна «до», контрольное окно — и дальше контроль: одно окно не измеряется.
+        var measurements = new ScriptedMeasurements(
+            Measurable(120), Measurable(118), Measurable(120),
+            Measurable(80), Measurable(82))
+        {
+            Fallback = PathMeasurement.Unmeasurable("поток пропал"),
+        };
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+
+        await optimizer.StartAsync();
+        await optimizer.TickOnceAsync();
+
+        IReadOnlyList<RealtimeMeasurementPoint> samples = optimizer.RecentSamples;
+
+        // Базовые окна + контрольное + тик: пять измеренных точек с датами.
+        Assert.Equal(5, samples.Count);
+        Assert.All(samples, point => Assert.True(point.IsMeasurable));
+        Assert.All(samples, point => Assert.NotNull(point.RttMedianMs));
+        Assert.All(samples, point => Assert.True(point.AtUtc > DateTime.MinValue));
+
+        // Шестое окно не измерилось: точка с null-полями — на графике это разрыв, а не ноль.
+        await optimizer.TickOnceAsync();
+        samples = optimizer.RecentSamples;
+
+        Assert.Equal(6, samples.Count);
+        RealtimeMeasurementPoint gap = samples[^1];
+        Assert.False(gap.IsMeasurable);
+        Assert.Null(gap.RttMedianMs);
+        Assert.Null(gap.RttP95Ms);
+        Assert.Null(gap.JitterMadMs);
+        Assert.Null(gap.LossPercent);
+        Assert.Contains("поток пропал", gap.MethodRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task История_замеров_очищается_между_сессиями()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        var measurements = new ScriptedMeasurements(
+            Measurable(120), Measurable(120), Measurable(120), Measurable(80),   // первая сессия
+            Measurable(90), Measurable(90), Measurable(90), Measurable(70));      // вторая сессия
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+
+        await optimizer.StartAsync();
+        Assert.NotEmpty(optimizer.RecentSamples);
+        Assert.Contains(optimizer.RecentSamples, point => point.RttMedianMs is >= 120);
+
+        await optimizer.StopAsync();
+        await optimizer.StartAsync();
+
+        // Новая сессия начинается с чистой истории: точек первой сессии (120+) в графике нет.
+        Assert.NotEmpty(optimizer.RecentSamples);
+        Assert.All(optimizer.RecentSamples, point => Assert.True(point.RttMedianMs is null or <= 90));
+    }
+
+    [Fact]
+    public async Task Окно_замера_несёт_минимум_среднее_и_p95_когда_они_есть()
+    {
+        var watcher = new StubWatcher(Fortnite());
+        var runner = new RecordingRunner();
+        var measurements = new ScriptedMeasurements(
+            WithDistribution(120), WithDistribution(120), WithDistribution(120), WithDistribution(80));
+        RealtimeOptimizer optimizer = Build(watcher, measurements, runner);
+
+        await optimizer.StartAsync();
+
+        RealtimeMeasurementPoint point = optimizer.RecentSamples[^1];
+        Assert.True(point.IsMeasurable);
+        Assert.Equal(78, point.RttMinMs!.Value, 0.01);
+        Assert.Equal(80, point.RttMedianMs!.Value, 0.01);
+        Assert.Equal(96, point.RttP95Ms!.Value, 0.01);
+    }
+
+    private static PathMeasurement WithDistribution(double median) =>
+        new(true, median, 2, 0, 12, "ICMP-эхо до игрового сервера", RttMinMs: median - 2, RttAvgMs: median + 1, RttP95Ms: median + 16);
 }

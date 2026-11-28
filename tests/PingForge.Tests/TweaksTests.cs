@@ -141,6 +141,40 @@ public sealed class TweakCatalogTests
         Assert.False(CatalogSafetyAudit.IsForbiddenTarget(@"net:MTU", out _));
     }
 
+    /// <summary>
+    /// Поиск запрещённых слов ограничен по времени. Шаблоны — простые слова, взорваться им не из чего,
+    /// но проверка каталога не должна уметь зависнуть: зависшая проверка хуже пропущенного слова,
+    /// потому что молчаливая.
+    /// </summary>
+    [Fact]
+    public void SafetyAudit_TextSearch_IsTimeLimited()
+    {
+        Assert.True(CatalogSafetyAudit.TextSearchTimeout > TimeSpan.Zero);
+        Assert.True(CatalogSafetyAudit.TextSearchTimeout <= TimeSpan.FromSeconds(2));
+
+        // Границы слов на месте: «чит» внутри «Отключить» не должен считаться запретом.
+        Assert.Empty(CatalogSafetyAudit.AuditCatalog(FullCatalog().GetAllTweaks()));
+    }
+
+    /// <summary>
+    /// Значение из системы попадает в командную строку только если в нём нет ни пробела, ни кавычек,
+    /// ни служебных символов. Сомнительное — отвергается: отказ дешевле, чем разобранная строка.
+    /// </summary>
+    [Fact]
+    public void SafetyAudit_CliToken_RefusesAnythingSuspicious()
+    {
+        Assert.True(CatalogSafetyAudit.LooksLikeCleanCliToken("DNS_CACHE"));
+        Assert.True(CatalogSafetyAudit.LooksLikeCleanCliToken("netsh.exe"));
+
+        Assert.False(CatalogSafetyAudit.LooksLikeCleanCliToken(""));
+        Assert.False(CatalogSafetyAudit.LooksLikeCleanCliToken("   "));
+        Assert.False(CatalogSafetyAudit.LooksLikeCleanCliToken("TcpAckFrequency & calc"));
+        Assert.False(CatalogSafetyAudit.LooksLikeCleanCliToken("a|b"));
+        Assert.False(CatalogSafetyAudit.LooksLikeCleanCliToken("a>b"));
+        Assert.False(CatalogSafetyAudit.LooksLikeCleanCliToken("a%PATH%"));
+        Assert.False(CatalogSafetyAudit.LooksLikeCleanCliToken("a\"b"));
+    }
+
     [Fact]
     public void EveryTweak_HasRussianDescriptionsAndHonestGameAdvice()
     {

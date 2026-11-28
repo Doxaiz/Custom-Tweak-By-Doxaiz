@@ -1,3 +1,4 @@
+﻿using System.Text.Json;
 using PingForge.Core.Models;
 using PingForge.Service.Protocol;
 
@@ -20,6 +21,11 @@ public sealed class TweaksViewModel : ObservableObject
     private string _statusRu = "Выберите пресет или отметьте твики вручную. Ничего не применяется до нажатия кнопки.";
     private PresetViewModel? _selectedPreset;
     private bool _isApplying;
+    private List<TweakRowViewModel>? _visibleFilter;
+    private TweakOrder _order = TweakOrder.ByPurpose;
+    private string _searchRu = string.Empty;
+    private IReadOnlyList<TweakGroupViewModel> _groups = [];
+    private IReadOnlyList<TweakRowViewModel> _visibleRows = [];
 
     public TweaksViewModel(
         EngineClient engine,
@@ -33,27 +39,339 @@ public sealed class TweaksViewModel : ObservableObject
         Presets = presets ?? throw new ArgumentNullException(nameof(presets));
 
         ApplyPresetCommand = new AsyncRelayCommand(ApplySelectedPresetAsync, () => SelectedPreset is not null);
+        ShowPresetCommand = new RelayCommand(ShowPresetTweaks, () => SelectedPreset is not null);
         RollbackCommand = new AsyncRelayCommand(RollbackAsync);
         ApplySelectedCommand = new AsyncRelayCommand(ApplyCheckedAsync, () => CheckedCount > 0);
         SelectRecommendedCommand = new RelayCommand(() => SelectRecommended());
         SelectAllCommand = new RelayCommand(() => SelectAll());
         SelectNoneCommand = new RelayCommand(() => SelectNone());
+        ClearFilterCommand = new RelayCommand(ClearFilter, () => IsFiltered);
+        ClearSearchCommand = new RelayCommand(ClearSearch, () => _searchRu.Length > 0);
+
+        Filters =
+        [
+            new TweakFilterOptionViewModel(TweakQuickFilter.OnlyRecommended, OnFilterToggled),
+            new TweakFilterOptionViewModel(TweakQuickFilter.HideNotRecommended, OnFilterToggled),
+            new TweakFilterOptionViewModel(TweakQuickFilter.OnlyInPresets, OnFilterToggled),
+        ];
+
+        Orders =
+        [
+            new TweakOrderOptionViewModel(TweakOrder.ByPurpose, SelectOrder),
+            new TweakOrderOptionViewModel(TweakOrder.RecommendedFirst, SelectOrder),
+            new TweakOrderOptionViewModel(TweakOrder.Alphabetical, SelectOrder),
+        ];
 
         foreach (TweakRowViewModel row in _rows)
         {
             row.PropertyChanged += (_, _) =>
             {
-                OnPropertyChanged(nameof(CheckedCount), nameof(SelectionLineRu));
+                OnPropertyChanged(nameof(CheckedCount), nameof(SelectionLineRu), nameof(SelectionBreakdownRu));
                 ApplySelectedCommand.RaiseCanExecuteChanged();
+
+                // Подписи групп считаются по ползункам: переключили твик — «включено 5» в заголовке
+                // должно измениться сразу. Сами группы при этом не пересобираются, иначе открытые
+                // блоки «Подробнее» схлопывались бы у человека на глазах.
+                foreach (TweakGroupViewModel group in _groups)
+                {
+                    group.RefreshCounts();
+                }
             };
         }
+
+        Rebuild();
+        Orders[0].MarkSelected(true);
     }
 
     public IReadOnlyList<TweakRowViewModel> Rows => _rows;
 
+    /// <summary>
+    /// Карточка «DNS — это про вход, а не про пинг» (задача D). Список резолверов — из
+    /// GameRouteCatalog.FreeDnsRoutes, тот же, что меряет «Проверить сеть». Ничего не применяет:
+    /// это объяснение и выбор входа, а не «ускоритель пинга».
+    /// </summary>
+    public DnsCardViewModel Dns { get; } = new();
+
+    /// <summary>
+    /// Карточка «Задержка ввода» (задача F): советник из PingForge.Analysis, подключённый к окну.
+    /// Прикрепляется после построения: ей нужен переход к отфильтрованному списку этого же раздела.
+    /// </summary>
+    public InputLatencyViewModel? InputLatency { get; private set; }
+
+    /// <summary>Экран «Что изменилось» (задача K) — появляется после применения.</summary>
+    public AppliedChangesViewModel Changes { get; } = new();
+
+    public void AttachInputLatency(InputLatencyViewModel card)
+    {
+        InputLatency = card ?? throw new ArgumentNullException(nameof(card));
+        OnPropertyChanged(nameof(InputLatency));
+    }
+
+    /// <summary>
+    /// Строки, которые видит человек, — в том порядке, в каком они стоят на экране. Это и каталог,
+    /// и фильтр по кодам (задача F), и поиск; плоский список нужен тем, кто не смотрит на группы.
+    /// </summary>
+    public IReadOnlyList<TweakRowViewModel> VisibleRows => _visibleRows;
+
+    /// <summary>Группы карточек на экране: «по назначению» — по подкатегориям, иначе одна группа.</summary>
+    public IReadOnlyList<TweakGroupViewModel> Groups => _groups;
+
+    /// <summary>Режимы порядка для кнопок-пилюль. Подписи и пояснения — из <see cref="TweakOrdering"/>.</summary>
+    public IReadOnlyList<TweakOrderOptionViewModel> Orders { get; }
+
+    /// <summary>Быстрые фильтры каталога: «только рекомендуемое», «скрыть не советуем», «только из пресетов».</summary>
+    public IReadOnlyList<TweakFilterOptionViewModel> Filters { get; }
+
+    /// <summary>Включённые сейчас фильтры — по ним и отбирается список.</summary>
+    public IReadOnlyList<TweakQuickFilter> ActiveFilters =>
+        Filters.Where(option => option.IsOn).Select(option => option.Filter).ToList();
+
+    /// <summary>Строка о фильтрах: что включено и сколько карточек осталось. Пусто, когда фильтров нет.</summary>
+    public string FiltersLineRu
+    {
+        get
+        {
+            IReadOnlyList<TweakQuickFilter> active = ActiveFilters;
+            if (active.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            string names = string.Join(" · ", active.Select(TweakQuickFilters.TitleRu));
+            return $"Фильтры: {names}. Показано {_visibleRows.Count} из {_rows.Count} — " +
+                "отметки и пресеты не менялись.";
+        }
+    }
+
+    public bool HasActiveFilters => Filters.Any(option => option.IsOn);
+
+    /// <summary>Нажатие на пилюлю фильтра: отметка уже переключена, остаётся пересобрать список.</summary>
+    private void OnFilterToggled()
+    {
+        OnPropertyChanged(nameof(ActiveFilters), nameof(HasActiveFilters), nameof(FiltersLineRu));
+        Rebuild();
+    }
+
+    /// <summary>Снять все быстрые фильтры: список возвращается к тому, что не урезано поиском и кодами.</summary>
+    public void ClearQuickFilters()
+    {
+        foreach (TweakFilterOptionViewModel option in Filters)
+        {
+            if (option.IsOn)
+            {
+                option.IsOn = false;
+            }
+        }
+    }
+
+    /// <summary>Текущий порядок карточек.</summary>
+    public TweakOrder Order => _order;
+
+    /// <summary>Строка, по которой ищут: название, описание или код.</summary>
+    public string SearchRu
+    {
+        get => _searchRu;
+        set
+        {
+            string cleaned = value ?? string.Empty;
+            if (!Set(ref _searchRu, cleaned))
+            {
+                return;
+            }
+
+            ClearSearchCommand.RaiseCanExecuteChanged();
+            Rebuild();
+        }
+    }
+
+    /// <summary>Подпись под поиском: сколько нашлось и по чему идёт поиск.</summary>
+    public string SearchLineRu
+    {
+        get
+        {
+            if (_searchRu.Trim().Length == 0)
+            {
+                return "Поиск идёт по названию, описанию, коду и назначению — например, «DNS» или «TCP_ACK».";
+            }
+
+            if (_visibleRows.Count == 0)
+            {
+                return "Ничего не найдено: измените запрос. Отметки и пресеты при этом не менялись.";
+            }
+
+            return _visibleRows.Count == 1
+                ? "Найден 1 твик — поиск идёт по названию, описанию, коду и назначению."
+                : $"Найдено {_visibleRows.Count} из {_rows.Count} — поиск идёт по названию, описанию, коду и назначению.";
+        }
+    }
+
+    /// <summary>Строка для пустого экрана: показывается только когда показывать нечего.</summary>
+    public string EmptyLineRu
+    {
+        get
+        {
+            if (_visibleRows.Count > 0)
+            {
+                return string.Empty;
+            }
+
+            if (_searchRu.Trim().Length > 0)
+            {
+                return HasActiveFilters
+                    ? "По этому запросу с включёнными фильтрами ничего нет. Очистите поиск или снимите фильтр — отметки при этом не менялись."
+                    : "По этому запросу в каталоге ничего нет. Очистите поиск или измените запрос.";
+            }
+
+            return HasActiveFilters
+                ? "Под включённые фильтры не подошёл ни один твик. Снимите фильтр — карточки вернутся, отметки при этом не менялись."
+                : "Список пуст: в каталоге нет ни одного твика.";
+        }
+    }
+
+    public bool HasVisibleRows => _visibleRows.Count > 0;
+
+    public RelayCommand ClearSearchCommand { get; }
+
+    /// <summary>Сменить порядок карточек: тот же список, другая последовательность.</summary>
+    public void SelectOrder(TweakOrder order)
+    {
+        if (_order == order)
+        {
+            return;
+        }
+
+        _order = order;
+        foreach (TweakOrderOptionViewModel option in Orders)
+        {
+            option.MarkSelected(option.Order == order);
+        }
+
+        OnPropertyChanged(nameof(Order), nameof(OrderLineRu));
+        Rebuild();
+    }
+
+    /// <summary>Строка о текущем порядке: чем он полезен, а не просто «сортировка».</summary>
+    public string OrderLineRu =>
+        $"{TweakOrdering.TitleRu(_order)}: {TweakOrdering.HintRu(_order)}";
+
+    /// <summary>Сбросить поиск: снова видно всё, что не урезано фильтром по кодам.</summary>
+    public void ClearSearch()
+    {
+        if (_searchRu.Length == 0)
+        {
+            return;
+        }
+
+        _searchRu = string.Empty;
+        OnPropertyChanged(nameof(SearchRu));
+        ClearSearchCommand.RaiseCanExecuteChanged();
+        Rebuild();
+    }
+
+    /// <summary>Включён ли фильтр по кодам (из карточки задержки ввода или проверки настроек).</summary>
+    public bool IsFiltered => _visibleFilter is not null;
+
+    /// <summary>Подпись фильтра: сколько строк показано из скольких — числа считаются, а не пишутся.</summary>
+    public string FilterLineRu => IsFiltered
+        ? $"Показаны {VisibleRows.Count} из {_rows.Count} {TweakOrdering.Plural(_rows.Count, "твик", "твика", "твиков")} — связанных с последней проверкой."
+        : string.Empty;
+
+    public RelayCommand ClearFilterCommand { get; }
+
+    /// <summary>
+    /// Показать только перечисленные твики — так работают кнопки «Показать связанные твики»
+    /// из карточки задержки ввода и «Показать в твиках» из проверки настроек. Отбор — и ничего больше:
+    /// ползунки, пресеты и применение остаются в полном списке.
+    /// </summary>
+    public void ShowOnlyCodes(IReadOnlyList<string> codes)
+    {
+        ArgumentNullException.ThrowIfNull(codes);
+
+        var wanted = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+        var matched = _rows.Where(row => wanted.Contains(row.Code)).ToList();
+
+        // Ни одного совпадения — фильтр не включается: пустой список без объяснения был бы ошибкой.
+        _visibleFilter = matched.Count > 0 ? matched : null;
+        Rebuild();
+        OnPropertyChanged(nameof(IsFiltered), nameof(FilterLineRu));
+        ClearFilterCommand.RaiseCanExecuteChanged();
+        StatusRu = matched.Count == 0
+            ? "Среди твиков каталога нет ни одного из перечисленных кодов — фильтр не включён, показан весь список."
+            : $"Фильтр: показаны только твики из проверки ({matched.Count} из {_rows.Count}). Отметки и пресеты не менялись.";
+    }
+
+    /// <summary>Убрать фильтр: снова виден весь каталог.</summary>
+    public void ClearFilter()
+    {
+        _visibleFilter = null;
+        Rebuild();
+        OnPropertyChanged(nameof(IsFiltered), nameof(FilterLineRu));
+        ClearFilterCommand.RaiseCanExecuteChanged();
+        StatusRu = "Фильтр снят: показан весь каталог твиков.";
+    }
+
+    /// <summary>
+    /// Пересобрать экранный список: фильтр по кодам → поиск → порядок и группы. Одна точка, где
+    /// решается, что видно, — иначе поиск, фильтр и порядок начинают спорить друг с другом.
+    /// </summary>
+    private void Rebuild()
+    {
+        IEnumerable<TweakRowViewModel> source = _visibleFilter ?? _rows;
+
+        foreach (TweakQuickFilter filter in ActiveFilters)
+        {
+            source = source.Where(row => TweakQuickFilters.Matches(row, filter));
+        }
+
+        IEnumerable<TweakRowViewModel> filtered = string.IsNullOrWhiteSpace(_searchRu)
+            ? source
+            : source.Where(row => TweakOrdering.MatchesSearch(row, _searchRu));
+
+        _groups = TweakOrdering.BuildGroups(filtered, _order);
+        _visibleRows = _groups.SelectMany(group => group.Rows).ToList();
+
+        OnPropertyChanged(
+            nameof(Groups), nameof(VisibleRows), nameof(SearchLineRu), nameof(EmptyLineRu),
+            nameof(HasVisibleRows), nameof(OrderLineRu), nameof(FiltersLineRu));
+    }
+
+    /// <summary>
+    /// Отметить ровно перечисленные коды — так работает «Применить рекомендованное» из проверки
+    /// сети (задача G). Ровно, а не «вдобавок»: чужие отметки человека не должны уехать в применение
+    /// незаметно. Само применение не запускается — его запускает обычная кнопка со всеми
+    /// подтверждениями; здесь только расставляются ползунки. Возвращает, сколько кодов нашлось.
+    /// </summary>
+    public int SelectCodesForApply(IReadOnlyList<string> codes)
+    {
+        ArgumentNullException.ThrowIfNull(codes);
+
+        var wanted = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+        int matched = 0;
+
+        foreach (TweakRowViewModel row in _rows)
+        {
+            bool shouldBeOn = wanted.Contains(row.Code);
+            if (shouldBeOn)
+            {
+                matched++;
+            }
+
+            row.IsOn = shouldBeOn;
+        }
+
+        StatusRu = matched == 0
+            ? "Проверка сети передала коды, которых нет в каталоге, — отметки сняты, применять нечего."
+            : $"Отмечено по проверке сети: {matched} {TweakOrdering.Plural(matched, "твик", "твика", "твиков")}. Дальше — обычная кнопка применения с подтверждением.";
+
+        return matched;
+    }
+
     public IReadOnlyList<PresetViewModel> Presets { get; }
 
     public AsyncRelayCommand ApplyPresetCommand { get; }
+
+    /// <summary>Показать состав выбранного пресета: отбор карточек, а не применение.</summary>
+    public RelayCommand ShowPresetCommand { get; }
 
     public AsyncRelayCommand ApplySelectedCommand { get; }
 
@@ -80,6 +398,7 @@ public sealed class TweaksViewModel : ObservableObject
             if (Set(ref _selectedPreset, value))
             {
                 ApplyPresetCommand.RaiseCanExecuteChanged();
+                ShowPresetCommand.RaiseCanExecuteChanged();
                 OnPropertyChanged(nameof(SelectedPresetNoteRu));
             }
         }
@@ -88,7 +407,39 @@ public sealed class TweaksViewModel : ObservableObject
     /// <summary>Пояснение к выбранному пресету: что именно он делает и сколько твиков применит.</summary>
     public string SelectedPresetNoteRu => SelectedPreset is null
         ? "Пресет не выбран."
-        : $"{SelectedPreset.PurposeRu}. Применится твиков: {SelectedPreset.Count}.";
+        : $"{SelectedPreset.PurposeRu}. Применится твиков: {SelectedPreset.Count}. " +
+          "Состав можно посмотреть до применения — кнопкой «Показать состав»: ползунки при этом не двигаются.";
+
+    /// <summary>
+    /// Показать состав выбранного пресета — те самые твики, которые применит служба. Это отбор:
+    /// ползунки и отметки не меняются, «Применить пресет» остаётся обычным нажатием с подтверждением.
+    /// </summary>
+    public void ShowPresetTweaks()
+    {
+        if (SelectedPreset is null)
+        {
+            StatusRu = "Пресет не выбран: нажмите на один из трёх, чтобы увидеть состав.";
+            return;
+        }
+
+        PresetViewModel preset = SelectedPreset;
+        if (!preset.HasCodes)
+        {
+            StatusRu = $"Состав пресета «{preset.TitleRu}» каталог не отдал — показать нечего. " +
+                "Применение пресета от этого не меняется.";
+            return;
+        }
+
+        ShowOnlyCodes(preset.CodesOrEmpty);
+
+        // Сколько кодов из состава реально есть в каталоге: считаем до сужения поиском и фильтрами.
+        int matched = preset.CodesOrEmpty.Count(code => _rows.Any(row =>
+            string.Equals(row.Code, code, StringComparison.OrdinalIgnoreCase)));
+        StatusRu = matched == VisibleRows.Count
+            ? $"Показан состав пресета «{preset.TitleRu}»: {matched} {TweakOrdering.Plural(matched, "твик", "твика", "твиков")}. Отметки и ползунки не менялись."
+            : $"Состав пресета «{preset.TitleRu}»: {matched} {TweakOrdering.Plural(matched, "твик", "твика", "твиков")} в каталоге, сейчас видно {VisibleRows.Count} — " +
+              "поиск или фильтры сузили список. Отметки не менялись.";
+    }
 
     public bool IsApplying
     {
@@ -101,6 +452,44 @@ public sealed class TweaksViewModel : ObservableObject
     /// <summary>Число включённых нельзя выдумывать: показываем ровно то, что стоит в ползунках.</summary>
     public string SelectionLineRu => $"Отмечено {CheckedCount} из {_rows.Count}";
 
+    /// <summary>
+    /// Разбивка отмеченного по назначению: «Пинг и сеть — 5 · Кадры — 4». Числа считаются по строкам,
+    /// поэтому человек видит, чего в его выборе много, а чего нет, — и в окне, и в подтверждении.
+    /// </summary>
+    public string SelectionBreakdownRu
+    {
+        get
+        {
+            List<TweakRowViewModel> chosen = _rows.Where(row => row.IsOn).ToList();
+            if (chosen.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var order = TweakRowFactory.FocusGroupsRu;
+            IEnumerable<string> parts = chosen
+                .GroupBy(row => row.FocusRu, StringComparer.Ordinal)
+                .OrderBy(group => IndexOfFocus(order, group.Key))
+                .ThenBy(group => group.Key, StringComparer.Ordinal)
+                .Select(group => $"{group.Key} — {group.Count()}");
+            return string.Join(" · ", parts);
+        }
+    }
+
+    private static int IndexOfFocus(IReadOnlyList<string> order, string focus)
+    {
+        for (int i = 0; i < order.Count; i++)
+        {
+            if (string.Equals(order[i], focus, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        // Подкатегория, которой нет в каноническом списке, идёт последней — как и в группах карточек.
+        return order.Count;
+    }
+
     /// <summary>Сколько рекомендованных — считается по каталогу, а не берётся из константы.</summary>
     public int RecommendedCount => _rows.Count(row => row.IsRecommended);
 
@@ -112,7 +501,7 @@ public sealed class TweaksViewModel : ObservableObject
             row.IsOn = row.IsRecommended;
         }
 
-        StatusRu = $"Оставлено только рекомендуемое: {CheckedCount} твиков из {_rows.Count}. " +
+        StatusRu = $"Оставлено только рекомендуемое: {CheckedCount} {TweakOrdering.Plural(CheckedCount, "твик", "твика", "твиков")} из {_rows.Count}. " +
             "Остальные («по желанию», «осторожно», «не советуем») выключены.";
     }
 
@@ -133,9 +522,9 @@ public sealed class TweaksViewModel : ObservableObject
         }
 
         StatusRu = skipped == 0
-            ? $"Включено всё: {CheckedCount} твиков."
-            : $"Включено {CheckedCount} твиков. Не включены {skipped} штуки с вердиктом «не советуем»: " +
-              "их можно поставить только вручную и с пониманием, что они ломают.";
+            ? $"Включено всё: {CheckedCount} {TweakOrdering.Plural(CheckedCount, "твик", "твика", "твиков")}."
+            : $"Включено {CheckedCount} {TweakOrdering.Plural(CheckedCount, "твик", "твика", "твиков")}. Не включено твиков с вердиктом «не советуем»: {skipped}. Их " +
+              "ставить только вручную и с пониманием, что они ломают.";
     }
 
     /// <summary>«Отключить всё».</summary>
@@ -187,6 +576,7 @@ public sealed class TweaksViewModel : ObservableObject
                 [("preset", preset.WireName), ("restorePoint", askRestorePoint ? "true" : "false")]).ConfigureAwait(true);
 
             StatusRu = response.MessageRu;
+            TryUpdateChangesFromResponse(response);
         }
         catch (EngineUnavailableException ex)
         {
@@ -215,10 +605,14 @@ public sealed class TweaksViewModel : ObservableObject
             : $"\n\nСреди них {dangerous} с вердиктом «не советуем» — они помечены в списке. " +
               "Их включают только осознанно: они ломают устойчивость соединения или загрузки.";
 
+        string breakdown = SelectionBreakdownRu.Length == 0
+            ? string.Empty
+            : $" Что именно: {SelectionBreakdownRu}.";
+
         bool confirmed = await _dialogs.ConfirmAsync(
-            $"Применить {checkedRows.Count} твиков?",
+            $"Применить {checkedRows.Count} {TweakOrdering.Plural(checkedRows.Count, "твик", "твика", "твиков")}?",
             "Перед изменениями программа запомнит прежние значения и предложит точку восстановления Windows." +
-            warning,
+            breakdown + warning,
             "Применить",
             "Отмена").ConfigureAwait(true);
 
@@ -233,7 +627,7 @@ public sealed class TweaksViewModel : ObservableObject
             .ConfigureAwait(true);
 
         IsApplying = true;
-        StatusRu = $"Применяю {checkedRows.Count} твиков…";
+        StatusRu = $"Применяю {checkedRows.Count} {TweakOrdering.Plural(checkedRows.Count, "твик", "твика", "твиков")}…";
         try
         {
             EngineResponse response = await _engine.SendAsync(
@@ -244,6 +638,7 @@ public sealed class TweaksViewModel : ObservableObject
                 ]).ConfigureAwait(true);
 
             StatusRu = response.MessageRu;
+            TryUpdateChangesFromResponse(response);
         }
         catch (EngineUnavailableException ex)
         {
@@ -279,6 +674,55 @@ public sealed class TweaksViewModel : ObservableObject
         catch (EngineUnavailableException ex)
         {
             StatusRu = ex.Message;
+        }
+    }
+
+    private void TryUpdateChangesFromResponse(EngineResponse response)
+    {
+        if (string.IsNullOrWhiteSpace(response.DataJson))
+        {
+            return;
+        }
+
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(response.DataJson);
+            JsonElement root = doc.RootElement;
+            if (!root.TryGetProperty("snapshotId", out JsonElement sidEl) || sidEl.ValueKind != JsonValueKind.String)
+            {
+                return;
+            }
+
+            string snapshotId = sidEl.GetString() ?? string.Empty;
+            int applied = root.TryGetProperty("applied", out JsonElement aEl) && aEl.ValueKind == JsonValueKind.Number ? aEl.GetInt32() : 0;
+            int noOp = root.TryGetProperty("noOp", out JsonElement nEl) && nEl.ValueKind == JsonValueKind.Number ? nEl.GetInt32() : 0;
+            int skipped = root.TryGetProperty("skipped", out JsonElement sEl) && sEl.ValueKind == JsonValueKind.Number ? sEl.GetInt32() : 0;
+            int failed = root.TryGetProperty("failed", out JsonElement fEl) && fEl.ValueKind == JsonValueKind.Number ? fEl.GetInt32() : 0;
+
+            var rows = new List<AppliedChangeRowViewModel>();
+            if (root.TryGetProperty("rows", out JsonElement rowsEl) && rowsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement item in rowsEl.EnumerateArray())
+                {
+                    string code = item.TryGetProperty("code", out JsonElement c) && c.ValueKind == JsonValueKind.String ? c.GetString() ?? string.Empty : string.Empty;
+                    string title = item.TryGetProperty("titleRu", out JsonElement t2) && t2.ValueKind == JsonValueKind.String ? t2.GetString() ?? code : code;
+                    string before = item.TryGetProperty("previousText", out JsonElement b) && b.ValueKind == JsonValueKind.String ? b.GetString() ?? string.Empty : string.Empty;
+                    string appliedText = item.TryGetProperty("appliedText", out JsonElement at) && at.ValueKind == JsonValueKind.String ? at.GetString() ?? string.Empty : string.Empty;
+                    string verified = item.TryGetProperty("verifiedText", out JsonElement v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? string.Empty : string.Empty;
+                    string outcome = item.TryGetProperty("outcome", out JsonElement o) && o.ValueKind == JsonValueKind.String ? o.GetString() ?? string.Empty : string.Empty;
+                    string status = item.TryGetProperty("statusRu", out JsonElement st) && st.ValueKind == JsonValueKind.String ? st.GetString() ?? outcome : outcome;
+                    bool succeeded = item.TryGetProperty("succeeded", out JsonElement su) && su.ValueKind == JsonValueKind.True;
+                    bool reboot = item.TryGetProperty("rebootNeeded", out JsonElement rb) && rb.ValueKind == JsonValueKind.True;
+                    rows.Add(new AppliedChangeRowViewModel(code, title, before, appliedText, verified, outcome, status, succeeded, reboot));
+                }
+            }
+
+            Changes.UpdateFromBatch(snapshotId, applied, noOp, skipped, failed, rows);
+            Changes.BindRevertActions(_engine);
+        }
+        catch (JsonException)
+        {
+            // битый JSON — оставляем прежний статус, экран не появляется
         }
     }
 }

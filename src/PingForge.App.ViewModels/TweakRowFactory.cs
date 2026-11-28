@@ -86,6 +86,19 @@ public static class TweakRowFactory
         return membership;
     }
 
+    /// <summary>
+    /// Канонический порядок подкатегорий: по нему строятся группы в разделе «Твики».
+    /// Один список на всё окно — чтобы порядок групп и порядок каталога не разъехались.
+    /// </summary>
+    public static IReadOnlyList<string> FocusGroupsRu { get; } =
+    [
+        FocusRu(TweakFocus.Ping),
+        FocusRu(TweakFocus.Speed),
+        FocusRu(TweakFocus.Fps),
+        FocusRu(TweakFocus.Input),
+        FocusRu(TweakFocus.System),
+    ];
+
     /// <summary>Порядок подкатегорий в интерфейсе: пинг → скорость → кадры → ввод → система.</summary>
     public static int FocusOrder(TweakFocus focus) => focus switch
     {
@@ -105,31 +118,40 @@ public static class TweakRowFactory
         _ => "Система",
     };
 
-    /// <summary>Состав пресетов для окна: числа считаются по каталогу, поэтому подпись не может разойтись с делом.</summary>
+    /// <summary>
+    /// Состав пресетов для окна: числа и коды берутся из каталога, поэтому подпись не может разойтись
+    /// с делом, а кнопка «Показать состав» ведёт ровно к тем твикам, которые применит служба.
+    /// </summary>
     public static IReadOnlyList<PresetViewModel> BuildPresets(ITweakCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
 
         return
         [
-            new(
-                TweakProfilePreset.LowLatencyGaming,
-                "low-latency",
-                "Низкий пинг",
-                "Только то, что сокращает задержку и не портит устойчивость соединения",
-                catalog.GetByPreset(TweakProfilePreset.LowLatencyGaming).Count),
-            new(
-                TweakProfilePreset.MaxThroughput,
-                "max-speed",
-                "Скорость",
-                "Пропускная способность и буферы: когда важнее скорость загрузки, чем задержка",
-                catalog.GetByPreset(TweakProfilePreset.MaxThroughput).Count),
-            new(
-                TweakProfilePreset.FpsAndResponsiveness,
-                "fps",
-                "Кадры и отзывчивость",
-                "Питание, фон, планировщик и ввод: кадры не рвутся, отклик ровнее",
-                catalog.GetByPreset(TweakProfilePreset.FpsAndResponsiveness).Count),
+            BuildPreset(catalog, TweakProfilePreset.LowLatencyGaming, "low-latency", "Низкий пинг",
+                "Только то, что сокращает задержку и не портит устойчивость соединения"),
+            BuildPreset(catalog, TweakProfilePreset.MaxThroughput, "max-speed", "Скорость",
+                "Пропускная способность и буферы: когда важнее скорость загрузки, чем задержка"),
+            BuildPreset(catalog, TweakProfilePreset.FpsAndResponsiveness, "fps", "Кадры и отзывчивость",
+                "Питание, фон, планировщик и ввод: кадры не рвутся, отклик ровнее"),
         ];
+    }
+
+    private static PresetViewModel BuildPreset(
+        ITweakCatalog catalog,
+        TweakProfilePreset preset,
+        string wireName,
+        string titleRu,
+        string purposeRu)
+    {
+        // Один запрос к каталогу на пресет: число и коды не могут разойтись между собой.
+        IReadOnlyList<ITweak> tweaks = catalog.GetByPreset(preset);
+        return new PresetViewModel(
+            preset,
+            wireName,
+            titleRu,
+            purposeRu,
+            tweaks.Count,
+            tweaks.Select(tweak => tweak.Id).ToList());
     }
 }

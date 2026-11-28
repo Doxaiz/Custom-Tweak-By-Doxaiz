@@ -1,3 +1,4 @@
+using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
 using PingForge.Orchestration.Realtime;
 using PingForge.Service.Protocol;
@@ -23,6 +24,9 @@ public sealed class EngineDispatcher
 
     public const int MaxJournalLimit = 500;
 
+    /// <summary>Сколько сессий отдавать по умолчанию: месяц ежедневных запусков ещё виден целиком.</summary>
+    public const int DefaultSessionsLimit = 50;
+
     private readonly IEngineOperations _operations;
 
     /// <summary>Какой канал обслуживает этот разборщик: от этого зависит набор доступных команд.</summary>
@@ -47,8 +51,10 @@ public sealed class EngineDispatcher
     /// <param name="requestJson">Кадр запроса, пришедший по каналу.</param>
     /// <param name="clientIsAdministrator">
     /// Есть ли права администратора у того, кто подключился к каналу, — в его собственном процессе.
-    /// По умолчанию «да» только ради существующих проверок разбора запросов; настоящий канал обязан
-    /// передавать сюда прочитанные права клиента (см. <c>PipeClientInspector</c>).
+    /// По умолчанию «нет»: забыть передать права можно только в сторону отказа, а не в сторону выдачи.
+    /// Раньше умолчанием было «да» ради удобства проверок разбора запросов — то есть любой новый
+    /// вызов без личности клиента молча получал права администратора на изменение Windows.
+    /// Настоящий канал передаёт и флаг, и личность (см. <c>PipeClientInspector</c>).
     /// </param>
     /// <param name="onDenialRu">Куда сообщить об отказе по правам: служба пишет это в журнал вместе с именем клиента.</param>
     /// <param name="ct">Отмена: закрылось окно или останавливается служба.</param>
@@ -58,7 +64,7 @@ public sealed class EngineDispatcher
     /// </param>
     public async Task<EngineResponse> HandleJsonAsync(
         string requestJson,
-        bool clientIsAdministrator = true,
+        bool clientIsAdministrator = false,
         Action<string>? onDenialRu = null,
         CancellationToken ct = default,
         EnginePeerIdentity? peer = null)
@@ -74,7 +80,7 @@ public sealed class EngineDispatcher
 
     public async Task<EngineResponse> HandleAsync(
         EngineRequest request,
-        bool clientIsAdministrator = true,
+        bool clientIsAdministrator = false,
         Action<string>? onDenialRu = null,
         CancellationToken ct = default,
         EnginePeerIdentity? peer = null)
@@ -141,6 +147,12 @@ public sealed class EngineDispatcher
 
         var args = new EngineArgs(request.Args, descriptor.WireName);
 
+        // Чья ветка пользователя меняется. Служба идёт от LocalSystem, поэтому без этого «применить
+        // настройку пользователя» означало бы записать её в профиль системы: проверка подтвердила бы
+        // запись, а человек в Windows не увидел бы ничего. SID запросившего уезжает в контекст команды,
+        // и порт реестра открывает HKEY_USERS\<SID> вместо своего HKCU.
+        using IDisposable userHive = UserHiveContext.Use(peer?.ClientSid);
+
         try
         {
             EngineOperationResult result = request.Command switch
@@ -173,6 +185,18 @@ public sealed class EngineDispatcher
                 EngineCommandKind.RouteDiscover => await _operations.DiscoverRoutingNodesAsync(ct).ConfigureAwait(false),
 
                 EngineCommandKind.RouteMeasure => await _operations.MeasureRoutingPathsAsync(ct).ConfigureAwait(false),
+
+                EngineCommandKind.UninstallCheck => await _operations.UninstallCheckAsync(ct).ConfigureAwait(false),
+
+                EngineCommandKind.Sessions => await _operations.SessionsAsync(
+                    args.GetInt("limit", DefaultSessionsLimit, 1, MaxJournalLimit), ct).ConfigureAwait(false),
+
+                EngineCommandKind.SessionsClear => await _operations.ClearSessionsAsync(ct).ConfigureAwait(false),
+                EngineCommandKind.RollbackSingleTweak => await RollbackSingleTweakAsync(args, ct).ConfigureAwait(false),
+                EngineCommandKind.ReturnAll => await _operations.ReturnAllAsync(ct).ConfigureAwait(false),
+                EngineCommandKind.StorageInfo => await _operations.GetStorageInfoAsync(ct).ConfigureAwait(false),
+                EngineCommandKind.CleanupSnapshots => await CleanupSnapshotsAsync(args, ct).ConfigureAwait(false),
+                EngineCommandKind.DbRestore => await RestoreDatabaseAsync(args, ct).ConfigureAwait(false),
 
                 _ => EngineOperationResult.Failure($"Команда «{descriptor.WireName}» объявлена, но не подключена."),
             };
@@ -226,6 +250,42 @@ public sealed class EngineDispatcher
 
         bool restorePoint = args.GetBool("restorePoint", fallback: true);
         return await _operations.ApplyTweaksAsync(codes, restorePoint, ct).ConfigureAwait(false);
+    }
+
+
+    private async Task<EngineOperationResult> RollbackSingleTweakAsync(EngineArgs args, CancellationToken ct)
+    {
+        string? tweak = args.Get("tweak")?.Trim();
+        if (string.IsNullOrWhiteSpace(tweak))
+        {
+            return EngineOperationResult.Failure("Не указан код твика: укажите tweak — код из списка твиков, например TCP_NO_DELAY.");
+        }
+
+        string? snapshot = args.Get("snapshot")?.Trim();
+        return await _operations.RollbackSingleTweakAsync(tweak, snapshot, ct).ConfigureAwait(false);
+    }
+
+    private async Task<EngineOperationResult> CleanupSnapshotsAsync(EngineArgs args, CancellationToken ct)
+    {
+        int keep = args.GetInt("keep", 10, 1, 1000);
+        int days = args.GetInt("olderThanDays", 30, 1, 3650);
+        // Явная передача аргументов по отсутствию — не по позиции, иначе keep уйдёт в olderThanDays
+        return await _operations.CleanupSnapshotsAsync(keepLast: keep, olderThanDays: days, ct: ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Восстановление базы из копии (задача U). Подтверждение читается буквально: «yes», «true» или
+    /// «1». Любое другое значение — отказ, а не «ладно, раз просили».
+    /// </summary>
+    private async Task<EngineOperationResult> RestoreDatabaseAsync(EngineArgs args, CancellationToken ct)
+    {
+        string? raw = args.Get("confirm")?.Trim();
+        bool confirmed = raw is not null
+            && (raw.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                || raw.Equals("true", StringComparison.OrdinalIgnoreCase)
+                || raw == "1");
+
+        return await _operations.RestoreDatabaseAsync(confirmed, ct).ConfigureAwait(false);
     }
 
     private async Task<EngineOperationResult> SetPerfProfileAsync(EngineArgs args, CancellationToken ct)

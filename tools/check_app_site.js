@@ -17,6 +17,16 @@ const { JSDOM } = require('jsdom');
 const FILE = process.argv[2] || 'docs/custom-tweak-by-doxaiz.html';
 const html = fs.readFileSync(FILE, 'utf8');
 
+// Числа пресетов берутся из catalog.json, который лежит рядом со страницей: вписанная цифра
+// («19 / 5 / 23») врёт после первой же правки каталога — на этом уже обжигались.
+const catalog = JSON.parse(fs.readFileSync(path.join(path.dirname(FILE), 'catalog.json'), 'utf8'));
+const presetSize = (name) => (catalog.presets.find((p) => p.preset === name) || { tweakCount: -1 }).tweakCount;
+const lowSize = presetSize('LowLatencyGaming');
+const speedSize = presetSize('MaxThroughput');
+const fpsSize = presetSize('FpsAndResponsiveness');
+const unionSize = new Set(['LowLatencyGaming', 'MaxThroughput', 'FpsAndResponsiveness']
+  .flatMap((name) => (catalog.presets.find((p) => p.preset === name) || { tweakCodes: [] }).tweakCodes)).size;
+
 let ok = 0;
 const problems = [];
 const check = (name, condition, detail) => {
@@ -138,8 +148,9 @@ const presetLabels = [...tweaks.querySelectorAll('label.seg')].filter(l => /^(В
 check('пресетов четыре, и в каждом подписано число твиков',
   presetLabels.length === 4 && presetLabels.every(l => /\d/.test(text(l.querySelector('.count')))),
   presetLabels.map(text).join(' | '));
-check('числа в пресетах совпадают с каталогом: 47 / 19 / 5 / 23',
-  ['47', '19', '5', '23'].every((n, i) => text(presetLabels[i].querySelector('.count')) === n),
+check(`числа в пресетах совпадают с каталогом: ${catalog.tweakCount} / ${lowSize} / ${speedSize} / ${fpsSize}`,
+  [String(catalog.tweakCount), String(lowSize), String(speedSize), String(fpsSize)]
+    .every((n, i) => text(presetLabels[i].querySelector('.count')) === n),
   presetLabels.map(l => text(l.querySelector('.count'))).join('/'));
 check('у каждого пресета есть радиокнопка, и по умолчанию выбран показ всего',
   presetLabels.every(l => d.getElementById(l.getAttribute('for'))) && d.getElementById('ps-all').checked);
@@ -155,12 +166,12 @@ const countWith = (token) => cards.filter(c => presetTokens(c).includes(token)).
 const gluedCards = cards.filter(c => presetTokens(c).length === 0 && /in-[a-z]*in-/.test(c.className || ''));
 check('классы пресетов на карточках не склеены («in-lowin-fps» — ошибка)', gluedCards.length === 0,
   `склеено ${gluedCards.length}`);
-check('состав пресетов считается по токенам классов: 19 / 5 / 23',
-  countWith('in-low') === 19 && countWith('in-speed') === 5 && countWith('in-fps') === 23,
+check(`состав пресетов считается по токенам классов: ${lowSize} / ${speedSize} / ${fpsSize}`,
+  countWith('in-low') === lowSize && countWith('in-speed') === speedSize && countWith('in-fps') === fpsSize,
   `low ${countWith('in-low')}, speed ${countWith('in-speed')}, fps ${countWith('in-fps')}`);
 
-check('карточки помечены составом пресетов (34 твика входят хотя бы в один)',
-  cards.filter(c => /in-low|in-speed|in-fps/.test(c.className)).length === 34,
+check(`карточки помечены составом пресетов (${unionSize} твиков входят хотя бы в один)`,
+  cards.filter(c => /in-low|in-speed|in-fps/.test(c.className)).length === unionSize,
   `${cards.filter(c => /in-low|in-speed|in-fps/.test(c.className)).length}`);
 check('клик по пресету «Низкий пинг» переключает режим показа', (() => {
   presetLabels.find(l => /Низкий пинг/.test(text(l))).click();

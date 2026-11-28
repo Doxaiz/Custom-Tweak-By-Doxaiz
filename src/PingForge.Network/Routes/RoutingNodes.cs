@@ -59,16 +59,24 @@ public static class RoutingNodeSourceRu
 public sealed record RoutingSettings(
     IReadOnlyList<RoutingNodeEntry> Nodes,
     string? DefaultNodeAddress,
-    bool AutoSelectBest)
+    bool AutoSelectBest,
+    bool MultipathEnabled = false,
+    string? SecondaryNodeAddress = null)
 {
     public static RoutingSettings Empty { get; } = new([], null, false);
 
     public RoutingNodeEntry? DefaultNode => Nodes.FirstOrDefault(node =>
         node.Address.Equals(DefaultNodeAddress, StringComparison.OrdinalIgnoreCase));
 
+    public RoutingNodeEntry? SecondaryNode => SecondaryNodeAddress is null ? null : Nodes.FirstOrDefault(node =>
+        node.Address.Equals(SecondaryNodeAddress, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Узлы со строгим IPv4 адресом: мусор в сохранённом файле не должен доезжать до службы.</summary>
     public IReadOnlyList<RoutingNodeEntry> ValidNodes =>
         Nodes.Where(node => RoutingNodeValidation.IsStrictIpv4(node.Address)).ToList();
+
+    public bool IsMultipathValid => MultipathEnabled && SecondaryNode is not null && DefaultNode is not null &&
+        !DefaultNodeAddress!.Equals(SecondaryNodeAddress, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>
@@ -246,6 +254,8 @@ public static class RoutingNodesJson
     public const string NodesKey = "RoutingNodes";
     public const string DefaultNodeKey = "RoutingDefaultNode";
     public const string AutoSelectKey = "RoutingAutoSelect";
+    public const string MultipathKey = "RoutingMultipathEnabled";
+    public const string SecondaryNodeKey = "RoutingSecondaryNode";
 
     /// <summary>
     /// Прочитать настройки маршрутизации из текста файла. tryRead=false — файл не прочитался
@@ -283,16 +293,18 @@ public static class RoutingNodesJson
             JsonElement nodesElement = FindRootProperty(document.RootElement, NodesKey);
             string? defaultAddress = FindRootString(document.RootElement, DefaultNodeKey);
             bool? autoSelect = FindRootBool(document.RootElement, AutoSelectKey);
+            bool? multipath = FindRootBool(document.RootElement, MultipathKey);
+            string? secondaryAddress = FindRootString(document.RootElement, SecondaryNodeKey);
 
             if (nodesElement.ValueKind == JsonValueKind.Undefined)
             {
-                return new RoutingSettings([], null, autoSelect ?? false);
+                return new RoutingSettings([], null, autoSelect ?? false, multipath ?? false, secondaryAddress);
             }
 
             if (nodesElement.ValueKind != JsonValueKind.Array)
             {
                 problemRu = $"вместо «{NodesKey}» лежит не список — беру пустой список узлов";
-                return new RoutingSettings([], null, autoSelect ?? false);
+                return new RoutingSettings([], null, autoSelect ?? false, multipath ?? false, secondaryAddress);
             }
 
             var nodes = new List<RoutingNodeEntry>();
@@ -353,7 +365,24 @@ public static class RoutingNodesJson
                 defaultNormalized = null;
             }
 
-            return new RoutingSettings(nodes, defaultNormalized, autoSelect ?? false);
+            string? secondaryNormalized = secondaryAddress is not null && RoutingNodeValidation.NormalizeIpv4(secondaryAddress, out string s)
+                ? s
+                : null;
+            if (secondaryAddress is not null && secondaryNormalized is null)
+            {
+                problemRu = (problemRu is null ? string.Empty : problemRu + ". ") +
+                    $"значение «{SecondaryNodeKey}» не IPv4-адрес — второй узел сброшен";
+            }
+            if (secondaryNormalized is not null && !nodes.Any(node => node.Address.Equals(secondaryNormalized, StringComparison.OrdinalIgnoreCase)))
+            {
+                secondaryNormalized = null;
+            }
+            if (secondaryNormalized is not null && secondaryNormalized.Equals(defaultNormalized, StringComparison.OrdinalIgnoreCase))
+            {
+                secondaryNormalized = null;
+            }
+
+            return new RoutingSettings(nodes, defaultNormalized, autoSelect ?? false, multipath ?? false, secondaryNormalized);
         }
     }
 

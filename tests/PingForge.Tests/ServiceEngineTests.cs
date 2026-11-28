@@ -1,3 +1,4 @@
+using System.Text.Json;
 using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
 using PingForge.Data;
@@ -25,7 +26,29 @@ public sealed class ServiceEngineTests : IDisposable
         _database.EnsureInitializedAsync().GetAwaiter().GetResult();
     }
 
-    public void Dispose() => TempDatabaseFile.Delete(_databasePath);
+    public void Dispose()
+    {
+        TempDatabaseFile.Delete(_databasePath);
+
+        // Копии и отложенные файлы базы (задача U) лежат рядом с файлом базы — убираем и их,
+        // иначе временный каталог копится копиями от каждого теста.
+        string directory = Path.GetDirectoryName(_databasePath) ?? ".";
+        string stem = Path.GetFileName(_databasePath) ?? "pf_service";
+        foreach (string pattern in new[] { stem + ".bak-*", stem + ".corrupt-*" })
+        {
+            foreach (string file in Directory.GetFiles(directory, pattern))
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (IOException)
+                {
+                    // Не удалось убрать временный файл — это не повод валить тест.
+                }
+            }
+        }
+    }
 
     private static FakeTweak Tweak(string code) => new(code);
 
@@ -125,6 +148,238 @@ public sealed class ServiceEngineTests : IDisposable
 
         Assert.Contains("Незакрытых операций в журнале: 1", result.MessageRu);
         Assert.Contains("\"pendingOperations\":1", result.DataJson);
+    }
+
+    // ── Задача F: график сети питается ответами команды status ─────────────────────────────────
+
+    [Fact]
+    public async Task Статус_во_время_оптимизации_отдаёт_точки_графика_а_провалы_без_нулей()
+    {
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "fortniteclient-win64-shipping.exe",
+                GameTitleRu: "Fortnite",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 3074,
+                Transport: "UDP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 80, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                PathMeasurement.Unmeasurable("поток игры пропал")),
+            new NoopActionRunner());
+
+        RealtimeSnapshot started = await optimizer.StartAsync();
+        Assert.Equal(RealtimeOptimizationState.ActiveMonitoring, started.State);
+
+        await optimizer.TickOnceAsync(); // окно не измерилось — на графике это разрыв
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+
+        EngineOperationResult result = await ops.StatusAsync();
+
+        // Точки графика доходят до окна в одном ответе со статусом: график ничего не зондирует сам.
+        Assert.Contains("\"chartSamples\":[", result.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"measured\":true", result.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"rttMedianMs\":80", result.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"measured\":false", result.DataJson, StringComparison.Ordinal);
+
+        // Честность: точка без измерения не несёт чисел — null не превращается в ноль.
+        Assert.DoesNotContain("\"rttMedianMs\":0,", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"rttMedianMs\":null", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"jitterMadMs\":0,", result.DataJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Статус_отдаёт_окну_выигрыш_разброс_потери_и_предел_пути()
+    {
+        // Раньше окно получало только «до» и «сейчас»: выигрыш, разброс, потери и предел пути
+        // оставались внутри снапшота службы, и окно честно писало «заметного выигрыша нет»
+        // даже тогда, когда выигрыш был измерен.
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "fortniteclient-win64-shipping.exe",
+                GameTitleRu: "Fortnite",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 3074,
+                Transport: "UDP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (пассивные UDP-метки)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (пассивные UDP-метки)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (пассивные UDP-метки)."),
+                new PathMeasurement(true, 80, 2, 0, 12, "Замер живого потока игры (пассивные UDP-метки)."),
+                new PathMeasurement(true, 80, 2, 0, 12, "Замер живого потока игры (пассивные UDP-метки).")),
+            new NoopActionRunner());
+
+        await optimizer.StartAsync();
+        await optimizer.TickOnceAsync();
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+        EngineOperationResult result = await ops.StatusAsync();
+
+        Assert.False(string.IsNullOrEmpty(result.DataJson));
+        using JsonDocument document = JsonDocument.Parse(result.DataJson!);
+        JsonElement root = document.RootElement;
+
+        Assert.Equal(40.0, root.GetProperty("improvementMs").GetDouble(), 3);
+        Assert.Equal(80.0, root.GetProperty("floorRttMs").GetDouble(), 3);
+        Assert.Equal(2.0, root.GetProperty("currentJitterMs").GetDouble(), 3);
+        Assert.Equal(0.0, root.GetProperty("currentLossPercent").GetDouble(), 3);
+    }
+
+    [Fact]
+    public async Task Неизмеренные_разброс_и_потери_не_уходят_окну_вовсе_а_не_нулём()
+    {
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "fortniteclient-win64-shipping.exe",
+                GameTitleRu: "Fortnite",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 3074,
+                Transport: "UDP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 120, 2, 0, 12, "Замер живого потока игры (статистика TCP-соединения)."),
+                new PathMeasurement(true, 80, null, null, 12, "Замер живого потока игры (статистика TCP-соединения).")),
+            new NoopActionRunner());
+
+        await optimizer.StartAsync();
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+        EngineOperationResult result = await ops.StatusAsync();
+
+        Assert.False(string.IsNullOrEmpty(result.DataJson));
+        using JsonDocument document = JsonDocument.Parse(result.DataJson!);
+        JsonElement root = document.RootElement;
+
+        // Поле, которого нет, окно читает как «не измерено»: ноль в провод не попадает вовсе.
+        Assert.False(root.TryGetProperty("currentJitterMs", out _));
+        Assert.False(root.TryGetProperty("currentLossPercent", out _));
+        Assert.DoesNotContain("\"currentJitterMs\"", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"currentLossPercent\"", result.DataJson, StringComparison.Ordinal);
+    }
+
+    // ── способ замера в ответе живой оптимизации ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task Живая_оптимизация_называет_способ_замера_вместе_с_числом()
+    {
+        // Число без способа ничего не доказывает: «12 мс» от статистики соединения и «12 мс» от проб —
+        // разные утверждения. Ответ службы обязан называть способ, иначе окно и проверка догадываются.
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "javaw.exe",
+                GameTitleRu: "Minecraft (Java)",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 25565,
+                Transport: "TCP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(
+                new PathMeasurement(true, 120, 2, null, 12, "Замер живого TCP-потока игры.", Method: ProbeMethodUsed.LiveTcpEstats),
+                new PathMeasurement(true, 96, 2, null, 12, "Замер живого TCP-потока игры.", Method: ProbeMethodUsed.LiveTcpEstats)),
+            new NoopActionRunner());
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+        EngineOperationResult started = await ops.SetRealtimeAsync(start: true);
+
+        Assert.Contains("\"methodRu\":\"живой поток игры (TCP-статистика)\"", started.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"baselineMethodRu\":\"живой поток игры (TCP-статистика)\"", started.DataJson, StringComparison.Ordinal);
+
+        // Рядом с подписью едет метка: по ней значок в трее называет тот же способ, что и окно.
+        // Без неё окно и трей сверять нечем, и один замер мог бы называться двумя способами.
+        Assert.Contains("\"methodTag\":\"live-tcp\"", started.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"baselineMethodTag\":\"live-tcp\"", started.DataJson, StringComparison.Ordinal);
+
+        EngineOperationResult stopped = await ops.SetRealtimeAsync(start: false);
+
+        Assert.Contains("\"methodRu\":\"живой поток игры (TCP-статистика)\"", stopped.DataJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Состояние_называет_способ_замера_так_же_как_запуск()
+    {
+        // Окно опрашивает состояние каждые пару секунд и перерисовывает карточку по нему. Если способ
+        // приходит только в ответе на запуск, строка «Способ замера» живёт до первого опроса — то есть
+        // человек видит её один раз. Двойник в тестах это поле присылал, а служба — нет.
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "javaw.exe",
+                GameTitleRu: "Minecraft (Java)",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 25565,
+                Transport: "TCP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(
+                new PathMeasurement(true, 120, 2, null, 12, "Замер живого TCP-потока игры.", Method: ProbeMethodUsed.LiveTcpEstats),
+                new PathMeasurement(true, 96, 2, null, 12, "Замер живого TCP-потока игры.", Method: ProbeMethodUsed.LiveTcpEstats)),
+            new NoopActionRunner());
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+        await ops.SetRealtimeAsync(start: true);
+        EngineOperationResult status = await ops.StatusAsync();
+
+        Assert.Contains("\"methodRu\":\"живой поток игры (TCP-статистика)\"", status.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"baselineMethodRu\":\"живой поток игры (TCP-статистика)\"", status.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"methodTag\":\"live-tcp\"", status.DataJson, StringComparison.Ordinal);
+        Assert.Contains("\"baselineMethodTag\":\"live-tcp\"", status.DataJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Без_замера_способ_не_подставляется()
+    {
+        var optimizer = new RealtimeOptimizer(
+            new SingleGameWatcher(new GameFlowInfo(
+                ProcessId: 4242,
+                ProcessName: "javaw.exe",
+                GameTitleRu: "Minecraft (Java)",
+                RemoteEndpoint: "3.4.5.6",
+                RemotePort: 25565,
+                Transport: "TCP",
+                AntiCheat: AntiCheatStatus.VerifiedSafe)),
+            new QueuedMeasurements(PathMeasurement.Unmeasurable("поток игры пропал")),
+            new NoopActionRunner());
+
+        LiveEngineOperations ops = Build(realtime: optimizer);
+        EngineOperationResult result = await ops.SetRealtimeAsync(start: true);
+
+        // Поля нет вовсе: «способ замера не записан» — это не способ, и придумывать его нельзя.
+        Assert.DoesNotContain("\"methodRu\"", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"baselineMethodRu\"", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"methodTag\"", result.DataJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"baselineMethodTag\"", result.DataJson, StringComparison.Ordinal);
+    }
+
+    private sealed class SingleGameWatcher(GameFlowInfo flow) : IGameFlowWatcher
+    {
+        public Task<IReadOnlyList<GameFlowInfo>> FindActiveGameFlowsAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<GameFlowInfo>>([flow]);
+    }
+
+    private sealed class QueuedMeasurements(params PathMeasurement[] windows) : IRealtimeMeasurementSource
+    {
+        private readonly Queue<PathMeasurement> _windows = new(windows);
+
+        public Task<PathMeasurement> MeasurePathAsync(string endpoint, int port, CancellationToken ct = default) =>
+            Task.FromResult(_windows.Count > 0 ? _windows.Dequeue() : PathMeasurement.Unmeasurable("источник закончился"));
+    }
+
+    private sealed class NoopActionRunner : IOptimizationActionRunner
+    {
+        public Task<OptimizationActionOutcome> ApplyAsync(OptimizationActionDescriptor action, CancellationToken ct = default) =>
+            Task.FromResult(OptimizationActionOutcome.Ok("применено"));
+
+        public Task<OptimizationActionOutcome> RevertAsync(OptimizationActionDescriptor action, CancellationToken ct = default) =>
+            Task.FromResult(OptimizationActionOutcome.Ok("снято"));
     }
 
     // ── применение пресетов ─────────────────────────────────────────────────────────────────────
@@ -482,6 +737,84 @@ public sealed class ServiceEngineTests : IDisposable
         Assert.Null(result.DataJson);
     }
 
+    // ── задача U: целостность и копии базы видны и восстанавливаются ───────────────────────────
+
+    [Fact]
+    public async Task StorageInfo_называет_состояние_базы_и_число_копий()
+    {
+        var backups = new DatabaseBackupService(_database);
+        Assert.NotNull(await backups.CreateBackupAsync());
+
+        EngineOperationResult result = await Build(backups: backups).GetStorageInfoAsync();
+
+        Assert.True(result.Ok);
+        Assert.Contains("\"healthy\":true", result.DataJson);
+        Assert.Contains("\"backups\":1", result.DataJson);
+        Assert.Contains("проверка целостности пройдена", result.MessageRu);
+        Assert.Contains("резервных копий: 1", result.MessageRu);
+    }
+
+    [Fact]
+    public async Task StorageInfo_без_подключённых_копий_говорит_об_этом_прямо()
+    {
+        EngineOperationResult result = await Build().GetStorageInfoAsync();
+
+        Assert.True(result.Ok);
+        Assert.Contains("резервные копии в этой сборке не подключены", result.MessageRu);
+        Assert.Contains("\"backups\":0", result.DataJson);
+    }
+
+    [Fact]
+    public async Task RestoreDatabase_без_подтверждения_отказывает_а_не_восстанавливает()
+    {
+        var backups = new DatabaseBackupService(_database);
+        Assert.NotNull(await backups.CreateBackupAsync());
+
+        EngineOperationResult result = await Build(backups: backups).RestoreDatabaseAsync(confirm: false);
+
+        Assert.False(result.Ok);
+        Assert.Contains("confirm=yes", result.MessageRu);
+        Assert.Contains("пропадут", result.MessageRu);
+    }
+
+    [Fact]
+    public async Task RestoreDatabase_ставит_копию_на_место_и_говорит_о_потере_записей()
+    {
+        var backups = new DatabaseBackupService(_database);
+        Assert.NotNull(await backups.CreateBackupAsync());
+
+        // После копии появилась запись — именно её восстановление обязано потерять (и сказать об этом).
+        var journal = new AuditJournalRepository(_database);
+        await journal.BeginPendingOperationAsync("op-restore", null, "ROUTE_ADD", "203.0.113.7", "{}");
+        Assert.Single(await journal.GetPendingOperationsAsync());
+
+        EngineOperationResult result = await Build(backups: backups).RestoreDatabaseAsync(confirm: true);
+
+        Assert.True(result.Ok);
+        Assert.Contains("восстановлена из копии", result.MessageRu);
+        Assert.Contains("пропали", result.MessageRu);
+        Assert.Empty(await journal.GetPendingOperationsAsync());
+        Assert.Contains("\"remainingBackups\":", result.DataJson);
+
+        // Читаемая база перед заменой сохранена рядом: у человека остаётся путь назад.
+        string? previous = Directory
+            .GetFiles(Path.GetDirectoryName(_databasePath)!, Path.GetFileName(_databasePath) + ".before-restore-*")
+            .FirstOrDefault();
+        Assert.NotNull(previous);
+        Assert.Contains("прежний файл базы сохранён", result.MessageRu, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RestoreDatabase_без_копий_честно_отказывает()
+    {
+        var backups = new DatabaseBackupService(_database);
+
+        EngineOperationResult result = await Build(backups: backups).RestoreDatabaseAsync(confirm: true);
+
+        Assert.False(result.Ok);
+        Assert.Contains("резервных копий базы нет", result.MessageRu);
+    }
+
     private LiveEngineOperations Build(
         ITweakCatalog? catalog = null,
         ISnapshotService? snapshots = null,
@@ -491,7 +824,8 @@ public sealed class ServiceEngineTests : IDisposable
         Func<PerfProfile>? readProfile = null,
         Action<PerfProfile>? applyProfile = null,
         bool isElevationAvailable = true,
-        ISystemStateReader? stateReader = null) =>
+        ISystemStateReader? stateReader = null,
+        DatabaseBackupService? backups = null) =>
         new(
             catalog ?? new CatalogDouble(Tweak("A"), Tweak("B")),
             snapshots ?? new SnapshotDouble(),
@@ -501,7 +835,8 @@ public sealed class ServiceEngineTests : IDisposable
             realtime,
             readProfile,
             applyProfile,
-            stateReader: stateReader);
+            stateReader: stateReader,
+            backups: backups);
 
     private static SystemSnapshot Snapshot(string id, DateTime createdUtc) =>
         new(id, createdUtc, "тестовый снапшот", TweakProfilePreset.LowLatencyGaming, false, "hash", false, null, []);

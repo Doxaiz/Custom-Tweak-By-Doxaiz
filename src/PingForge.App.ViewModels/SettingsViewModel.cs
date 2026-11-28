@@ -19,7 +19,7 @@ public sealed class SettingsViewModel : ObservableObject
     private bool _closeToTray;
     private string _statusRu;
 
-    public SettingsViewModel(EngineClient engine, IAppSettingsStore store, IUserDialogs dialogs, RoutingSettingsViewModel? routing = null)
+    public SettingsViewModel(EngineClient engine, IAppSettingsStore store, IUserDialogs dialogs, RoutingSettingsViewModel? routing = null, SettingsCheckViewModel? check = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _store = store ?? throw new ArgumentNullException(nameof(dialogs));
@@ -38,12 +38,65 @@ public sealed class SettingsViewModel : ObservableObject
         // Блок «Сервер маршрутизации» (задача B) живёт здесь, в «Настройках»: узлы, поиск шлюзов,
         // измерение путей и выбор узла по умолчанию. Двойник передаётся в тестах — в бою свой.
         Routing = routing ?? new RoutingSettingsViewModel(engine, store, dialogs);
+
+        // Блок «Проверка настроек» (задача F): разбор конфликтов и советы по твикам на готовом
+        // коде PingForge.Analysis. Тоже только чтение и тоже с двойником в тестах.
+        Check = check ?? new SettingsCheckViewModel(
+            new UnavailableSettingsCheckAnalysis(),
+            _ => { });
+
+        ReturnAll = new ReturnAllViewModel(engine);
+        ReturnAll.AttachDialogs(dialogs);
+        Storage = new StorageInfoViewModel(engine);
+        Storage.AttachDialogs(dialogs);
+        Export = new SettingsExportViewModel(store, dialogs);
+        // Масштаб — из настроек: иначе выбранные 125 % слетали при каждом запуске, хотя кнопки
+        // обещали, что выбор останется.
+        UiScale = new UiScaleViewModel { Scale = settings.UiScale <= 0 ? 1.0 : settings.UiScale };
+
+        // Масштаб меняют пилюли в «Настройках» (двусторонняя привязка прямо к Scale), поэтому
+        // запоминаем его на каждое изменение, а не в отдельной кнопке: иначе выбор оставался
+        // только на экране до перезапуска.
+        UiScale.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(UiScaleViewModel.Scale))
+            {
+                PersistUiScale();
+            }
+        };
     }
 
     /// <summary>Узлы маршрутизации: список, поиск шлюзов, замер путей. Ничего не меняет сама по себе.</summary>
     public RoutingSettingsViewModel Routing { get; }
 
+    /// <summary>Проверка настроек: что мешает, что стоит изменить, что не проверено. Ничего не применяет.</summary>
+    public SettingsCheckViewModel Check { get; }
+
+    public ReturnAllViewModel ReturnAll { get; }
+
+    public StorageInfoViewModel Storage { get; }
+
+    public SettingsExportViewModel Export { get; }
+
+    public UiScaleViewModel UiScale { get; }
+
     public AsyncRelayCommand SaveCommand { get; }
+
+    /// <summary>
+    /// Запомнить масштаб. Сбой записи не отменяет масштаб — он уже на экране, — но и молчать
+    /// о нём нельзя: после перезапуска вернётся прежний.
+    /// </summary>
+    private void PersistUiScale()
+    {
+        try
+        {
+            _store.Save(_store.Load() with { UiScale = UiScale.Scale });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            StatusRu = $"Масштаб применён, но в файл не записался: {ex.Message}. После перезапуска вернётся прежний.";
+        }
+    }
 
     /// <summary>
     /// «Пройти мастер заново». Мастер показывается один раз, но выбор мог быть случайным —
@@ -125,13 +178,15 @@ public sealed class SettingsViewModel : ObservableObject
             // Читаем файл заново: в нём могли появиться поля, которые меняет не эта страница
             // (пройденный мастер первого запуска, запомненные пути к играм). «Собрать с нуля»
             // означало бы молча стереть их при первом же сохранении настроек.
-            AppSettings settings = _store.Load() with
+            AppSettings loaded = _store.Load();
+            AppSettings settings = loaded with
             {
                 PerfProfile = EngineNames.ProfileWireName(Profile),
                 OfferRestorePoint = OfferRestorePoint,
                 StartMinimized = false,
                 CloseToTray = CloseToTray,
-                JournalRowsShown = 20,
+                JournalRowsShown = loaded.JournalRowsShown <= 0 ? 200 : Math.Clamp(loaded.JournalRowsShown, 1, 500),
+                UiScale = UiScale.Scale,
             };
 
             _store.Save(settings);
@@ -163,4 +218,15 @@ public sealed class SettingsViewModel : ObservableObject
             StatusRu = ex.Message;
         }
     }
+}
+
+/// <summary>
+/// Честный «анализатор не подключён»: проверка настроек в этой сборке не работает, и кнопка
+/// говорит именно это, а не делает вид. В бою приложение подключает настоящий анализатор
+/// из PingForge.Analysis — этот класс остаётся для тестов и крайних случаев.
+/// </summary>
+internal sealed class UnavailableSettingsCheckAnalysis : ISettingsCheckAnalysis
+{
+    public Task<SettingsCheckReport> CheckAsync(CancellationToken ct = default) => throw new NotSupportedException(
+        "Анализатор настроек не подключён в этой сборке: проверка недоступна, «не проверено» — честный ответ.");
 }

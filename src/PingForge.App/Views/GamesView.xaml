@@ -1,4 +1,4 @@
-<UserControl x:Class="PingForge.App.Views.GamesView"
+﻿<UserControl x:Class="PingForge.App.Views.GamesView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <StackPanel>
@@ -24,9 +24,19 @@
                   ToolTip="Переискать библиотеки Steam и обычные папки" />
           <Button Style="{StaticResource GhostButton}" Content="Добавить игру" Margin="0,8,0,0"
                   Command="{Binding AddGameCommand}"
-                  ToolTip="Добавить .exe игры, которой нет в списке известных. Анти-чит у своей игры неизвестен." />
+                  ToolTip="Добавить игру, которой нет в списке известных: подойдёт .exe, ярлык с рабочего стола или ссылка — программа найдёт по ним файл игры. Анти-чит у своей игры неизвестен." />
         </StackPanel>
       </Grid>
+    </Border>
+
+    <!-- Задача D: где серверы игр. Регионы и порты — из справочника маршрутов, а не из разметки;
+         «пинга до региона» здесь нет: адресов дата-центров игры не публикуют. -->
+    <Border Style="{StaticResource Card}" x:Name="GameRegionsCard">
+      <StackPanel>
+        <TextBlock Text="{Binding Regions.HeadingTextRu}" FontWeight="SemiBold" />
+        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"
+                   Text="{Binding Regions.HonestNoteTextRu}" />
+      </StackPanel>
     </Border>
 
     <Border Style="{StaticResource Card}">
@@ -49,6 +59,12 @@
                            Text="{Binding AntiCheatRu}" />
                 <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"
                            Text="{Binding NoteRu}" />
+                <!-- Задача D: у карточки видно, где серверы этой игры и какие порты игра публикует.
+                     У игры вне справочника — честное «неизвестно», а не чужие регионы. -->
+                <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"
+                           Foreground="{StaticResource Muted}" Text="{Binding RegionsLineRu}" />
+                <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"
+                           Foreground="{StaticResource Muted}" Text="{Binding PortsLineRu}" />
                 <TextBlock Margin="0,6,0,0" FontSize="12" Foreground="{StaticResource Accent}" TextWrapping="Wrap"
                            Text="{Binding PathRu}" />
                 <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"
@@ -58,8 +74,9 @@
               <StackPanel Grid.Column="1" VerticalAlignment="Center" MinWidth="150">
                 <Button Style="{StaticResource PrimaryButton}" Content="{Binding OpenButtonRu}"
                         Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" />
-                <Button Style="{StaticResource GhostButton}" Content="Указать .exe" Margin="0,8,0,0"
-                        Command="{Binding ChoosePathCommand}" HorizontalAlignment="Stretch" />
+                <Button Style="{StaticResource GhostButton}" Content="Указать файл" Margin="0,8,0,0"
+                        Command="{Binding ChoosePathCommand}" HorizontalAlignment="Stretch"
+                        ToolTip="Подойдёт .exe, ярлык с рабочего стола или ссылка на игру." />
                 <Button Style="{StaticResource GhostButton}" Content="Переименовать" Margin="0,8,0,0"
                         Visibility="{Binding IsCustom, Converter={StaticResource BoolToVisibility}}"
                         Click="RenameCustomClick" HorizontalAlignment="Stretch" />

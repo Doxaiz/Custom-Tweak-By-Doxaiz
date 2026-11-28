@@ -71,14 +71,30 @@ public static class AdapterDirectoryParser
     }
 
     /// <summary>
-     /// Классификация адаптера по имени/описанию — только чтением, без единой попытки подключиться.
-     /// Список ключевых слов — это НЕ «поддержка сервисов»: так программа понимает, что шлюз принадлежит
-     /// туннельному адаптеру, и подписывает узел честно: «VPN-адаптер …».
-     /// </summary>
+    /// Классификация адаптера по имени/описанию — только чтением, без единой попытки подключиться.
+    /// Список ключевых слов — это НЕ «поддержка сервисов»: так программа понимает, что шлюз принадлежит
+    /// туннельному адаптеру, и подписывает узел честно: «VPN-адаптер …».
+    ///
+    /// «cloudflare», «warp», «1.1.1.1» и «zero trust» — маркеры бесплатного туннеля Cloudflare WARP:
+    /// его адаптер называется «CloudflareWARP», описание — «Cloudflare WARP Interface Tunnel», у
+    /// Zero Trust-сборки в имени бывает и адрес 1.1.1.1. Это бесплатный и безопасный способ сократить
+    /// путь, поэтому программа обязана узнавать туннель по имени и предлагать его узлом маршрутизации,
+    /// а не заставлять человека искать адаптер вручную.
+    /// </summary>
     public static bool LooksLikeVpn(AdapterInfo adapter) =>
         Matches(adapter,
             "wireguard", "wintun", "tun", "tap", "openvpn", "ikev2", "l2tp", "pptp", "vpn",
-            "tunnel", "expressvpn", "nordvpn", "proton", "tailscale", "amnezia", "впн");
+            "tunnel", "expressvpn", "nordvpn", "proton", "tailscale", "amnezia", "впн",
+            "cloudflare", "warp", "1.1.1.1", "zero trust");
+
+    /// <summary>
+    /// Бесплатный туннель Cloudflare WARP: адаптер «CloudflareWARP» (описание — «Cloudflare WARP
+    /// Interface Tunnel»). Выделен отдельной проверкой, а не общим списком VPN-маркеров, потому что
+    /// у него особое поведение в таблице маршрутов: маршруты через него помечены «On-link»,
+    /// отдельного IPv4-шлюза у туннеля нет.
+    /// </summary>
+    public static bool LooksLikeCloudflareWarp(AdapterInfo adapter) =>
+        Matches(adapter, "cloudflare", "warp");
 
     /// <summary>Петлевой адаптер — не канал: его шлюзы (127.0.0.1) узлами быть не могут.</summary>
     public static bool LooksLikeLoopback(AdapterInfo adapter) =>
@@ -96,6 +112,18 @@ public static class AdapterDirectoryParser
 }
 
 /// <summary>
+/// Результат автопоиска: найденные узлы и честные пояснения о туннелях, которые узлом стать
+/// не могут. Пояснение — не «декорация»: человек с включённым Cloudflare WARP обязан узнать,
+/// почему туннель есть в системе, а в списке узлов его нет, а не гадать.
+/// </summary>
+public sealed record RouteDiscoveryResult(
+    IReadOnlyList<RoutingNodeEntry> Nodes,
+    IReadOnlyList<string> NotesRu)
+{
+    public static RouteDiscoveryResult Empty { get; } = new([], []);
+}
+
+/// <summary>
 /// Автопоиск узлов маршрутизации: только реальные шлюзы активных адаптеров из таблицы маршрутов,
 /// плюс шлюзы VPN-адаптеров — по их имени, без единой попытки подключиться к чужому VPN.
 ///
@@ -107,10 +135,22 @@ public static class AdapterDirectoryParser
 ///   • «текущий шлюз» — следующий узел маршрута по умолчанию с наименьшей метрикой;
 ///   • «VPN-адаптер “WireGuard”» — шлюз туннельного адаптера (по его имени);
 ///   • «второй шлюз» — любой другой шлюз из таблицы.
+///
+/// Отдельно — туннели без шлюза (Cloudflare WARP и другие wintun-туннели): их маршруты помечены
+/// «On-link», то есть трафик уходит «в интерфейс», а не через адрес. Выдумывать адрес для такого
+/// туннеля нельзя — вместо узела программа возвращает честное пояснение в <see cref="RouteDiscoveryResult.NotesRu"/>.
 /// </summary>
 public static class RoutingNodeDiscovery
 {
     public static IReadOnlyList<RoutingNodeEntry> Discover(
+        IReadOnlyList<RouteTableEntry> routes,
+        IReadOnlyList<AdapterInfo> adapters) => DiscoverWithNotes(routes, adapters).Nodes;
+
+    /// <summary>
+    /// Тот же поиск, но с пояснениями: какие туннели работают, почему они не стали узлами
+    /// и что человек может сделать руками. Пояснения не влияют на список узлов.
+    /// </summary>
+    public static RouteDiscoveryResult DiscoverWithNotes(
         IReadOnlyList<RouteTableEntry> routes,
         IReadOnlyList<AdapterInfo> adapters)
     {
@@ -132,8 +172,24 @@ public static class RoutingNodeDiscovery
 
         var found = new Dictionary<string, RoutingNodeEntry>(StringComparer.OrdinalIgnoreCase);
 
+        // Какие адаптеры реально «дали» узел: для пояснений о туннелях без шлюза.
+        var adaptersWithGatewayNode = new HashSet<int>();
+        // Какие адаптеры вообще участвуют в таблице маршрутов (включая on-link строки).
+        var adaptersCarryingRoutes = new HashSet<int>();
+
         foreach (RouteTableEntry route in routes)
         {
+            AdapterInfo? routeAdapter = null;
+            if (route.InterfaceAddress.Length > 0)
+            {
+                byAddress.TryGetValue(route.InterfaceAddress, out routeAdapter);
+            }
+
+            if (routeAdapter is { } carrying)
+            {
+                adaptersCarryingRoutes.Add(carrying.IfIndex);
+            }
+
             // On-link — не узел: там следующий шаг — сам интерфейс, вести «через него» некуда.
             if (route.IsOnLink || string.IsNullOrWhiteSpace(route.NextHop))
             {
@@ -145,13 +201,7 @@ public static class RoutingNodeDiscovery
                 continue;
             }
 
-            AdapterInfo? adapter = null;
-            if (route.InterfaceAddress.Length > 0)
-            {
-                byAddress.TryGetValue(route.InterfaceAddress, out adapter);
-            }
-
-            if (adapter is { } known && (!known.IsUp || AdapterDirectoryParser.LooksLikeLoopback(known) || AdapterDirectoryParser.LooksLikeVirtualBridge(known)))
+            if (routeAdapter is { } known && (!known.IsUp || AdapterDirectoryParser.LooksLikeLoopback(known) || AdapterDirectoryParser.LooksLikeVirtualBridge(known)))
             {
                 continue;
             }
@@ -161,8 +211,8 @@ public static class RoutingNodeDiscovery
                 continue;
             }
 
-            string adapterName = adapter is not null
-                ? (adapter.Alias.Length > 0 ? adapter.Alias : adapter.Description)
+            string adapterName = routeAdapter is not null
+                ? (routeAdapter.Alias.Length > 0 ? routeAdapter.Alias : routeAdapter.Description)
                 : string.Empty;
 
             string name = adapterName.Length > 0 ? adapterName : address;
@@ -172,7 +222,7 @@ public static class RoutingNodeDiscovery
             {
                 source = RoutingNodeSourceRu.CurrentGateway;
             }
-            else if (adapter is not null && AdapterDirectoryParser.LooksLikeVpn(adapter))
+            else if (routeAdapter is not null && AdapterDirectoryParser.LooksLikeVpn(routeAdapter))
             {
                 source = RoutingNodeSourceRu.VpnAdapter(adapterName);
             }
@@ -181,18 +231,74 @@ public static class RoutingNodeDiscovery
                 source = RoutingNodeSourceRu.SecondGateway;
             }
 
+            if (routeAdapter is { } nodeAdapter)
+            {
+                adaptersWithGatewayNode.Add(nodeAdapter.IfIndex);
+            }
+
             found[address] = new RoutingNodeEntry(address, name, source);
         }
 
-        // Порядок: текущий шлюз, затем VPN, затем остальные — внутри групп по алфавиту,
-        // чтобы список был предсказуем и не зависел от порядка строк в выводе route print.
-        return found.Values
+        List<RoutingNodeEntry> nodes = found.Values
+            // Порядок: текущий шлюз, затем VPN, затем остальные — внутри групп по алфавиту,
+            // чтобы список был предсказуем и не зависел от порядка строк в выводе route print.
             .GroupBy(node => node.SourceRu == RoutingNodeSourceRu.CurrentGateway
                 ? 0
                 : node.SourceRu.StartsWith("VPN-адаптер ", StringComparison.Ordinal) ? 1 : 2)
             .OrderBy(group => group.Key)
             .SelectMany(group => group.OrderBy(node => node.Address, StringComparer.Ordinal))
             .ToList();
+
+        return new RouteDiscoveryResult(nodes, BuildTunnelNotes(adapters, adaptersWithGatewayNode, adaptersCarryingRoutes));
+    }
+
+    /// <summary>
+    /// Пояснения о работающих туннелях, которые не дали узла. Правило честное: туннель обязан
+    /// реально участвовать в таблице маршрутов (поднятый, но неиспользуемый адаптер — не новость),
+    /// и у него не должно быть ни одного шлюза-узла. Тогда человек видит объяснение, а не пустоту.
+    /// </summary>
+    private static IReadOnlyList<string> BuildTunnelNotes(
+        IReadOnlyList<AdapterInfo> adapters,
+        HashSet<int> adaptersWithGatewayNode,
+        HashSet<int> adaptersCarryingRoutes)
+    {
+        var notes = new List<string>();
+
+        foreach (AdapterInfo adapter in adapters)
+        {
+            if (!adapter.IsUp
+                || AdapterDirectoryParser.LooksLikeLoopback(adapter)
+                || AdapterDirectoryParser.LooksLikeVirtualBridge(adapter)
+                || !AdapterDirectoryParser.LooksLikeVpn(adapter))
+            {
+                continue;
+            }
+
+            if (adaptersWithGatewayNode.Contains(adapter.IfIndex) || !adaptersCarryingRoutes.Contains(adapter.IfIndex))
+            {
+                continue;
+            }
+
+            string adapterName = adapter.Alias.Length > 0 ? adapter.Alias : adapter.Description;
+
+            if (AdapterDirectoryParser.LooksLikeCloudflareWarp(adapter))
+            {
+                notes.Add(
+                    $"Бесплатный туннель Cloudflare WARP работает (адаптер «{adapterName}»), но IPv4-шлюза у него нет: " +
+                    "маршруты через туннель помечены «On-link», трафик уходит «в интерфейс», и направить маршрут игры " +
+                    "«через узел» по адресу невозможно — такого адреса в таблице не существует. Проверить путь через WARP " +
+                    "можно только целиком: включить или выключить его и сравнить замер «до/после».");
+            }
+            else
+            {
+                notes.Add(
+                    $"Туннельный адаптер «{adapterName}» работает, но IPv4-шлюза у него в таблице маршрутов нет " +
+                    "(маршруты помечены «On-link»): направить маршрут игры «через узел» по адресу невозможно. " +
+                    "Если туннелем можно управлять — сравните замер «до/после» с ним и без него.");
+            }
+        }
+
+        return notes;
     }
 
     /// <summary>
@@ -220,5 +326,31 @@ public static class RoutingNodeDiscovery
         }
 
         return Discover(routes, adapterList);
+    }
+
+    /// <summary>
+    /// То же чтение, но с пояснениями о туннелях без шлюза (Cloudflare WARP и другие wintun-туннели):
+    /// узлов они не дают, и человек должен видеть причину, а не молчаливый пропуск.
+    /// </summary>
+    public static async Task<RouteDiscoveryResult> DiscoverWithNotesAsync(
+        IRouteTableReader table,
+        IAdapterDirectory? adapters,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+
+        IReadOnlyList<RouteTableEntry> routes = await table.ReadAsync(ct).ConfigureAwait(false);
+
+        IReadOnlyList<AdapterInfo> adapterList;
+        try
+        {
+            adapterList = adapters is null ? [] : await adapters.ReadAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            adapterList = [];
+        }
+
+        return DiscoverWithNotes(routes, adapterList);
     }
 }

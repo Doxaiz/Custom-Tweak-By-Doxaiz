@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using PingForge.Core.Abstractions;
+using PingForge.Core.Models;
 using PingForge.Network.Actions;
 using PingForge.Orchestration.Realtime;
 
@@ -10,7 +11,7 @@ namespace PingForge.Network.Routes;
 /// <summary>
 /// Результат замера одного пути: прямой или через узел.
 /// <paramref name="Success"/> = false — узел не измерился, <paramref name="ProblemRu"/> объясняет почему.
-/// Чисел без измерения не бывает: <paramref name="Measurement"/> null ровно тогда, когда Success false.
+/// Чисел без измерения не бывает: <paramref name="MedianRttMs"/> null ровно тогда, когда Success false.
 /// </summary>
 public sealed record RoutePathProbeResult(
     string Address,
@@ -20,7 +21,8 @@ public sealed record RoutePathProbeResult(
     double? MedianRttMs,
     double? JitterMs,
     double? LossPercent,
-    string? ProblemRu);
+    string? ProblemRu,
+    double? SpreadMs = null);
 
 /// <summary>Итог сравнения путей до одного адреса: честный вердикт и состояние таблицы маршрутов.</summary>
 public sealed record RoutePathComparisonReport(
@@ -28,6 +30,7 @@ public sealed record RoutePathComparisonReport(
     RoutePathProbeResult? Direct,
     IReadOnlyList<RoutePathProbeResult> ViaNodes,
     RoutingNodeEntry? Winner,
+    RoutingNodeEntry? RunnerUp,
     string VerdictRu,
     bool TableRestored,
     string? TableProblemRu)
@@ -52,8 +55,19 @@ public sealed record RoutePathComparisonReport(
 /// </summary>
 public sealed class RoutePathComparisonService
 {
-    /// <summary>Минимальный заметный выигрыш медианы, мс. Меньше — это погрешность измерения, а не победа.</summary>
-    public const double NotableImprovementMs = 0.5;
+    /// <summary>
+    /// Минимальный заметный выигрыш медианы, мс. Меньше — это погрешность измерения, а не победа.
+    /// Число одно на программу: те же слова о пороге говорит живая оптимизация (<see cref="ThresholdNotes"/>).
+    /// </summary>
+    public const double NotableImprovementMs = ThresholdNotes.MinimalGainMs;
+
+    /// <summary>
+    /// Сколько серий замера делает каждый путь. Две серии вперемешку (прямой → узел А → узел Б →
+    /// прямой → …) вместо «прямой один раз в начале, узлы после»: сеть дрейфует, и один замер
+    /// в начале дал бы одной стороне фору, которую потом нечем заметить. Обе серии обязаны
+    /// измериться: одна серия — это не медиана, а один случай.
+    /// </summary>
+    public const int MeasurementRounds = 2;
 
     /// <summary>Метрика временного маршрута замера: минимальная, чтобы /32 точно выигрывал у маршрута по умолчанию.</summary>
     public const int ProbeMetric = 1;
@@ -80,7 +94,7 @@ public sealed class RoutePathComparisonService
         if (!RoutingNodeValidation.NormalizeIpv4(targetIp, out string target))
         {
             return new RoutePathComparisonReport(
-                targetIp, null, [], null,
+                targetIp, null, [], null, null,
                 $"Адрес сервера «{targetIp}» не IPv4: временный маршрут на имя не ставится, сравнивать пути не буду.",
                 TableRestored: true, TableProblemRu: null);
         }
@@ -97,89 +111,171 @@ public sealed class RoutePathComparisonService
                 nodes.Select(node => new RoutePathProbeResult(
                     node.Address, node.Name, node.SourceRu, false, null, null, null,
                     $"к {target} уже есть маршрут через {foreign.NextHop} (метрика {foreign.Metric}) — чужой маршрут не перезаписываю")).ToList(),
-                null,
+                null, null,
                 $"К {target} уже есть маршрут /32, созданный не программой: сравнивать пути не буду, чтобы его не трогать. " +
                 "Ничего не меняем.",
                 TableRestored: true, TableProblemRu: null);
         }
 
-        RoutePathProbeResult direct = await MeasureDirectAsync(target, port, ct).ConfigureAwait(false);
-
-        var via = new List<RoutePathProbeResult>(nodes.Count);
-        string? tableProblem = null;
-        bool restored = true;
-
         // Шлюз маршрута по умолчанию из исходной таблицы: идти «через него» — это прямой путь.
         string defaultGateway = RouteTableParser.FindDefaultRoute(before)?.NextHop ?? string.Empty;
 
-        foreach (RoutingNodeEntry node in nodes)
+        string? tableProblem = null;
+        bool restored = true;
+
+        // Что замеряем временным /32: узлы со строгим IPv4, кроме текущего шлюза (это тот же
+        // прямой путь). Остальные узлы получают честный ответ без замеров.
+        var pending = new List<(int Index, RoutingNodeEntry Node, string Hop)>();
+        var fixedResults = new Dictionary<int, RoutePathProbeResult>();
+        var gatewayIndexes = new List<int>();
+
+        for (int i = 0; i < nodes.Count; i++)
         {
-            ct.ThrowIfCancellationRequested();
+            RoutingNodeEntry node = nodes[i];
 
             if (!RoutingNodeValidation.NormalizeIpv4(node.Address, out string hop))
             {
-                via.Add(new RoutePathProbeResult(node.Address, node.Name, node.SourceRu, false, null, null, null,
-                    "адрес узла не похож на строгий IPv4 — пропускаю, угадывать не стану"));
+                fixedResults[i] = new RoutePathProbeResult(node.Address, node.Name, node.SourceRu, false, null, null, null,
+                    "адрес узла не похож на строгий IPv4 — пропускаю, угадывать не стану");
                 continue;
             }
 
             if (defaultGateway.Length > 0 && hop.Equals(defaultGateway, StringComparison.OrdinalIgnoreCase))
             {
-                // Идти «через текущий шлюз» — это и есть прямой путь: временный /32 к тому же шлюзу
-                // ничего не меняет, а лишний маршрут в системе на время замера не нужен.
-                via.Add(new RoutePathProbeResult(hop, node.Name, node.SourceRu, direct.Success,
-                    direct.MedianRttMs, direct.JitterMs, direct.LossPercent,
-                    direct.Success ? "совпадает с текущим шлюзом — это тот же прямой путь" : direct.ProblemRu));
+                // Временный /32 к тому же шлюзу ничего не меняет, а лишний маршрут в системе
+                // на время замера не нужен: числа берём у прямого пути.
+                gatewayIndexes.Add(i);
                 continue;
             }
 
-            (bool added, string? addProblem) = await TryAddTempRouteAsync(target, hop, ct).ConfigureAwait(false);
-            if (!added)
+            pending.Add((i, node, hop));
+        }
+
+        var directRounds = new List<RoutePathProbeResult>(MeasurementRounds);
+        var nodeRounds = new Dictionary<int, List<RoutePathProbeResult>>();
+
+        for (int round = 0; round < MeasurementRounds; round++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // После первой серии чередовать нечего — не тратим замер впустую.
+            if (round > 0 && pending.Count == 0)
             {
-                via.Add(new RoutePathProbeResult(node.Address, node.Name, node.SourceRu, false, null, null, null, addProblem));
-                continue;
+                break;
             }
 
-            PathMeasurement window;
-            string? measureProblem = null;
-            try
-            {
-                window = await _measurement.MeasurePathAsync(target, Math.Max(0, port), ct).ConfigureAwait(false);
-                if (!window.IsMeasurable)
-                {
-                    measureProblem = window.MethodRu;
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                window = PathMeasurement.Unmeasurable("замер не выполнился");
-                measureProblem = $"замер упал ({ex.GetType().Name}: {ex.Message})";
-            }
-            finally
-            {
-                // Снятие временного маршрута — в finally при любом исходе: и когда замер ответил,
-                // и когда бросил исключение.
-                (bool removed, string? removeProblem) = await RemoveTempRouteAndVerifyAsync(target, hop, ct).ConfigureAwait(false);
-                if (!removed)
-                {
-                    restored = false;
-                    tableProblem = removeProblem;
-                }
-            }
+            RoutePathProbeResult directRound = await MeasureDirectAsync(target, port, ct).ConfigureAwait(false);
+            directRounds.Add(directRound);
 
-            via.Add(new RoutePathProbeResult(
-                hop, node.Name, node.SourceRu,
-                window.IsMeasurable,
-                window.IsMeasurable ? Math.Round(window.RttMedianMs, 2) : null,
-                window.IsMeasurable ? Math.Round(window.JitterMs, 2) : null,
-                window.IsMeasurable ? Math.Round(window.LossPercent, 2) : null,
-                measureProblem));
+            for (int p = 0; p < pending.Count; p++)
+            {
+                (int index, RoutingNodeEntry node, string hop) = pending[p];
+
+                (bool added, string? addProblem) = await TryAddTempRouteAsync(target, hop, ct).ConfigureAwait(false);
+                if (!added)
+                {
+                    // Маршрут не поставился — повторять в следующей серии бессмысленно: ответ уже честный.
+                    // Если первая серия состоялась, вторая «пустая» отменяет путь целиком: одна серия —
+                    // это не медиана (MergeRounds так и скажет).
+                    var failedRound = new RoutePathProbeResult(node.Address, node.Name, node.SourceRu, false, null, null, null, addProblem);
+                    if (nodeRounds.TryGetValue(index, out List<RoutePathProbeResult>? already))
+                    {
+                        already.Add(failedRound);
+                    }
+                    else
+                    {
+                        fixedResults[index] = failedRound;
+                    }
+
+                    pending.RemoveAt(p);
+                    p--;
+                    continue;
+                }
+
+                PathMeasurement window;
+                string? measureProblem = null;
+                try
+                {
+                    window = await _measurement.MeasurePathAsync(target, Math.Max(0, port), ct).ConfigureAwait(false);
+                    if (!window.IsMeasurable)
+                    {
+                        measureProblem = window.MethodRu;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    window = PathMeasurement.Unmeasurable("замер не выполнился");
+                    measureProblem = $"замер упал ({ex.GetType().Name}: {ex.Message})";
+                }
+                finally
+                {
+                    // Снятие временного маршрута — в finally при любом исходе: и когда замер ответил,
+                    // и когда бросил исключение.
+                    (bool removed, string? removeProblem) = await RemoveTempRouteAndVerifyAsync(target, hop, ct).ConfigureAwait(false);
+                    if (!removed)
+                    {
+                        restored = false;
+                        tableProblem = removeProblem;
+                    }
+                }
+
+                if (!nodeRounds.TryGetValue(index, out List<RoutePathProbeResult>? rounds))
+                {
+                    rounds = new List<RoutePathProbeResult>(MeasurementRounds);
+                    nodeRounds[index] = rounds;
+                }
+
+                rounds.Add(new RoutePathProbeResult(
+                    hop, node.Name, node.SourceRu,
+                    window.IsMeasurable,
+                    window.IsMeasurable ? Math.Round(window.RttMedianMs, 2) : null,
+                    window.IsMeasurable && window.JitterMs is { } jitter ? Math.Round(jitter, 2) : null,
+                    window.IsMeasurable && window.LossPercent is { } loss ? Math.Round(loss, 2) : null,
+                    measureProblem));
+
+                if (!restored)
+                {
+                    // Временный /32 не снялся — продолжать замеры нельзя: сначала честно сообщаем о проблеме.
+                    break;
+                }
+            }
 
             if (!restored)
             {
-                // Временный /32 не снялся — продолжать замеры нельзя: сначала честно сообщаем о проблеме.
                 break;
             }
+        }
+
+        RoutePathProbeResult direct = MergeRounds(target, "прямой путь", "замер без изменения маршрутов", directRounds)
+            ?? new RoutePathProbeResult(target, "прямой путь", "замер без изменения маршрутов", false, null, null, null,
+                "прямой замер не выполнялся");
+
+        var via = new List<RoutePathProbeResult>(nodes.Count);
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            RoutingNodeEntry node = nodes[i];
+
+            if (fixedResults.TryGetValue(i, out RoutePathProbeResult? fixedResult))
+            {
+                via.Add(fixedResult);
+                continue;
+            }
+
+            if (gatewayIndexes.Contains(i))
+            {
+                via.Add(new RoutePathProbeResult(node.Address, node.Name, node.SourceRu, direct.Success,
+                    direct.MedianRttMs, direct.JitterMs, direct.LossPercent,
+                    direct.Success ? "совпадает с текущим шлюзом — это тот же прямой путь" : direct.ProblemRu,
+                    direct.SpreadMs));
+                continue;
+            }
+
+            RoutePathProbeResult? merged = nodeRounds.TryGetValue(i, out List<RoutePathProbeResult>? rounds)
+                ? MergeRounds(node.Address, node.Name, node.SourceRu, rounds)
+                : null;
+
+            via.Add(merged ?? new RoutePathProbeResult(node.Address, node.Name, node.SourceRu, false, null, null, null,
+                "замер через этот узел не выполнялся: путь не проверен"));
         }
 
         (bool finalRestored, string? finalProblem) = await VerifyTableMatchesAsync(before, ct).ConfigureAwait(false);
@@ -189,6 +285,107 @@ public sealed class RoutePathComparisonService
         return BuildVerdict(target, direct, via, nodes, restored, tableProblem);
     }
 
+    /// <summary>
+    /// Свести серии в одно число: медиана медиан и разброс (максимум минус минимум).
+    /// Одна неудавшаяся серия отменяет весь путь: выдавать одну серию за медиану нельзя —
+    /// именно так и появляются «выигрыши» из случайного скачка.
+    /// </summary>
+    private static RoutePathProbeResult? MergeRounds(
+        string address,
+        string name,
+        string sourceRu,
+        IReadOnlyList<RoutePathProbeResult> rounds)
+    {
+        if (rounds.Count == 0)
+        {
+            return null;
+        }
+
+        int failedIndex = -1;
+        for (int i = 0; i < rounds.Count; i++)
+        {
+            if (!rounds[i].Success)
+            {
+                failedIndex = i;
+                break;
+            }
+        }
+
+        if (failedIndex >= 0)
+        {
+            RoutePathProbeResult failed = rounds[failedIndex];
+            string reason = failed.ProblemRu ?? "замер не удался";
+            return failed with
+            {
+                ProblemRu = rounds.Count > 1
+                    ? $"{reason} (серия {failedIndex + 1} из {rounds.Count}: путь не подтверждён)"
+                    : reason
+            };
+        }
+
+        List<double> medians = rounds.Select(round => round.MedianRttMs!.Value).ToList();
+        double spread = medians.Max() - medians.Min();
+
+        return new RoutePathProbeResult(
+            rounds[0].Address,
+            name,
+            sourceRu,
+            true,
+            Math.Round(Median(medians), 2),
+            // В медиану идут только измеренные значения: ноль вместо «не измерено» исказил бы её.
+            MedianOrNull(rounds.Select(round => round.JitterMs)),
+            MedianOrNull(rounds.Select(round => round.LossPercent)),
+            null,
+            Math.Round(spread, 2));
+    }
+
+    /// <summary>Медиана по измеренным значениям; пусто — значит нечего усреднять, а не ноль.</summary>
+    private static double? MedianOrNull(IEnumerable<double?> values)
+    {
+        List<double> measured = values.Where(value => value.HasValue).Select(value => value!.Value).ToList();
+        return measured.Count == 0 ? null : Math.Round(Median(measured), 2);
+    }
+
+    private static double Median(IReadOnlyList<double> values)
+    {
+        if (values.Count == 0)
+        {
+            return 0;
+        }
+
+        List<double> sorted = values.OrderBy(value => value).ToList();
+        int middle = sorted.Count / 2;
+        return sorted.Count % 2 == 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2.0;
+    }
+
+    /// <summary>
+    /// Измерен ли разброс у обоих путей. Пока шум хотя бы одного неизвестен, «выигрыш больше шума»
+    /// назвать нельзя — и притворяться, что он равен нулю, тоже.
+    /// </summary>
+    public static bool NoiseMeasured(RoutePathProbeResult first, RoutePathProbeResult second) =>
+        first.SpreadMs.HasValue && second.SpreadMs.HasValue;
+
+    /// <summary>
+    /// Какой выигрыш медианы считать настоящим: не меньше <see cref="NotableImprovementMs"/>, и
+    /// больше разброса серий обоих путей — но только того разброса, который измерен. Неизмеренный
+    /// в формулу не подставляется нулём: о нём говорит <see cref="NoiseNoteRu"/>, и решение принимается
+    /// с открытыми глазами. Иначе сеть дрейфанула, а мы бы записали это в победу маршрута.
+    /// </summary>
+    public static double RequiredGainMs(RoutePathProbeResult first, RoutePathProbeResult second)
+    {
+        double measuredSpread = new[] { first.SpreadMs, second.SpreadMs }
+            .Where(spread => spread.HasValue)
+            .Select(spread => spread!.Value)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        return Math.Max(NotableImprovementMs, measuredSpread);
+    }
+
+    /// <summary>Слова о неизмеренном шуме. Пусто — когда разброс обоих путей измерен.</summary>
+    public static string NoiseNoteRu(RoutePathProbeResult first, RoutePathProbeResult second) =>
+        NoiseMeasured(first, second) ? string.Empty : " " + ThresholdNotes.NoiseUnmeasuredRu;
+
     private async Task<RoutePathProbeResult> MeasureDirectAsync(string target, int port, CancellationToken ct)
     {
         try
@@ -196,8 +393,8 @@ public sealed class RoutePathComparisonService
             PathMeasurement direct = await _measurement.MeasurePathAsync(target, Math.Max(0, port), ct).ConfigureAwait(false);
             return new RoutePathProbeResult(target, "прямой путь", "замер без изменения маршрутов", direct.IsMeasurable,
                 direct.IsMeasurable ? Math.Round(direct.RttMedianMs, 2) : null,
-                direct.IsMeasurable ? Math.Round(direct.JitterMs, 2) : null,
-                direct.IsMeasurable ? Math.Round(direct.LossPercent, 2) : null,
+                direct.IsMeasurable && direct.JitterMs is { } jitter ? Math.Round(jitter, 2) : null,
+                direct.IsMeasurable && direct.LossPercent is { } loss ? Math.Round(loss, 2) : null,
                 direct.IsMeasurable ? null : direct.MethodRu);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -300,7 +497,7 @@ public sealed class RoutePathComparisonService
 
         if (nodes.Count == 0)
         {
-            return new RoutePathComparisonReport(target, direct, via, null,
+            return new RoutePathComparisonReport(target, direct, via, null, null,
                 "Узлов для сравнения нет: искать не среди чего. Добавьте второй шлюз или сохраните узел вручную — " +
                 "и только потом измеряйте." + tableTail,
                 restored, tableProblem);
@@ -309,7 +506,7 @@ public sealed class RoutePathComparisonService
         if (!direct.Success)
         {
             string reason = direct.ProblemRu ?? "прямой путь не измерился";
-            return new RoutePathComparisonReport(target, direct, via, null,
+            return new RoutePathComparisonReport(target, direct, via, null, null,
                 $"Прямой путь до {target} не измерился ({reason}): сравнивать честно не с чем, узел не выбираю, " +
                 "маршруты не меняю." + tableTail,
                 restored, tableProblem);
@@ -326,46 +523,69 @@ public sealed class RoutePathComparisonService
                 .Select(result => $"«{result.Name}»: {result.ProblemRu}")
                 .Take(3));
 
-            return new RoutePathComparisonReport(target, direct, via, null,
+            return new RoutePathComparisonReport(target, direct, via, null, null,
                 $"Ни один узел не измерился до {target} ({(problems.Length > 0 ? problems : "замеры не задались")}). " +
                 $"Прямой путь: медиана {FormatMs(direct.MedianRttMs!.Value)} мс — его и оставляем, ничего не меняем." + tableTail,
                 restored, tableProblem);
         }
 
         // Победитель среди узлов: медиана → джиттер → потери.
-        RoutePathProbeResult best = measured
+        List<RoutePathProbeResult> sorted = measured
             .OrderBy(result => result.MedianRttMs!.Value)
             .ThenBy(result => result.JitterMs ?? double.MaxValue)
             .ThenBy(result => result.LossPercent ?? double.MaxValue)
-            .First();
+            .ToList();
+        RoutePathProbeResult best = sorted[0];
+        RoutingNodeEntry? winner = nodes.FirstOrDefault(node =>
+            node.Address.Equals(best.Address, StringComparison.OrdinalIgnoreCase));
+        RoutingNodeEntry? runnerUp = null;
+        if (sorted.Count > 1)
+        {
+            RoutePathProbeResult second = sorted[1];
+            runnerUp = nodes.FirstOrDefault(node =>
+                node.Address.Equals(second.Address, StringComparison.OrdinalIgnoreCase));
+        }
 
         double gain = direct.MedianRttMs!.Value - best.MedianRttMs!.Value;
 
-        if (gain >= NotableImprovementMs)
-        {
-            RoutingNodeEntry? winner = nodes.FirstOrDefault(node =>
-                node.Address.Equals(best.Address, StringComparison.OrdinalIgnoreCase));
+        // Порог — не только «0,5 мс», но и разброс серий: сеть дрейфует, и выигрыш меньше
+        // собственного разброса замеров — это шум, а не победа маршрута.
+        double required = RequiredGainMs(direct, best);
 
+        // Разброс — не украшение вердикта: он либо измерен у обоих путей и назван числом, либо
+        // неизмерен, и тогда так и сказано. Подставлять ноль вместо него нельзя.
+        string spreadNote = !NoiseMeasured(direct, best)
+            ? NoiseNoteRu(direct, best)
+            : required > NotableImprovementMs
+                ? $" Разброс серий замера ±{FormatMs(required)} мс, поэтому меньший выигрыш не засчитывается."
+                : string.Empty;
+
+        if (gain >= required)
+        {
             string tieNote = measured.Count > 1
                 ? $" Лучший из {measured.Count} измеренных (сравнение: медиана, при равенстве — джиттер, затем потери)."
                 : string.Empty;
+            string runnerNote = runnerUp is not null
+                ? $" Резерв — «{runnerUp.Name}» ({runnerUp.Address}): горячий шлюз на случай просадки основного."
+                : string.Empty;
 
-            return new RoutePathComparisonReport(target, direct, via, winner,
+            return new RoutePathComparisonReport(target, direct, via, winner, runnerUp,
                 $"Через «{best.Name}» ({best.Address}) медиана {FormatMs(best.MedianRttMs!.Value)} мс против " +
                 $"{FormatMs(direct.MedianRttMs.Value)} мс напрямую — выигрыш {FormatMs(gain)} мс. Этот путь можно применять." +
-                tieNote + tableTail,
+                tieNote + runnerNote + spreadNote + tableTail,
                 restored, tableProblem);
         }
 
-        if (gain > -NotableImprovementMs)
+        if (gain > -required)
         {
-            return new RoutePathComparisonReport(target, direct, via, null,
+            return new RoutePathComparisonReport(target, direct, via, null, runnerUp,
                 $"Прямой путь не хуже: медиана {FormatMs(direct.MedianRttMs.Value)} мс против " +
-                $"{FormatMs(best.MedianRttMs!.Value)} мс через «{best.Name}» — разница в пределах погрешности. Ничего не меняем." + tableTail,
+                $"{FormatMs(best.MedianRttMs!.Value)} мс через «{best.Name}» — разница в пределах погрешности. Ничего не меняем." +
+                spreadNote + tableTail,
                 restored, tableProblem);
         }
 
-        return new RoutePathComparisonReport(target, direct, via, null,
+        return new RoutePathComparisonReport(target, direct, via, null, runnerUp,
             $"Прямой путь короче на {FormatMs(Math.Abs(gain))} мс (медиана {FormatMs(direct.MedianRttMs.Value)} против " +
             $"{FormatMs(best.MedianRttMs!.Value)} через «{best.Name}») — ничего не меняем." + tableTail,
             restored, tableProblem);
@@ -387,7 +607,7 @@ public sealed class RoutePathComparisonService
 
 /// <summary>
 /// Проводник настроек маршрутизации до живого оптимизатора. Единственный источник
-/// <see cref="WindowsGameNetworkPlatform.RouteTarget"/> во время оптимизации — так решение
+/// WindowsGameNetworkPlatform во время оптимизации — так решение
 /// о пути принимается по замерам и ровно тогда, когда пользователь нажал «Оптимизировать».
 ///
 /// Правила:
@@ -427,6 +647,10 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
     /// <summary>Последний вердикт сравнения — его показывают статус оптимизации и живые проверки.</summary>
     public string? LastDecisionRu { get; private set; }
 
+    public string? LastMultipathRu { get; private set; }
+
+    public RouteOverride? LastSecondaryRoute { get; private set; }
+
     /// <summary>
     /// Сколько живёт решение автовыбора: при деградации оптимизатор спрашивает варианты снова,
     /// и каждый вопрос ценой в полноценное сравнение путей был бы пыткой для сети. Пока ответ свежий
@@ -436,9 +660,25 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
 
     private string? _cachedFlowKey;
     private DateTime _cachedUtc;
+    private IReadOnlyList<RealtimePathOption> _cachedOptions = [];
 
     /// <summary>Забыть решение: новая оптимизация обязана мерить заново, а не жить вчерашней победой.</summary>
-    public void Invalidate() => _cachedFlowKey = null;
+    public void Invalidate()
+    {
+        _cachedFlowKey = null;
+        _cachedOptions = [];
+    }
+
+    /// <summary>
+    /// Ключ решения. В него входят не только процесс и его PID, но и адрес и порт сервера:
+    /// матчмейкер выдаёт новый сервер, не перезапуская игру, и «тот же процесс» — это уже другой матч.
+    /// Без адреса и порта второй матч получил бы вердикт первого и не мерился бы заново.
+    /// </summary>
+    public static string DecisionKey(GameFlowInfo flow)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        return $"{flow.Key}|{flow.RemoteEndpoint}:{flow.RemotePort}";
+    }
 
     public async Task<IReadOnlyList<RealtimePathOption>> GetOptionsAsync(GameFlowInfo flow, CancellationToken ct = default)
     {
@@ -451,6 +691,7 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
 
         if (nodes.Count == 0)
         {
+            _cachedOptions = [];
             _applyTarget(null);
             _applyRefusalNote(null);
             LastDecisionRu = "Узлов маршрутизации нет: действие «маршрут для игры» откажет и подскажет, " +
@@ -463,6 +704,7 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
             RoutingNodeEntry? chosen = settings.DefaultNode;
             if (chosen is null)
             {
+                _cachedOptions = [];
                 _applyTarget(null);
                 _applyRefusalNote("узлы сохранены, но ни один не выбран по умолчанию и автовыбор выключен: " +
                     "маршрут не меняется, пока человек не укажет узел.");
@@ -473,36 +715,59 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
             _applyTarget(new RouteOverride(chosen.Address, RoutePathComparisonService.ProbeMetric, $"{chosen.SourceRu}: {chosen.Name}"));
             _applyRefusalNote(null);
             LastDecisionRu = $"Веду трафик игры через выбранный узел «{chosen.Name}» ({chosen.Address}).";
-            return [];
+
+            // Ручной выбор — это и основной путь, и (если человек включил мультипуть) резерв:
+            // при подтверждённой просадке основного трафик можно увести на второй шлюз.
+            var manual = new List<RealtimePathOption> { OptionFor(chosen, isPrimary: true) };
+            if (settings.IsMultipathValid && settings.SecondaryNode is { } secondary
+                && !secondary.Address.Equals(chosen.Address, StringComparison.OrdinalIgnoreCase))
+            {
+                manual.Add(OptionFor(secondary, isPrimary: false));
+            }
+
+            _cachedOptions = manual;
+            return manual;
         }
 
         if (_comparison is null)
         {
+            _cachedOptions = [];
             _applyTarget(null);
             _applyRefusalNote("автовыбор включён, но службы-измерителя нет: сравнивать пути нечем, маршрут не меняется.");
             LastDecisionRu = "Автовыбор пути требует службы: без неё молча не выбираю.";
             return [];
         }
 
-        // Тот же поток и свежее решение — не мерим заново ради каждого контроля качества.
-        if (_cachedFlowKey == flow.Key && DateTime.UtcNow - _cachedUtc < DecisionTtl)
+        // Тот же поток, тот же сервер и свежее решение — не мерим заново ради каждого контроля
+        // качества. Отдаём те же варианты: контроль при деградации спрашивает их каждые пару секунд,
+        // и пустой ответ означал бы «переключаться некуда», хотя резерв уже измерен.
+        if (_cachedFlowKey == DecisionKey(flow) && DateTime.UtcNow - _cachedUtc < DecisionTtl)
         {
-            return [];
+            return _cachedOptions;
         }
 
         RoutePathComparisonReport report = await _comparison
             .CompareAsync(flow.RemoteEndpoint, flow.RemotePort, nodes, ct)
             .ConfigureAwait(false);
 
-        _cachedFlowKey = flow.Key;
-        _cachedUtc = DateTime.UtcNow;
-
         LastDecisionRu = report.VerdictRu;
 
+        var options = new List<RealtimePathOption>(2);
+        RoutingNodeEntry? primary = null;
+
+        // Только измеренный победитель становится основным путём. «Прямой не хуже» — это не повод
+        // вести трафик через узел: пусть даже человек включил мультипуть, переключение без выигрыша
+        // было бы оптимизацией ради надписи.
         if (report.Winner is { } winner)
         {
-            _applyTarget(new RouteOverride(winner.Address, RoutePathComparisonService.ProbeMetric, $"{winner.SourceRu}: {winner.Name}"));
+            primary = winner;
+        }
+
+        if (primary is not null)
+        {
+            _applyTarget(new RouteOverride(primary.Address, RoutePathComparisonService.ProbeMetric, $"{primary.SourceRu}: {primary.Name}"));
             _applyRefusalNote(null);
+            options.Add(OptionFor(primary, isPrimary: true, ProbeFor(report, primary)));
         }
         else
         {
@@ -511,7 +776,114 @@ public sealed class RoutingPathOptionsProvider : IRealtimePathOptionsProvider
             _applyRefusalNote(report.VerdictRu);
         }
 
-        return [];
+        // Остальные узлы, которые сами выигрывают у прямого пути, — тоже варианты, по порядку медианы:
+        // именно из них контроль выбирает путь при просадке и «путь быстрее» в штатном режиме.
+        // Узел, который хуже направления по умолчанию, вариантом не становится: переключение на него
+        // было бы ухудшением под видом оптимизации.
+        var alternatives = new List<RoutingNodeEntry>();
+        if (primary is not null)
+        {
+            foreach (RoutingNodeEntry node in nodes
+                         .Where(node => !node.Address.Equals(primary.Address, StringComparison.OrdinalIgnoreCase))
+                         .Where(node => IsWorthSwitchingTo(report, node))
+                         .OrderBy(node => ProbeFor(report, node)?.MedianRttMs ?? double.MaxValue))
+            {
+                alternatives.Add(node);
+                options.Add(OptionFor(node, isPrimary: false, ProbeFor(report, node)));
+            }
+        }
+
+        // Резерв для сообщения: сначала годный для переключения, иначе второй по замерам (о нём
+        // честно скажем «не выигрывает у прямого пути»), иначе ручной резерв из настроек.
+        RoutingNodeEntry? backup = alternatives.FirstOrDefault() ?? report.RunnerUp;
+        if (backup is null && settings.MultipathEnabled && settings.IsMultipathValid)
+        {
+            backup = settings.SecondaryNode;
+        }
+
+        // Мультипуть на своих линиях: без своей сети дублировать нельзя, но держим горячий резерв.
+        if (backup is not null)
+        {
+            LastSecondaryRoute = new RouteOverride(backup.Address, RoutePathComparisonService.ProbeMetric, $"{backup.SourceRu}: {backup.Name}");
+
+            if (primary is { } main && options.Count > 1)
+            {
+                string extra = options.Count > 1
+                    ? $" Вариантов для переключения всего {options.Count}: контроль может уйти на другой узел, если этот тоже просядет."
+                    : string.Empty;
+
+                LastMultipathRu = $"Мультипуть: основной «{main.Name}» ({main.Address}), резерв — «{backup.Name}» ({backup.Address}). " +
+                    "Без своей сети пакеты не дублируются: второй шлюз горячий, и при подтверждённой просадке основного " +
+                    "трафик переключается на него — после нескольких подряд плохих окон контроля, а не в тот же миг." + extra;
+            }
+            else
+            {
+                LastMultipathRu = $"Резервный шлюз — «{backup.Name}» ({backup.Address}), но он не выигрывает у прямого пути: " +
+                    "на него не переключаемся, держим только как адрес для ручного выбора.";
+            }
+        }
+        else
+        {
+            LastSecondaryRoute = null;
+            LastMultipathRu = null;
+        }
+
+        // Кэш заполняем только теперь: если сравнение упало на середине, «свежего решения»
+        // с пустым списком вариантов быть не должно.
+        _cachedFlowKey = DecisionKey(flow);
+        _cachedUtc = DateTime.UtcNow;
+        _cachedOptions = options;
+        return options;
+    }
+
+    /// <summary>
+    /// Идентификатор пути для оптимизатора: адрес узла, а не подпись. Подпись человек может
+    /// переименовать посреди сессии, и «тот же путь» стал бы для контроля новым.
+    /// </summary>
+    public static string PathIdFor(RoutingNodeEntry node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        return $"node:{node.Address}";
+    }
+
+    private static RealtimePathOption OptionFor(RoutingNodeEntry node, bool isPrimary, RoutePathProbeResult? probe = null) => new(
+        PathIdFor(node),
+        isPrimary ? $"«{node.Name}» ({node.Address})" : $"«{node.Name}» ({node.Address}) — резерв",
+        IsRelay: true,
+        NextHop: node.Address,
+        Action: new OptimizationActionDescriptor(
+            isPrimary ? "route:game-server" : "route:game-server:runner-up",
+            OptimizationActionKind.RouteForGame,
+            $"Маршрут через «{node.Name}»",
+            $"Маршрут /32 только на адрес игрового сервера через «{node.Name}» ({node.Address}, {node.SourceRu}); " +
+            "снимается при остановке оптимизации.",
+            RouteNextHop: node.Address),
+        MedianRttMs: probe?.MedianRttMs,
+        SpreadMs: probe?.SpreadMs);
+
+    /// <summary>Замер этого узла из отчёта сравнения: null — узел не измерился, чисел нет.</summary>
+    private static RoutePathProbeResult? ProbeFor(RoutePathComparisonReport report, RoutingNodeEntry node) =>
+        report.ViaNodes.FirstOrDefault(result =>
+            result.Success && result.MedianRttMs.HasValue
+            && result.Address.Equals(node.Address, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Годится ли узел в резерв: он должен быть измерен и сам выигрывать у прямого пути
+    /// настолько, чтобы это не было шумом (<see cref="RoutePathComparisonService.RequiredGainMs"/>).
+    /// Иначе «переключение на резерв» при просадке основного уводило бы трафик в худший путь.
+    /// </summary>
+    private static bool IsWorthSwitchingTo(RoutePathComparisonReport report, RoutingNodeEntry? node)
+    {
+        if (node is null || report.Direct is not { Success: true, MedianRttMs: { } directMs })
+        {
+            return false;
+        }
+
+        RoutePathProbeResult direct = report.Direct;
+        RoutePathProbeResult? probe = ProbeFor(report, node);
+
+        return probe is not null
+            && directMs - probe.MedianRttMs!.Value >= RoutePathComparisonService.RequiredGainMs(direct, probe);
     }
 }
 
@@ -546,7 +918,8 @@ public sealed record RoutingMeasureDto(
     [property: JsonPropertyName("winnerAddress")] string? WinnerAddress,
     [property: JsonPropertyName("verdict")] string VerdictRu,
     [property: JsonPropertyName("tableRestored")] bool TableRestored,
-    [property: JsonPropertyName("tableProblem")] string? TableProblemRu);
+    [property: JsonPropertyName("tableProblem")] string? TableProblemRu,
+    [property: JsonPropertyName("runnerUpAddress")] string? RunnerUpAddress = null);
 
 public static class RoutingWireCodec
 {
@@ -579,7 +952,8 @@ public static class RoutingWireCodec
         report.Winner?.Address,
         report.VerdictRu,
         report.TableRestored,
-        report.TableProblemRu);
+        report.TableProblemRu,
+        RunnerUpAddress: report.RunnerUp?.Address);
 
     private static T? Deserialize<T>(string? json)
     {

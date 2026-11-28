@@ -1,4 +1,4 @@
-using PingForge.App.ViewModels;
+﻿using PingForge.App.ViewModels;
 using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
 using PingForge.Network;
@@ -145,6 +145,182 @@ public sealed class RoutingServersTests
         Assert.Equal(3, found.Count);
         Assert.All(found, node => Assert.Equal(node.Address, node.Name));
         Assert.Contains(found, node => node.SourceRu == RoutingNodeSourceRu.CurrentGateway);
+    }
+
+    // ── B1a. бесплатный туннель Cloudflare WARP: узнаём по имени и честно объясняем границы ────
+
+    [Fact]
+    public void Адаптер_CloudflareWARP_узнаётся_как_бесплатный_VPN_туннель()
+    {
+        // Реальные имена адаптера из Windows: «CloudflareWARP» / описание «Cloudflare WARP Interface Tunnel».
+        var warp = new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]);
+        var sccmWarp = new AdapterInfo(32, "CloudflareWARP", "(SCCM) Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]);
+        var wifi = new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]);
+        var wireGuard = new AdapterInfo(21, "WireGuard", "Wintun Userspace Tunnel", true, ["10.8.0.2"]);
+
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(warp));
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(sccmWarp));
+        Assert.True(AdapterDirectoryParser.LooksLikeCloudflareWarp(warp));
+        Assert.True(AdapterDirectoryParser.LooksLikeCloudflareWarp(sccmWarp));
+        Assert.False(AdapterDirectoryParser.LooksLikeVpn(wifi));
+        Assert.False(AdapterDirectoryParser.LooksLikeCloudflareWarp(wifi));
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(wireGuard));
+        Assert.False(AdapterDirectoryParser.LooksLikeCloudflareWarp(wireGuard));
+    }
+
+    [Fact]
+    public void Адаптер_Cloudflare_WARP_узнаётся_по_всем_маркерам_бесплатного_туннеля()
+    {
+        // Задача H: WARP — бесплатный магистральный туннель и законный узел маршрутизации.
+        // Разные сборки WARP называют адаптер по-разному, и ни одно из имён не должно потеряться:
+        // «Cloudflare WARP», Zero Trust — вариант с «1.1.1.1» в описании.
+        var cloudflareWarp = new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]);
+        var spaced = new AdapterInfo(32, "Cloudflare WARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]);
+        var zeroTrust = new AdapterInfo(33, "Cloudflare WARP", "Cloudflare Zero Trust — 1.1.1.1", true, ["172.16.0.2"]);
+
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(cloudflareWarp));
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(spaced));
+        Assert.True(AdapterDirectoryParser.LooksLikeVpn(zeroTrust));
+        Assert.True(AdapterDirectoryParser.LooksLikeCloudflareWarp(spaced));
+        Assert.True(AdapterDirectoryParser.LooksLikeCloudflareWarp(zeroTrust));
+    }
+
+    [Fact]
+    public void WARP_с_настоящим_шлюзом_в_таблице_становится_узлом_с_честной_подписью()
+    {
+        // Если у туннеля в таблице маршрутов есть IPv4-шлюз (так бывает у некоторых режимов WARP
+        // и других туннелей) — он честно предлагается узлом «VPN-адаптер “CloudflareWARP”».
+        IReadOnlyList<RouteTableEntry> routes =
+        [
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
+            new RouteTableEntry("172.16.0.0", "255.255.255.0", "172.16.0.1", "172.16.0.2", 2),
+        ];
+        IReadOnlyList<AdapterInfo> adapters =
+        [
+            new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]),
+            new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]),
+        ];
+
+        RouteDiscoveryResult discovery = RoutingNodeDiscovery.DiscoverWithNotes(routes, adapters);
+
+        RoutingNodeEntry warpNode = Assert.Single(discovery.Nodes, node => node.Address == "172.16.0.1");
+        Assert.Equal("CloudflareWARP", warpNode.Name);
+        Assert.Equal(RoutingNodeSourceRu.VpnAdapter("CloudflareWARP"), warpNode.SourceRu);
+        Assert.True(RoutingNodeSourceRu.IsHonest(warpNode.SourceRu));
+
+        // Шлюз у туннеля есть — пояснение «узлом стать не может» не появляется.
+        Assert.DoesNotContain(discovery.NotesRu, note => note.Contains("Cloudflare WARP", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void WARP_без_шлюза_on_link_не_выдумывает_узел_а_объясняет_почему()
+    {
+        // WARP в режиме Split Tunnel Include: через туннель идут только свои диапазоны Zero Trust
+        // (маршруты «On-link», IPv4-шлюза у туннеля нет). Интернет идёт через Wi-Fi.
+        // Узел из туннеля не делается — вместо него честное пояснение.
+        IReadOnlyList<RouteTableEntry> routes =
+        [
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
+            new RouteTableEntry("100.64.0.0", "255.192.0.0", "On-link", "172.16.0.2", 281, IsOnLink: true),
+            new RouteTableEntry("162.159.0.0", "255.255.0.0", "On-link", "172.16.0.2", 281, IsOnLink: true),
+            new RouteTableEntry("172.16.0.2", "255.255.255.255", "On-link", "172.16.0.2", 281, IsOnLink: true),
+        ];
+        IReadOnlyList<AdapterInfo> adapters =
+        [
+            new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]),
+            new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]),
+        ];
+
+        RouteDiscoveryResult discovery = RoutingNodeDiscovery.DiscoverWithNotes(routes, adapters);
+
+        // Единственный узел — текущий шлюз Wi-Fi. Ни 172.16.0.2 (свой адрес туннеля), ни
+        // какого-либо «виртуального шлюза» в списке нет: выдуманных адресов не бывает.
+        RoutingNodeEntry current = Assert.Single(discovery.Nodes);
+        Assert.Equal("192.168.1.1", current.Address);
+        Assert.Equal(RoutingNodeSourceRu.CurrentGateway, current.SourceRu);
+
+        // Пояснение честное: туннель работает, шлюза нет, маршрут «через узел» невозможен.
+        string note = Assert.Single(discovery.NotesRu);
+        Assert.Contains("Cloudflare WARP", note, StringComparison.Ordinal);
+        Assert.Contains("бесплатный", note, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("On-link", note, StringComparison.Ordinal);
+        Assert.Contains("невозможно", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Когда_маршрут_по_умолчанию_сам_идёт_через_WARP_физический_шлюз_не_называется_текущим()
+    {
+        // Режим «туннелировать всё»: у WARP-маршрута по умолчанию метрика ниже, и весь трафик
+        // идёт в туннель. Тогда Wi-Fi-роутер — НЕ «текущий шлюз» (трафик через него не идёт),
+        // и программа не должна его так подписывать. Пояснение о WARP обязано появиться.
+        IReadOnlyList<RouteTableEntry> routes =
+        [
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "On-link", "172.16.0.2", 1, IsOnLink: true),
+            new RouteTableEntry("172.16.0.2", "255.255.255.255", "On-link", "172.16.0.2", 281, IsOnLink: true),
+        ];
+        IReadOnlyList<AdapterInfo> adapters =
+        [
+            new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]),
+            new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]),
+        ];
+
+        RouteDiscoveryResult discovery = RoutingNodeDiscovery.DiscoverWithNotes(routes, adapters);
+
+        // Роутер есть в списке (это честная альтернатива), но «текущим шлюзом» не называется:
+        // путь по умолчанию сейчас идёт через туннель, и делать вид иначе было бы обманом.
+        RoutingNodeEntry router = Assert.Single(discovery.Nodes);
+        Assert.Equal("192.168.1.1", router.Address);
+        Assert.Equal(RoutingNodeSourceRu.SecondGateway, router.SourceRu);
+
+        // Никакого «текущего шлюза» в списке нет: у туннеля нет адреса, выдумывать его нельзя.
+        Assert.DoesNotContain(discovery.Nodes, node => node.SourceRu == RoutingNodeSourceRu.CurrentGateway);
+
+        // Пояснение о WARP на месте — человек видит, куда на самом деле уходит трафик.
+        Assert.Contains(discovery.NotesRu, note => note.Contains("Cloudflare WARP", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Другой_туннель_без_шлюза_получает_пояснение_без_имени_WARP()
+    {
+        IReadOnlyList<RouteTableEntry> routes =
+        [
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
+            new RouteTableEntry("10.66.0.0", "255.255.255.0", "On-link", "10.66.0.2", 5, IsOnLink: true),
+        ];
+        IReadOnlyList<AdapterInfo> adapters =
+        [
+            new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]),
+            new AdapterInfo(27, "wg0", "Wintun Userspace Tunnel", true, ["10.66.0.2"]),
+        ];
+
+        RouteDiscoveryResult discovery = RoutingNodeDiscovery.DiscoverWithNotes(routes, adapters);
+
+        Assert.Single(discovery.Nodes);
+        string note = Assert.Single(discovery.NotesRu);
+        Assert.Contains("wg0", note, StringComparison.Ordinal);
+        Assert.DoesNotContain("Cloudflare", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Поднятый_но_не_используемый_туннель_пояснением_не_шумит()
+    {
+        // Адаптер есть и работает, но маршрутов через него нет — новостью это не является.
+        IReadOnlyList<RouteTableEntry> routes =
+        [
+            new RouteTableEntry("0.0.0.0", "0.0.0.0", "192.168.1.1", "192.168.1.50", 25),
+        ];
+        IReadOnlyList<AdapterInfo> adapters =
+        [
+            new AdapterInfo(12, "Wi-Fi", "Intel(R) Wi-Fi 6 AX201", true, ["192.168.1.50"]),
+            new AdapterInfo(31, "CloudflareWARP", "Cloudflare WARP Interface Tunnel", true, ["172.16.0.2"]),
+            new AdapterInfo(33, "OldVPN", "TAP-Windows Adapter V9", false, ["10.9.0.5"]),
+        ];
+
+        RouteDiscoveryResult discovery = RoutingNodeDiscovery.DiscoverWithNotes(routes, adapters);
+
+        Assert.Single(discovery.Nodes);
+        Assert.Empty(discovery.NotesRu);
     }
 
     [Fact]
@@ -315,8 +491,9 @@ public sealed class RoutingServersTests
         Assert.Contains($"route delete {GameServer} mask 255.255.255.255", system.Command.Invocations);
         Assert.Empty(system.Table);
 
-        // Замеров было ровно три: прямой путь и два узла.
-        Assert.Equal(3, probe.Count);
+        // Замеров шесть: две серии вперемешку — прямой, узел А, узел Б, и снова по кругу.
+        Assert.Equal(6, probe.Count);
+        Assert.Equal(new string?[] { null, "10.8.0.1", "10.0.0.1", null, "10.8.0.1", "10.0.0.1" }, probe.Hops);
     }
 
     [Fact]
@@ -339,6 +516,44 @@ public sealed class RoutingServersTests
             GameServer, 0, [Node("10.0.0.9", "с потерями"), Node("10.0.0.8", "без потерь")]);
 
         Assert.Equal("10.0.0.8", lossReport.Winner!.Address);
+    }
+
+    [Fact]
+    public void Порог_не_подставляет_ноль_вместо_неизмеренного_разброса()
+    {
+        // Разброс серий бывает неизмерен (путь, замеренный один раз, или замер без разброса).
+        // Раньше он молча подставлялся нулём в формулу порога, и вердикт звучал так, будто шум учтён.
+        RoutePathProbeResult unknown = ProbeResult(spreadMs: null);
+        RoutePathProbeResult measured = ProbeResult(spreadMs: 7);
+
+        // Измеренный разброс в порог входит (это настоящий шум), неизмеренный — не притворяется нулём:
+        // ровно поэтому про него сказано словами.
+        Assert.False(RoutePathComparisonService.NoiseMeasured(unknown, measured));
+        Assert.Equal(7, RoutePathComparisonService.RequiredGainMs(unknown, measured), 3);
+
+        string note = RoutePathComparisonService.NoiseNoteRu(unknown, measured);
+        Assert.Contains("не измерен", note, StringComparison.Ordinal);
+        Assert.Contains("шум в нём не учтён", note, StringComparison.Ordinal);
+
+        // Шум не измерен ни у одного пути: порог — минимальная планка, и это тоже сказано словами.
+        RoutePathProbeResult unknownToo = ProbeResult(spreadMs: null);
+        Assert.False(RoutePathComparisonService.NoiseMeasured(unknown, unknownToo));
+        Assert.Equal(
+            RoutePathComparisonService.NotableImprovementMs,
+            RoutePathComparisonService.RequiredGainMs(unknown, unknownToo),
+            3);
+        Assert.NotEmpty(RoutePathComparisonService.NoiseNoteRu(unknown, unknownToo));
+    }
+
+    [Fact]
+    public void Порог_по_шуму_берётся_из_измеренных_разбросов_обоих_путей()
+    {
+        RoutePathProbeResult direct = ProbeResult(spreadMs: 4);
+        RoutePathProbeResult node = ProbeResult(spreadMs: 9);
+
+        Assert.True(RoutePathComparisonService.NoiseMeasured(direct, node));
+        Assert.Equal(9, RoutePathComparisonService.RequiredGainMs(direct, node), 3);
+        Assert.Equal(string.Empty, RoutePathComparisonService.NoiseNoteRu(direct, node));
     }
 
     [Fact]
@@ -375,8 +590,86 @@ public sealed class RoutingServersTests
         // Временные маршруты ставились и снялись: ни одного add без пары delete.
         int adds = system.Command.Invocations.Count(line => line.StartsWith("route add", StringComparison.Ordinal));
         int deletes = system.Command.Invocations.Count(line => line.StartsWith("route delete", StringComparison.Ordinal));
-        Assert.Equal(1, adds);
+        Assert.Equal(2, adds); // по одному временному /32 на каждую серию
         Assert.Equal(adds, deletes);
+        Assert.Empty(system.Table);
+    }
+
+    [Fact]
+    public async Task Замеры_идут_сериями_вперемешку_чтобы_дрейф_сети_не_давал_фору_узлу()
+    {
+        // Сеть «уплывает»: прямой путь в первой серии 40, во второй 52. Узел ровно 44.
+        // Один замер в начале дал бы «узел хуже на 4 мс» — это была бы не победа сети,
+        // а дрейф между замерами. Чередование и медиана показывают правду: разница в шуме.
+        FakeRouteSystem system = new();
+        int calls = 0;
+        ScriptedMeasurement probe = new(system, hop =>
+        {
+            calls++;
+            return hop is null ? (calls <= 2 ? Window(40) : Window(52)) : Window(44);
+        });
+
+        var service = new RoutePathComparisonService(system.Command, system.Reader, probe);
+        RoutePathComparisonReport report = await service.CompareAsync(GameServer, 0, [Node("10.0.0.1")]);
+
+        Assert.Equal(46, report.Direct!.MedianRttMs!.Value, 0.01);
+        Assert.Equal(12, report.Direct.SpreadMs!.Value, 0.01);
+        Assert.False(report.HasWinner);
+        Assert.Contains("разница в пределах погрешности", report.VerdictRu, StringComparison.Ordinal);
+        Assert.Contains("Разброс серий замера ±12 мс", report.VerdictRu, StringComparison.Ordinal);
+        Assert.Empty(system.Table);
+    }
+
+    [Fact]
+    public async Task Выигрыш_больше_разброса_засчитывается_даже_при_дрейфе()
+    {
+        // Прямой дрейфует 40 → 60 (медиана 50, разброс 20), узел стабильно 28.
+        // Выигрыш 22 мс больше разброса 20 — это уже маршрут, а не шум.
+        FakeRouteSystem system = new();
+        int calls = 0;
+        ScriptedMeasurement probe = new(system, hop =>
+        {
+            calls++;
+            return hop is null ? (calls <= 2 ? Window(40) : Window(60)) : Window(28);
+        });
+
+        var service = new RoutePathComparisonService(system.Command, system.Reader, probe);
+        RoutePathComparisonReport report = await service.CompareAsync(GameServer, 0, [Node("10.0.0.1")]);
+
+        Assert.True(report.HasWinner);
+        Assert.Equal("10.0.0.1", report.Winner!.Address);
+        Assert.Contains("выигрыш 22 мс", report.VerdictRu, StringComparison.Ordinal);
+        Assert.Contains("Разброс серий замера ±20 мс", report.VerdictRu, StringComparison.Ordinal);
+        Assert.True(report.TableRestored);
+        Assert.Empty(system.Table);
+    }
+
+    [Fact]
+    public async Task Одна_неудавшаяся_серия_отменяет_путь_а_не_выдаётся_за_медиану()
+    {
+        // Вторая серия через узел не измерилась: одна серия — это не медиана, путь не подтверждён.
+        FakeRouteSystem system = new();
+        int calls = 0;
+        ScriptedMeasurement probe = new(system, hop =>
+        {
+            calls++;
+            if (hop is not null && calls > 3)
+            {
+                return PathMeasurement.Unmeasurable("живой поток не ответил во второй серии");
+            }
+
+            return hop is null ? Window(40) : Window(30);
+        });
+
+        var service = new RoutePathComparisonService(system.Command, system.Reader, probe);
+        RoutePathComparisonReport report = await service.CompareAsync(GameServer, 0, [Node("10.0.0.1")]);
+
+        Assert.False(report.HasWinner);
+        RoutePathProbeResult node = Assert.Single(report.ViaNodes);
+        Assert.False(node.Success);
+        Assert.Contains("серия 2 из 2", node.ProblemRu!, StringComparison.Ordinal);
+        Assert.Contains("не подтверждён", node.ProblemRu!, StringComparison.Ordinal);
+        Assert.Contains("Ни один узел не измерился", report.VerdictRu, StringComparison.Ordinal);
         Assert.Empty(system.Table);
     }
 
@@ -526,8 +819,14 @@ public sealed class RoutingServersTests
             applyFlow: applied => flow = applied);
 
         IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
-        Assert.Empty(options);
         Assert.Equal("10.8.0.1", target!.NextHop);
+
+        // Выбранный узел — это и есть путь оптимизации: оптимизатор должен получить его вариантом,
+        // иначе живой контроль при просадке не сможет переключиться ни на что.
+        RealtimePathOption option = Assert.Single(options);
+        Assert.Equal("node:10.8.0.1", option.PathId);
+        Assert.Equal("10.8.0.1", option.NextHop);
+        Assert.Equal("10.8.0.1", option.Action.RouteNextHop);
         Assert.Equal(GameServer, flow!.RemoteEndpoint);
 
         // То же самое состояние наживую проходит исполнителя: /32 ровно на адрес сервера игры.
@@ -610,14 +909,18 @@ public sealed class RoutingServersTests
             note => { },
             comparison);
 
-        await provider.GetOptionsAsync(Flow());
+        IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
         Assert.Equal("10.8.0.1", target!.NextHop);
+        RealtimePathOption winner = Assert.Single(options);
+        Assert.Equal("node:10.8.0.1", winner.PathId);
         int probesAfterStart = probe.Count;
 
         // Контроль качества при деградации спрашивает варианты снова — решение переиспользуется,
-        // сеть не должна получать полное сравнение на каждый тик.
-        await provider.GetOptionsAsync(Flow());
+        // сеть не должна получать полное сравнение на каждый тик. Но варианты обязаны вернуться:
+        // пустой ответ кэша означал бы «переключаться некуда» на каждом плохом окне.
+        IReadOnlyList<RealtimePathOption> again = await provider.GetOptionsAsync(Flow());
         Assert.Equal(probesAfterStart, probe.Count);
+        Assert.Equal(winner.PathId, Assert.Single(again).PathId);
 
         // Новая сессия обязана мерить заново: вчерашняя победа — не сегодняшняя.
         provider.Invalidate();
@@ -626,6 +929,184 @@ public sealed class RoutingServersTests
 
         // И после всего таблица такая же, какой была (пустой).
         Assert.Empty(system.Table);
+    }
+
+    [Fact]
+    public async Task Автовыбор_пересчитывает_путь_когда_матчмейкер_дал_другой_сервер()
+    {
+        FakeRouteSystem system = new();
+        ScriptedMeasurement probe = new(system, hop => hop is null ? Window(40) : Window(30));
+        var comparison = new RoutePathComparisonService(system.Command, system.Reader, probe);
+
+        GameFlowInfo firstMatch = Flow();
+        GameFlowInfo secondMatch = firstMatch with { RemoteEndpoint = "34.16.9.77", RemotePort = 3080 };
+
+        var provider = new RoutingPathOptionsProvider(
+            () => new RoutingSettings([Node("10.8.0.1", "WG")], null, AutoSelectBest: true),
+            _ => { },
+            _ => { },
+            comparison);
+
+        await provider.GetOptionsAsync(firstMatch);
+        int afterFirstMeasure = probe.Count;
+        Assert.True(afterFirstMeasure > 0);
+
+        // Тот же сервер и тот же процесс — решение свежее, повторного замера нет.
+        await provider.GetOptionsAsync(firstMatch);
+        Assert.Equal(afterFirstMeasure, probe.Count);
+
+        // Игра не перезапускалась, но матчмейкер выдал другой сервер: это другой матч,
+        // и вердикт первого матча к нему не применяется — путь меряется заново.
+        await provider.GetOptionsAsync(secondMatch);
+        Assert.True(probe.Count > afterFirstMeasure);
+        Assert.NotEqual(
+            RoutingPathOptionsProvider.DecisionKey(firstMatch),
+            RoutingPathOptionsProvider.DecisionKey(secondMatch));
+
+        Assert.Empty(system.Table);
+    }
+
+    [Fact]
+    public async Task Автовыбор_отдаёт_резерв_только_если_он_сам_выигрывает_у_прямого_пути()
+    {
+        // Прямой путь 40 мс. Первый узел 30, второй 34: оба быстрее направления по умолчанию,
+        // значит второй — честный горячий резерв, а не «на всякий случай».
+        FakeRouteSystem system = new();
+        ScriptedMeasurement probe = new(system, hop => hop switch
+        {
+            null => Window(40),
+            "10.8.0.1" => Window(30),
+            _ => Window(34)
+        });
+        var comparison = new RoutePathComparisonService(system.Command, system.Reader, probe);
+
+        var provider = new RoutingPathOptionsProvider(
+            () => new RoutingSettings([Node("10.8.0.1", "WG"), Node("10.0.0.5", "LTE")], null, AutoSelectBest: true),
+            _ => { },
+            _ => { },
+            comparison);
+
+        IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
+
+        Assert.Equal(2, options.Count);
+        Assert.Equal("node:10.8.0.1", options[0].PathId);
+        Assert.Equal("node:10.0.0.5", options[1].PathId);
+        Assert.All(options, option => Assert.Equal(option.NextHop, option.Action.RouteNextHop));
+        Assert.Contains("резерв", options[1].DisplayName, StringComparison.OrdinalIgnoreCase);
+
+        // Варианты несут измеренные числа: по ним контроль решает, уходить ли на другой путь.
+        Assert.Equal(30, options[0].MedianRttMs!.Value, 0.01);
+        Assert.Equal(34, options[1].MedianRttMs!.Value, 0.01);
+        Assert.Equal(0, options[1].SpreadMs!.Value, 0.01);
+        Assert.Contains("второй шлюз горячий", provider.LastMultipathRu ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Все_узлы_что_выигрывают_у_прямого_пути_становятся_вариантами_по_порядку_медианы()
+    {
+        // Как у игровых ускорителей: держим не «один резерв», а все измеренные пути, которые реально
+        // быстрее направления по умолчанию. Узел хуже прямого пути вариантом не становится.
+        FakeRouteSystem system = new();
+        ScriptedMeasurement probe = new(system, hop => hop switch
+        {
+            null => Window(40),
+            "10.8.0.1" => Window(30),
+            "10.0.0.5" => Window(34),
+            _ => Window(45)
+        });
+        var comparison = new RoutePathComparisonService(system.Command, system.Reader, probe);
+
+        var provider = new RoutingPathOptionsProvider(
+            () => new RoutingSettings(
+                [Node("10.8.0.1", "WG"), Node("10.0.0.5", "LTE"), Node("10.0.0.6", "медленный")],
+                null,
+                AutoSelectBest: true),
+            _ => { },
+            _ => { },
+            comparison);
+
+        IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
+
+        Assert.Equal(2, options.Count);
+        Assert.Equal("node:10.8.0.1", options[0].PathId);
+        Assert.Equal("node:10.0.0.5", options[1].PathId);
+        Assert.Equal(30, options[0].MedianRttMs!.Value, 0.01);
+        Assert.Equal(34, options[1].MedianRttMs!.Value, 0.01);
+        Assert.DoesNotContain(options, option => option.PathId == "node:10.0.0.6");
+        Assert.Contains("Вариантов для переключения всего 2", provider.LastMultipathRu ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Ручной_выбор_узла_не_выдаёт_себя_за_измеренный_путь()
+    {
+        // Ручной режим ничего не мерил: числа отсутствуют, и контроль не имеет права
+        // «находить путь быстрее» по выдуманным числам.
+        FakeRouteSystem system = new();
+
+        var provider = new RoutingPathOptionsProvider(
+            () => new RoutingSettings([Node("10.8.0.1", "WG")], "10.8.0.1", AutoSelectBest: false),
+            _ => { },
+            _ => { },
+            comparison: null);
+
+        IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
+
+        Assert.All(options, option =>
+        {
+            Assert.Null(option.MedianRttMs);
+            Assert.Null(option.SpreadMs);
+        });
+        Assert.Empty(system.Command.Invocations);
+    }
+
+    [Fact]
+    public async Task Узел_хуже_прямого_пути_резервом_не_считается()
+    {
+        // Победитель 30 мс, «второй» 45 мс при прямом пути 40: переключаться на него при просадке
+        // основного — значит уводить трафик в заведомо худший путь под видом оптимизации.
+        FakeRouteSystem system = new();
+        ScriptedMeasurement probe = new(system, hop => hop switch
+        {
+            null => Window(40),
+            "10.8.0.1" => Window(30),
+            _ => Window(45)
+        });
+        var comparison = new RoutePathComparisonService(system.Command, system.Reader, probe);
+
+        var provider = new RoutingPathOptionsProvider(
+            () => new RoutingSettings([Node("10.8.0.1", "WG"), Node("10.0.0.5", "LTE")], null, AutoSelectBest: true),
+            _ => { },
+            _ => { },
+            comparison);
+
+        IReadOnlyList<RealtimePathOption> options = await provider.GetOptionsAsync(Flow());
+
+        Assert.Equal("node:10.8.0.1", Assert.Single(options).PathId);
+        Assert.Contains("не выигрывает у прямого пути", provider.LastMultipathRu ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Узел_из_действия_перебивает_устаревшую_цель_платформы()
+    {
+        // Так выглядит фейловер: цель платформы всё ещё указывает на прежний узел, а действие
+        // уже назвало новый. Маршрут обязан идти туда, куда решили замеры.
+        FakeRouteSystem system = new();
+        GameFlowInfo flow = Flow();
+        RouteOverride? staleTarget = new("10.8.0.1");
+
+        var runner = new RouteForGameActionRunner(system.Command, system.Reader, () => flow, () => staleTarget);
+        var action = new OptimizationActionDescriptor(
+            "route:game-server:runner-up",
+            OptimizationActionKind.RouteForGame,
+            "Маршрут через «LTE»",
+            "резерв",
+            RouteNextHop: "10.0.0.5");
+
+        OptimizationActionOutcome outcome = await runner.ApplyAsync(action);
+
+        Assert.True(outcome.Succeeded, outcome.MessageRu);
+        Assert.Contains($"route add {GameServer} mask 255.255.255.255 10.0.0.5 metric 1", system.Command.Invocations);
+        Assert.Equal("10.0.0.5", RouteTableParser.FindExactHostRoute(system.Table, GameServer)!.NextHop);
     }
 
     [Fact]
@@ -691,11 +1172,11 @@ public sealed class RoutingServersTests
         // Диспетчер с двойником, который новых методов не реализует, — как сборка службы без сетевого слоя.
         var dispatcher = new EngineDispatcher(new DimOnlyOps(), EngineChannelKind.Main);
 
-        EngineResponse discover = await dispatcher.HandleJsonAsync("""{"id":"1","command":"route-discover"}""");
+        EngineResponse discover = await dispatcher.HandleJsonAsync("""{"id":"1","command":"route-discover"}""", clientIsAdministrator: true);
         Assert.False(discover.Ok);
         Assert.Contains("не подключён", discover.MessageRu, StringComparison.Ordinal);
 
-        EngineResponse measure = await dispatcher.HandleJsonAsync("""{"id":"2","command":"route-measure"}""");
+        EngineResponse measure = await dispatcher.HandleJsonAsync("""{"id":"2","command":"route-measure"}""", clientIsAdministrator: true);
         Assert.False(measure.Ok);
         Assert.Contains("не подключён", measure.MessageRu, StringComparison.Ordinal);
     }
@@ -889,7 +1370,8 @@ public sealed class RoutingServersTests
             "10.8.0.1",
             "Через «WG» (10.8.0.1) медиана 30 мс против 40 мс напрямую — выигрыш 10 мс. Этот путь можно применять.",
             true,
-            null);
+            null,
+            RunnerUpAddress: null);
 
         harness.NextMeasure = (measure.VerdictRu + " Временные маршруты сняты: таблица совпадает с исходной.", RoutingWireCodec.EncodeMeasure(measure));
 
@@ -1062,6 +1544,10 @@ public sealed class RoutingServersTests
     private static PathMeasurement Window(double median, double jitter = 1, double loss = 0) =>
         new(true, median, jitter, loss, 12, "ICMP-эхо до игрового сервера");
 
+    /// <summary>Замер одного пути для проверки порога: разброс задаётся явно, null — «не измерен».</summary>
+    private static RoutePathProbeResult ProbeResult(double? spreadMs) =>
+        new("10.0.0.1", "узел", "тест", Success: true, MedianRttMs: 40, JitterMs: 1, LossPercent: 0, ProblemRu: null, SpreadMs: spreadMs);
+
     private static RoutingNodeEntry Node(string address, string name = "узел", string? source = null) =>
         new(address, name, source ?? RoutingNodeSourceRu.SecondGateway);
 
@@ -1189,6 +1675,9 @@ public sealed class RoutingServersTests
 
         public int Count { get; private set; }
 
+        /// <summary>Порядок замеров: null — прямой путь, адрес — замер через этот узел.</summary>
+        public List<string?> Hops { get; } = new();
+
         public string? ThrowOnHop { get; init; }
 
         public Task<PathMeasurement> MeasurePathAsync(string endpoint, int port, CancellationToken ct = default)
@@ -1196,6 +1685,7 @@ public sealed class RoutingServersTests
             Count++;
 
             string? viaHop = RouteTableParser.FindExactHostRoute(_system.Table, endpoint)?.NextHop;
+            Hops.Add(viaHop);
             if (viaHop is not null && viaHop == ThrowOnHop)
             {
                 throw new InvalidOperationException("оборвался замер");

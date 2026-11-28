@@ -135,7 +135,7 @@ var dump = new
         },
         stepsRu = new[]
         {
-            "1. Ищем запущенную игру и её живой сетевой поток (SIO_TCP_INFO для TCP, метки на ответах сервера для UDP).",
+            "1. Ищем запущенную игру и её живой сетевой поток: статистика уже открытого TCP-соединения для TCP, метки на ответах сервера для UDP — ни одного пакета сверх трафика игры.",
             "2. Меряем «до»: три окна замеров, чтобы исходный пинг был честным числом, а не одним кадром.",
             "3. Выбираем путь: прямое подключение или POP-узел релея по формуле скоринга.",
             "4. Применяем действия: маршрут для адреса сервера и политика QoS (DSCP 46) для процесса игры.",
@@ -168,7 +168,8 @@ var dump = new
         supportTitleRu = "Поддержать автора",
         supportNoteRu = "Ссылка ведёт на страницу автора. Ничего не списывается само, данные не отправляются: кнопка просто открывает страницу в браузере.",
         codeNameRu = "Внутри кода проект пока называется PingForge (пространства имён, пути и база). " +
-                     "Продуктовое имя — Custom Tweak By Doxaiz; переименование кода — отдельный шаг, см. docs/NAMING.md."
+                     "Продуктовое имя — Custom Tweak By Doxaiz; переименование кода отложено осознанно: имена службы и базы " +
+                     "уже стоят на дисках у людей, и смена имени сломала бы и то, и другое."
     },
     routes = new
     {
@@ -320,7 +321,11 @@ static RealtimeSnapshot DemoSnapshot(RealtimeOptimizationState state, double? cu
     QualityLabelRu: currentRttMs is null ? "нет данных" : "хорошо",
     AppliedActions: Array.Empty<OptimizationActionDescriptor>(),
     Warnings: Array.Empty<string>(),
-    UpdatedUtc: DateTime.UtcNow);
+    UpdatedUtc: DateTime.UtcNow,
+    // Способ замера в макете — тот же, что называет окно: иначе подсказка значка в макете
+    // молчала бы о том, чем снято число.
+    BaselineMethodTag: baselineRttMs is null ? string.Empty : ProbeMethodTags.LiveTcp,
+    FinalMethodTag: currentRttMs is null ? string.Empty : ProbeMethodTags.LiveTcp);
 
 var options = new JsonSerializerOptions
 {

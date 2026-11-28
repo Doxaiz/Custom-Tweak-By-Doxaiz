@@ -15,21 +15,28 @@ public sealed class TrayAndResourceTests
         RealtimeOptimizationState state,
         double? currentRttMs = null,
         double? baselineRttMs = null,
-        double? improvementMs = null) => new(
+        double? improvementMs = null,
+        double? floorRttMs = null,
+        double? currentJitterMs = null,
+        double? currentLossPercent = null,
+        string? finalMethodTag = null,
+        string? baselineMethodTag = null) => new(
         State: state,
         StatusRu: "тест",
         GameTitleRu: "Fortnite",
         Endpoint: "3.4.5.6:9000",
         BaselineRttMs: baselineRttMs,
         CurrentRttMs: currentRttMs,
-        FloorRttMs: null,
-        CurrentJitterMs: null,
-        CurrentLossPercent: null,
+        FloorRttMs: floorRttMs,
+        CurrentJitterMs: currentJitterMs,
+        CurrentLossPercent: currentLossPercent,
         ImprovementMs: improvementMs,
         QualityLabelRu: "тест",
         AppliedActions: Array.Empty<OptimizationActionDescriptor>(),
         Warnings: Array.Empty<string>(),
-        UpdatedUtc: new DateTime(2026, 10, 16, 12, 0, 0, DateTimeKind.Utc));
+        UpdatedUtc: new DateTime(2026, 10, 16, 12, 0, 0, DateTimeKind.Utc),
+        BaselineMethodTag: baselineMethodTag ?? string.Empty,
+        FinalMethodTag: finalMethodTag ?? string.Empty);
 
     // ── профили потребления ────────────────────────────────────────────────────────────────────
 
@@ -132,9 +139,39 @@ public sealed class TrayAndResourceTests
     }
 
     [Fact]
+    public void Меню_трея_называет_разброс_и_потери_а_неизмеренное_не_делает_нулём()
+    {
+        var measured = TrayMenuBuilder.Build(
+            Snapshot(RealtimeOptimizationState.ActiveMonitoring, currentRttMs: 58, currentJitterMs: 3.1, currentLossPercent: 0),
+            true, 0);
+
+        Assert.Contains("разброс 3.1 мс", measured[0].TooltipRu, StringComparison.Ordinal);
+        Assert.Contains("потери 0 %", measured[0].TooltipRu, StringComparison.Ordinal);
+
+        var unknown = TrayMenuBuilder.Build(
+            Snapshot(RealtimeOptimizationState.ActiveMonitoring, currentRttMs: 58),
+            true, 0);
+
+        Assert.Contains("разброс не измерен", unknown[0].TooltipRu, StringComparison.Ordinal);
+        Assert.Contains("потери не измерены", unknown[0].TooltipRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("разброс 0", unknown[0].TooltipRu, StringComparison.Ordinal);
+        Assert.DoesNotContain("потери 0", unknown[0].TooltipRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Текст_у_значка_не_показывает_ноль_вместо_неизмеренного()
+    {
+        string tooltip = TrayMenuBuilder.TooltipFor(
+            Snapshot(RealtimeOptimizationState.ActiveMonitoring, currentRttMs: 58, currentJitterMs: null, currentLossPercent: null));
+
+        Assert.Contains("пинг 58 мс", tooltip, StringComparison.Ordinal);
+        Assert.DoesNotContain("разброс 0", tooltip, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Когда_оптимизация_не_запущена_первым_пунктом_идёт_запуск()
     {
-        var menu = TrayMenuBuilder.Build(Snapshot(RealtimeOptimizationState.Idle), isAdministrator: true, revertableChangeCount: 0);
+        var menu = TrayMenuBuilder.Build(Snapshot(RealtimeOptimizationState.Idle), true, 0);
 
         Assert.Equal(TrayCommand.StartOptimization, menu[0].Command);
         Assert.True(menu[0].IsEnabled);
@@ -157,7 +194,7 @@ public sealed class TrayAndResourceTests
     public void Пока_идёт_поиск_игры_запуск_из_трея_заблокирован_чтобы_не_запускать_дважды()
     {
         var menu = TrayMenuBuilder.Build(Snapshot(RealtimeOptimizationState.FindingGame),
-            isAdministrator: true, revertableChangeCount: 0);
+            true, 0);
 
         Assert.False(menu.Single(m => m.Command == TrayCommand.StartOptimization).IsEnabled);
     }
@@ -235,11 +272,21 @@ public sealed class TrayAndResourceTests
     [Fact]
     public void Если_выигрыша_нет_подсказка_не_хвастается_а_говорит_правду()
     {
-        string tooltip = TrayMenuBuilder.TooltipFor(
-            Snapshot(RealtimeOptimizationState.Degraded, currentRttMs: 70, baselineRttMs: 62, improvementMs: -8));
+        // Значок короткий: «пинг + состояние» не оставляют места выигрышу, и он не выдумывается
+        // и не показывается обрезанным. Остаются пинг и честное состояние, а выигрыш — в меню.
+        var snapshot = Snapshot(RealtimeOptimizationState.Degraded, currentRttMs: 70, baselineRttMs: 62, improvementMs: -8);
 
-        Assert.Contains("выигрыша к исходному нет", tooltip);
+        string tooltip = TrayMenuBuilder.TooltipFor(snapshot);
+
+        Assert.Contains("пинг 70 мс", tooltip);
         Assert.Contains("просело", tooltip);
+        Assert.DoesNotContain("выигрыш", tooltip);
+
+        var menu = TrayMenuBuilder.Build(snapshot, isAdministrator: true, revertableChangeCount: 0);
+        string stop = menu.Single(m => m.Command == TrayCommand.StopOptimization).TooltipRu;
+
+        Assert.Contains("сейчас 70 мс", stop);
+        Assert.Contains("выигрыша к исходному нет", stop);
     }
 
     [Fact]
@@ -261,6 +308,152 @@ public sealed class TrayAndResourceTests
 
         Assert.Contains("только замеры (нет прав)", tooltip);
         Assert.Contains("пинг 64 мс", tooltip);
+    }
+
+    // ── способ замера в трее ───────────────────────────────────────────────────────────────────
+
+    /// <summary>Способы, которые служба действительно пишет в снимок. Незнакомая метка тоже в списке:
+    /// она не должна превращаться в выдуманный «живой поток».</summary>
+    private static readonly string[] AllTags =
+    [
+        PingForge.Core.Models.ProbeMethodTags.LiveTcp,
+        PingForge.Core.Models.ProbeMethodTags.LiveUdp,
+        PingForge.Core.Models.ProbeMethodTags.Icmp,
+        PingForge.Core.Models.ProbeMethodTags.TcpHandshake,
+        PingForge.Core.Models.ProbeMethodTags.LegacyLiveFlow,
+        "новая-метка-из-будущего",
+    ];
+
+    [Fact]
+    public void Трей_называет_способ_замера_тем_же_словом_что_и_окно()
+    {
+        foreach (string tag in AllTags)
+        {
+            var menu = TrayMenuBuilder.Build(
+                Snapshot(RealtimeOptimizationState.ActiveMonitoring, currentRttMs: 58, finalMethodTag: tag),
+                isAdministrator: true, revertableChangeCount: 0);
+
+            string stop = menu.Single(m => m.Command == TrayCommand.StopOptimization).TooltipRu;
+
+            Assert.Contains("способ", stop, StringComparison.Ordinal);
+            Assert.Contains(PingForge.Core.Models.ProbeMethodTags.Ru(tag), stop, StringComparison.Ordinal);
+
+            string tooltip = TrayMenuBuilder.TooltipFor(
+                Snapshot(RealtimeOptimizationState.ActiveMonitoring, currentRttMs: 58, finalMethodTag: tag));
+
+            Assert.Contains(PingForge.Core.Models.ProbeMethodTags.ShortRu(tag), tooltip, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Без_названного_способа_трей_о_способе_молчит_а_не_выдумывает_его()
+    {
+        var menu = TrayMenuBuilder.Build(
+            Snapshot(RealtimeOptimizationState.ActiveMonitoring, currentRttMs: 58),
+            isAdministrator: true, revertableChangeCount: 0);
+
+        string stop = menu.Single(m => m.Command == TrayCommand.StopOptimization).TooltipRu;
+        string tooltip = TrayMenuBuilder.TooltipFor(
+            Snapshot(RealtimeOptimizationState.ActiveMonitoring, currentRttMs: 58));
+
+        Assert.Equal(string.Empty, TrayMenuBuilder.MethodRu(Snapshot(RealtimeOptimizationState.ActiveMonitoring, currentRttMs: 58)));
+        Assert.DoesNotContain("способ", stop, StringComparison.Ordinal);
+        Assert.DoesNotContain("живой", tooltip, StringComparison.Ordinal);
+        Assert.DoesNotContain("ICMP", tooltip, StringComparison.Ordinal);
+        Assert.DoesNotContain("TCP", tooltip, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Разные_способы_до_и_после_видны_в_меню_трея()
+    {
+        var menu = TrayMenuBuilder.Build(
+            Snapshot(
+                RealtimeOptimizationState.ActiveMonitoring,
+                currentRttMs: 58,
+                finalMethodTag: PingForge.Core.Models.ProbeMethodTags.TcpHandshake,
+                baselineMethodTag: PingForge.Core.Models.ProbeMethodTags.LiveTcp),
+            isAdministrator: true, revertableChangeCount: 0);
+
+        string stop = menu.Single(m => m.Command == TrayCommand.StopOptimization).TooltipRu;
+
+        Assert.Contains("«до»: живой поток игры (TCP-статистика)", stop, StringComparison.Ordinal);
+        Assert.Contains("«после»: TCP-рукопожатие", stop, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Надпись_у_значка_помещается_в_предел_и_не_рвётся_посреди_слова()
+    {
+        // Windows обрезает подсказку значка сама: «… · оптимизаци» — это не подсказка. Значит надпись
+        // обязана уложиться в предел, а не укорачиваться ножницами в окне.
+        foreach (var state in Enum.GetValues<RealtimeOptimizationState>())
+        {
+            string?[] tags = [.. AllTags, null];
+            foreach (string? tag in tags)
+            {
+                foreach (double? rtt in new double?[] { null, 58, 1234 })
+                {
+                    foreach (double? gain in new double?[] { null, 4, -8 })
+                    {
+                        var snapshot = Snapshot(
+                            state,
+                            currentRttMs: rtt,
+                            baselineRttMs: rtt is null ? null : 62,
+                            improvementMs: gain,
+                            finalMethodTag: tag);
+
+                        string tooltip = TrayMenuBuilder.TooltipFor(snapshot);
+
+                        Assert.True(
+                            tooltip.Length <= TrayMenuBuilder.MaxIconTextLength,
+                            $"надпись длиннее предела ({tooltip.Length}): «{tooltip}»");
+                        Assert.StartsWith("Custom Tweak:", tooltip, StringComparison.Ordinal);
+                        Assert.False(
+                            char.IsWhiteSpace(tooltip[^1]),
+                            $"надпись кончается пробелом: «{tooltip}»");
+                        Assert.False(
+                            tooltip.EndsWith("·", StringComparison.Ordinal),
+                            $"надпись кончается разделителем: «{tooltip}»");
+                    }
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void В_тесной_надписи_способ_уступает_место_только_выигрышу_а_не_наоборот()
+    {
+        // Длинное состояние и длинный способ вместе с выигрышем не влезают: выигрыш уходит
+        // в подсказку меню, а состояние и способ остаются. Выдуманных чисел при этом не появляется.
+        var snapshot = Snapshot(
+            RealtimeOptimizationState.Degraded,
+            currentRttMs: 1234,
+            baselineRttMs: 62,
+            improvementMs: -8,
+            finalMethodTag: PingForge.Core.Models.ProbeMethodTags.TcpHandshake);
+
+        string tooltip = TrayMenuBuilder.TooltipFor(snapshot);
+
+        Assert.Contains("пинг 1234 мс", tooltip, StringComparison.Ordinal);
+        Assert.Contains("TCP-рукопожатие", tooltip, StringComparison.Ordinal);
+        Assert.Contains("просело", tooltip, StringComparison.Ordinal);
+        Assert.DoesNotContain("выигрыш", tooltip, StringComparison.Ordinal);
+        Assert.DoesNotContain("выигрыша к исходному нет", tooltip, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Короткое_имя_способа_не_длиннее_надписи_и_не_молчит()
+    {
+        foreach (string tag in AllTags)
+        {
+            string shortName = PingForge.Core.Models.ProbeMethodTags.ShortRu(tag);
+            Assert.False(string.IsNullOrWhiteSpace(shortName));
+            Assert.True(shortName.Length <= 20, $"слишком длинное имя способа: «{shortName}»");
+        }
+
+        Assert.Equal("способ не назван", PingForge.Core.Models.ProbeMethodTags.ShortRu(null));
+        Assert.Equal("способ не назван", PingForge.Core.Models.ProbeMethodTags.ShortRu(""));
+        // Незнакомая метка — незнакомая, а не «живой поток»: не выдаём одно за другое.
+        Assert.Equal("способ незнаком", PingForge.Core.Models.ProbeMethodTags.ShortRu("новая-метка-из-будущего"));
     }
 
     [Fact]

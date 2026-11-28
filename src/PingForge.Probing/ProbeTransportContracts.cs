@@ -29,13 +29,32 @@ public enum TcpProbeStatus
 public sealed record TcpProbeReply(TcpProbeStatus Status, double RoundTripMs);
 
 /// <summary>Провайдер живого потока игры: метрики берутся из уже существующего соединения.</summary>
-public sealed record LiveFlowRttSample(string MethodName, double RttAverageMs, double JitterMs, int Retransmissions, int SamplesAvailable);
+/// <param name="MethodName">Имя способа, которым получены числа: по нему видно, кто ответил.</param>
+/// <param name="RttAverageMs">Средняя задержка окна, мс.</param>
+/// <param name="JitterMs">Джиттер окна: у UDP — разброс по отдельным замерам, у TCP — сглаженный RttVar.</param>
+/// <param name="Retransmissions">Повторные пакеты из того же снимка соединения (у UDP — не применимо).</param>
+/// <param name="SamplesAvailable">Сколько измерений стоит за числом.</param>
+/// <param name="UnansweredSends">Сколько отправок осталось без ответа за окно наблюдения (у UDP — незакрытые пары).</param>
+/// <param name="RttMedianMs">Медиана отдельных замеров, если провайдер её знает.
+/// У пассивного UDP-замера она есть; у TCP-статистики соединения — нет, там только среднее.</param>
+public sealed record LiveFlowRttSample(
+    string MethodName,
+    double RttAverageMs,
+    double JitterMs,
+    int Retransmissions,
+    int SamplesAvailable,
+    int UnansweredSends = 0,
+    double? RttMedianMs = null);
 
 public interface ILiveFlowRttProvider
 {
     /// <summary>
-    /// Возвращает метрики живого соединения игры (TCP через SIO_TCP_INFO, UDP — по пассивным меткам
-    /// на ответах сервера). Если поток недоступен — false. Числа не выдумываются.
+    /// Возвращает метрики уже открытого соединения игры: для TCP — статистика соединения,
+    /// для UDP — пассивные метки на ответах сервера. Если поток недоступен — false, числа не выдумываются.
+    /// <para>Реализаций две, и обе не отправляют ни одного пакета: <c>UdpObservationsLiveFlowRttProvider</c>
+    /// считает UDP-задержку по парам «отправка → ответ» из событий сетевого стека, а
+    /// <c>TcpEstatsLiveFlowRttProvider</c> берёт задержку уже открытого TCP-соединения из статистики
+    /// системы. Способы не смешиваются: имя метода в образце говорит, какой из них дал числа.</para>
     /// </summary>
     bool TryGetLiveFlowRtt(int processId, string gameServerEndpoint, out LiveFlowRttSample sample);
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using PingForge.App.ViewModels;
 using PingForge.Service.Protocol;
@@ -28,6 +29,12 @@ internal static class Program
     /// <summary>Сколько полей состояния должно быть прочитано, чтобы это считалось работой, а не пустышкой.</summary>
     private const int MinReadFields = 8;
 
+    /// <summary>
+    /// Набор для живой проверки применения: две настройки пользователя (ветка профиля) и одна машинная.
+    /// Все три безобидны и полностью возвращаются откатом.
+    /// </summary>
+    private const string DefaultLiveTweaks = "MENU_SHOW_DELAY_ZERO,MOUSE_ACCEL_SPEED,MMCSS_NETWORK_THROTTLING";
+
     private static async Task<int> Main(string[] args)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -37,10 +44,14 @@ internal static class Program
         var flags = new HashSet<string>(args.Where(a => a.StartsWith("--", StringComparison.Ordinal)), StringComparer.Ordinal);
         string? pipeName = args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
         bool specialMode = flags.Contains("--expect-identity") || flags.Contains("--try-apply")
-            || flags.Contains("--apply-and-rollback") || flags.Contains("--rollback-only");
+            || flags.Contains("--apply-and-rollback") || flags.Contains("--rollback-only")
+            || flags.Contains("--apply-hold") || flags.Contains("--realtime");
         Console.WriteLine("Custom Tweak By Doxaiz — живая проверка службы");
 
-        using var channel = new NamedPipeEngineChannel(pipeName, TimeSpan.FromSeconds(30));
+        // Живая оптимизация ищет поток и меряет «до» — это дольше обычного запроса,
+        // поэтому для неё предел канала поднят до двух минут сверх срока самой команды.
+        TimeSpan channelTimeout = flags.Contains("--realtime") ? TimeSpan.FromSeconds(200) : TimeSpan.FromSeconds(30);
+        using var channel = new NamedPipeEngineChannel(pipeName, channelTimeout);
         // Печатаем имя канала, к которому ПОДКЛЮЧИЛИСЬ: без аргумента клиент сам выбирает канал
         // по своим правам (основной от администратора, иначе чтение), и прежний текст мог соврать.
         Console.WriteLine(pipeName is null
@@ -58,7 +69,7 @@ internal static class Program
         {
             // 1. Служба вообще на связи?
             (bool pingOk, string pingMessage) = await client.PingAsync();
-            Console.WriteLine($"[1/6] Связь: {pingMessage}");
+            Console.WriteLine($"[1/7] Связь: {pingMessage}");
             if (!pingOk)
             {
                 Console.WriteLine("Служба ответила отказом на «проверить связь» — дальше спрашивать нечего.");
@@ -71,7 +82,7 @@ internal static class Program
             // а какие именно: счётчик совпадёт и тогда, когда одну команду переименовали, а другую потеряли.
             string capabilities = await client.GetCapabilitiesAsync();
             (bool commandsMatch, string commandsNote) = CompareCommands(capabilities);
-            Console.WriteLine($"[2/6] Список команд: {commandsNote}");
+            Console.WriteLine($"[2/7] Список команд: {commandsNote}");
             if (!commandsMatch)
             {
                 Console.WriteLine("      Служба и утилита собраны из разных версий — это отказ версий, а не мелочь.");
@@ -81,7 +92,7 @@ internal static class Program
 
             // 3. Состояние.
             EngineResponse status = await client.SendAsync(EngineCommandKind.Status);
-            Console.WriteLine($"[3/6] Состояние: {(status.Ok ? status.MessageRu : "ОТКАЗ: " + status.MessageRu)}");
+            Console.WriteLine($"[3/7] Состояние: {(status.Ok ? status.MessageRu : "ОТКАЗ: " + status.MessageRu)}");
             if (!status.Ok)
             {
                 return 2;
@@ -89,7 +100,7 @@ internal static class Program
 
             // 4. Чтение состояния системы — самое интересное: тут служба трогает настоящую Windows.
             EngineResponse state = await client.SendAsync(EngineCommandKind.ReadSystemState);
-            Console.WriteLine($"[4/6] Чтение состояния системы: {(state.Ok ? "прочитано" : "ОТКАЗ: " + state.MessageRu)}");
+            Console.WriteLine($"[4/7] Чтение состояния системы: {(state.Ok ? "прочитано" : "ОТКАЗ: " + state.MessageRu)}");
             if (!state.Ok)
             {
                 return 2;
@@ -109,7 +120,7 @@ internal static class Program
 
             // 5. Журнал.
             EngineResponse journal = await client.SendAsync(EngineCommandKind.JournalTail);
-            Console.WriteLine($"[5/6] Хвост журнала: {(journal.Ok ? journal.MessageRu : "ОТКАЗ: " + journal.MessageRu)}");
+            Console.WriteLine($"[5/7] Хвост журнала: {(journal.Ok ? journal.MessageRu : "ОТКАЗ: " + journal.MessageRu)}");
             if (!journal.Ok)
             {
                 return 2;
@@ -119,7 +130,7 @@ internal static class Program
             // Проверка принципиально честная: если на машине нет второго канала или VPN, служба обязана
             // сказать «кандидатов кроме текущего шлюза нет», а не показать выдуманный список.
             EngineResponse routes = await client.SendAsync(EngineCommandKind.RouteDiscover);
-            Console.WriteLine($"[6/6] Узлы маршрутизации: {(routes.Ok ? routes.MessageRu : "ОТКАЗ: " + routes.MessageRu)}");
+            Console.WriteLine($"[6/7] Узлы маршрутизации: {(routes.Ok ? routes.MessageRu : "ОТКАЗ: " + routes.MessageRu)}");
             if (!routes.Ok)
             {
                 return 2;
@@ -132,8 +143,17 @@ internal static class Program
                 return 3;
             }
 
+            // 7. Следы перед удалением (задача T): команда обязана отвечать числами из журнала и
+            // снапшотов. Отказ здесь — это сломанное удаление, а не мелочь: скрипт снятия опирается на неё.
+            EngineResponse traces = await client.SendAsync(EngineCommandKind.UninstallCheck);
+            Console.WriteLine($"[7/7] Следы перед удалением: {(traces.Ok ? traces.MessageRu : "ОТКАЗ: " + traces.MessageRu)}");
+            if (!traces.Ok)
+            {
+                return 2;
+            }
+
             Console.WriteLine();
-            Console.WriteLine("Итог: служба отвечает, состояние читается, список команд совпадает, узлы маршрутизации честные. Ничего не изменено.");
+            Console.WriteLine("Итог: служба отвечает, состояние читается, список команд совпадает, узлы маршрутизации честные, следы перед удалением названы. Ничего не изменено.");
             return 0;
         }
         catch (EngineUnavailableException ex)
@@ -243,20 +263,97 @@ internal static class Program
                 return 0;
             }
 
+            if (flags.Contains("--realtime"))
+            {
+                // Живая проверка распознавания игрового потока на настоящей Windows: служба ищет игру
+                // по живой таблице соединений и трассировке UDP, называет игру и адрес сервера,
+                // а затем мы сразу останавливаем оптимизацию, чтобы ничего не осталось в системе.
+                EngineResponse start = await client.SendAsync(EngineCommandKind.RealtimeStart);
+                Console.WriteLine($"Старт: {(start.Ok ? start.MessageRu : "ОТКАЗ: " + start.MessageRu)}");
+                Console.WriteLine($"StartData: {start.DataJson ?? "нет"}");
+
+                EngineResponse stop;
+                try
+                {
+                    stop = await client.SendAsync(EngineCommandKind.RealtimeStop);
+                }
+                catch (EngineUnavailableException)
+                {
+                    Console.WriteLine("Остановка не удалась: служба недоступна. Проверьте службу перед повторным запуском.");
+                    return 2;
+                }
+
+                Console.WriteLine($"Остановка: {(stop.Ok ? stop.MessageRu : "ОТКАЗ: " + stop.MessageRu)}");
+                Console.WriteLine($"StopData: {stop.DataJson ?? "нет"}");
+
+                return start.Ok && stop.Ok ? 0 : 2;
+            }
+
+            if (flags.Contains("--apply-hold"))
+            {
+                // Оставить изменения применёнными: так внешний наблюдатель (reg.exe в c7-live-checks.ps1)
+                // может сам прочитать значение в ветке пользователя и убедиться, что оно там, а не в профиле службы.
+                string holdCodes = TweakListFrom(flags);
+                var held = await ApplyBatchAsync(client, holdCodes, restorePoint: true);
+                return held.Ok ? 0 : 2;
+            }
+
             if (flags.Contains("--apply-and-rollback"))
             {
-                EngineResponse apply = await client.SendAsync(
-                    EngineCommandKind.ApplyTweaks,
-                    new Dictionary<string, string> { ["tweaks"] = "MENU_SHOW_DELAY_ZERO", ["restorePoint"] = "true" });
-                Console.WriteLine($"Применение MENU_SHOW_DELAY_ZERO: {(apply.Ok ? apply.MessageRu : "ОТКАЗ: " + apply.MessageRu)}");
-                if (!apply.Ok)
+                // Проверка на уровне значений, а не «команда прошла»: служба называет, что было,
+                // что стало и что она увидела в системе. Затем откат. Затем применение ещё раз —
+                // и прежние значения обязаны совпасть с первым заходом: значит откат действительно вернул
+                // систему, а не отрапортовал об этом.
+                string codes = TweakListFrom(flags);
+
+                (bool applied, Dictionary<string, string> before) = await ApplyBatchAsync(client, codes, restorePoint: true);
+                if (!applied)
+                {
+                    // Не оставляем применённое за собой даже при провале проверки: иначе следующий запуск
+                    // увидит «уже было таким» и проверка значений станет бессмысленной.
+                    await RollbackAsync(client);
+                    return 2;
+                }
+
+                if (!await RollbackAsync(client))
                 {
                     return 2;
                 }
 
-                EngineResponse rollback = await client.SendAsync(EngineCommandKind.RollbackSnapshot);
-                Console.WriteLine($"Откат: {(rollback.Ok ? rollback.MessageRu : "ОТКАЗ: " + rollback.MessageRu)}");
-                return rollback.Ok ? 0 : 2;
+                (bool reapplied, Dictionary<string, string> afterRollback) = await ApplyBatchAsync(client, codes, restorePoint: false);
+                if (!reapplied)
+                {
+                    await RollbackAsync(client);
+                    return 2;
+                }
+
+                bool restored = true;
+                foreach ((string code, string wasBefore) in before)
+                {
+                    if (!afterRollback.TryGetValue(code, out string? afterAgain))
+                    {
+                        Console.WriteLine($"ПРОВАЛ: после отката твик {code} не вернулся в список.");
+                        restored = false;
+                    }
+                    else if (!string.Equals(wasBefore, afterAgain, StringComparison.Ordinal))
+                    {
+                        Console.WriteLine(
+                            $"ПРОВАЛ: твик {code}: до применения было «{wasBefore}», после отката «{afterAgain}» — значение не вернулось.");
+                        restored = false;
+                    }
+                }
+
+                if (restored)
+                {
+                    Console.WriteLine($"Откат вернул прежние значения: {before.Count} из {before.Count}.");
+                }
+
+                if (!await RollbackAsync(client))
+                {
+                    return 2;
+                }
+
+                return restored ? 0 : 2;
             }
 
             return 0;
@@ -266,6 +363,138 @@ internal static class Program
             Console.WriteLine($"Служба недоступна: {ex.Message}");
             return 1;
         }
+    }
+
+    /// <summary>Какие твики трогать в живой проверке: свои через --tweaks=КОД,КОД или безопасный набор по умолчанию.</summary>
+    private static string TweakListFrom(HashSet<string> flags)
+    {
+        string? custom = flags
+            .Where(flag => flag.StartsWith("--tweaks=", StringComparison.Ordinal))
+            .Select(flag => flag["--tweaks=".Length..])
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+        return custom?.Trim() ?? DefaultLiveTweaks;
+    }
+
+    /// <summary>Применить набор и напечатать по каждому твику: было, стало, что увидела система, итог.</summary>
+    private static async Task<(bool Ok, Dictionary<string, string> Previous)> ApplyBatchAsync(
+        EngineClient client,
+        string codes,
+        bool restorePoint)
+    {
+        EngineResponse apply = await client.SendAsync(
+            EngineCommandKind.ApplyTweaks,
+            new Dictionary<string, string>
+            {
+                ["tweaks"] = codes,
+                ["restorePoint"] = restorePoint ? "true" : "false"
+            });
+
+        Console.WriteLine($"Применение [{codes}]: {(apply.Ok ? apply.MessageRu : "ОТКАЗ: " + apply.MessageRu)}");
+
+        var previous = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!apply.Ok)
+        {
+            Console.WriteLine($"ApplyData: {apply.DataJson ?? "нет"}");
+            return (false, previous);
+        }
+
+        bool rowsOk = PrintBatchRows(apply.DataJson, previous);
+        return (apply.Ok && rowsOk, previous);
+    }
+
+    /// <summary>Разбор строк применения: печать «до/после/подтверждено» и проверка, что значения совпали.</summary>
+    private static bool PrintBatchRows(string? dataJson, Dictionary<string, string> previous)
+    {
+        if (string.IsNullOrWhiteSpace(dataJson))
+        {
+            Console.WriteLine("ПРОВАЛ: в ответе нет данных о применённых твиках — сверять значения не с чем.");
+            return false;
+        }
+
+        using JsonDocument data = JsonDocument.Parse(dataJson);
+        if (!data.RootElement.TryGetProperty("rows", out JsonElement rows) || rows.ValueKind != JsonValueKind.Array)
+        {
+            Console.WriteLine("ПРОВАЛ: в ответе нет строк твиков.");
+            return false;
+        }
+
+        bool ok = true;
+        int seen = 0;
+        foreach (JsonElement row in rows.EnumerateArray())
+        {
+            seen++;
+            string code = TextField(row, "code");
+            string wasBefore = TextField(row, "previousText");
+            string applied = TextField(row, "appliedText");
+            string verified = TextField(row, "verifiedText");
+            string outcome = TextField(row, "outcome");
+            string statusRu = TextField(row, "statusRu");
+            bool succeeded = row.TryGetProperty("succeeded", out JsonElement flag) && flag.ValueKind == JsonValueKind.True;
+
+            Console.WriteLine($"твик {code}: было «{wasBefore}», стало «{applied}», система увидела «{verified}», итог {outcome} ({statusRu})");
+
+            if (code.Length > 0)
+            {
+                previous[code] = wasBefore;
+            }
+
+            if (!succeeded)
+            {
+                Console.WriteLine($"ПРОВАЛ: твик {code} не применён: {statusRu}");
+                ok = false;
+                continue;
+            }
+
+            if (applied.Length > 0 && verified.Length > 0 && !SameShownValue(applied, verified))
+            {
+                Console.WriteLine($"ПРОВАЛ: твик {code}: применено «{applied}», а в системе «{verified}».");
+                ok = false;
+            }
+        }
+
+        if (seen == 0)
+        {
+            Console.WriteLine("ПРОВАЛ: строк твиков ноль — применение ничего не рассказало.");
+            return false;
+        }
+
+        return ok;
+    }
+
+    /// <summary>
+    /// Сравнение значений так, как их видит человек. «4294967295» и «-1» — одно и то же 32-битное
+    /// значение DWord: служба сравнивает их канонически, а печатает в разных видах, и проверка
+    /// не должна спотыкаться о форму записи.
+    /// </summary>
+    private static bool SameShownValue(string first, string second)
+    {
+        if (string.Equals(first, second, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        bool firstIsNumber = long.TryParse(first, NumberStyles.Integer, CultureInfo.InvariantCulture, out long a);
+        bool secondIsNumber = long.TryParse(second, NumberStyles.Integer, CultureInfo.InvariantCulture, out long b);
+        if (!firstIsNumber || !secondIsNumber)
+        {
+            return false;
+        }
+
+        bool inDwordRange = a is >= int.MinValue and <= uint.MaxValue && b is >= int.MinValue and <= uint.MaxValue;
+        return inDwordRange && unchecked((uint)a) == unchecked((uint)b);
+    }
+
+    private static string TextField(JsonElement row, string name) =>
+        row.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? string.Empty
+            : string.Empty;
+
+    private static async Task<bool> RollbackAsync(EngineClient client)
+    {
+        EngineResponse rollback = await client.SendAsync(EngineCommandKind.RollbackSnapshot);
+        Console.WriteLine($"Откат: {(rollback.Ok ? rollback.MessageRu : "ОТКАЗ: " + rollback.MessageRu)}");
+        return rollback.Ok;
     }
 
     private static (string Name, string Sid, bool IsAdmin) ReadIdentity(string? dataJson)

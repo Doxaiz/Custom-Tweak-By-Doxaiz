@@ -182,9 +182,16 @@ public class OnboardingAndLauncherTests
     {
         public Dictionary<string, string> Found { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-        public IReadOnlyDictionary<string, string> FindInstalled(IReadOnlyCollection<string> processNames) =>
-            Found.Where(pair => processNames.Contains(pair.Key, StringComparer.OrdinalIgnoreCase))
+        /// <summary>Какие имена окно просило искать: нужно, чтобы проверить, что общий javaw.exe не ищется.</summary>
+        public List<IReadOnlyCollection<string>> Requests { get; } = [];
+
+        public IReadOnlyDictionary<string, string> FindInstalled(IReadOnlyCollection<string> processNames)
+        {
+            Requests.Add(processNames);
+
+            return Found.Where(pair => processNames.Contains(pair.Key, StringComparer.OrdinalIgnoreCase))
                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     private sealed class FakeStarter : IGameStarter
@@ -250,6 +257,55 @@ public class OnboardingAndLauncherTests
         GameCardViewModel cs2 = launcher.Cards.First(card => card.ProcessName == "cs2.exe");
         Assert.True(cs2.HasPath);
         Assert.Contains("Найдено игр на диске: 1", launcher.SummaryRu);
+    }
+
+    [Fact]
+    public async Task Поиск_на_диске_не_ищет_общий_процесс_Java()
+    {
+        // javaw.exe — это и Minecraft, и любая Java-программа: найденный на диске чужой javaw.exe
+        // нельзя выдавать за игру, а «Открыть» запустил бы его без аргументов и ничего не произошло бы.
+        (GameLauncherViewModel launcher, FakeProbe probe, _, _, _) = BuildLauncher();
+        probe.Found["javaw.exe"] = @"C:\Program Files\Java\jre\bin\javaw.exe";
+
+        await launcher.FindInstalledAsync();
+
+        IReadOnlyCollection<string> asked = Assert.Single(probe.Requests);
+        Assert.DoesNotContain("javaw.exe", asked, StringComparer.OrdinalIgnoreCase);
+
+        GameCardViewModel minecraft = launcher.Cards.Single(card => card.ProcessName == "javaw.exe");
+        Assert.False(minecraft.HasPath);
+        Assert.Contains("лаунчером", minecraft.NoteRu, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Своя_игра_поверх_Java_заменяет_карточку_и_возвращается_при_удалении()
+    {
+        (GameLauncherViewModel launcher, _, _, _, _) = BuildLauncher();
+        string exe = Path.Combine(Path.GetTempPath(), "javaw.exe");
+        File.WriteAllBytes(exe, []);
+
+        try
+        {
+            int builtins = launcher.Cards.Count;
+            await launcher.AddCustomGameAsync(exe, "Мой сервер Minecraft");
+
+            Assert.Equal(builtins, launcher.Cards.Count); // замена карточки, а не вторая запись
+            GameCardViewModel card = launcher.Cards.Single(candidate => candidate.ProcessName == "javaw.exe");
+            Assert.True(card.IsCustom);
+            Assert.Equal("Мой сервер Minecraft", card.TitleRu);
+            Assert.Contains("заменила встроенную", launcher.StatusRu);
+
+            Assert.True(launcher.RemoveCustomGame(card));
+
+            GameCardViewModel restored = launcher.Cards.Single(candidate => candidate.ProcessName == "javaw.exe");
+            Assert.False(restored.IsCustom);
+            Assert.Equal("Minecraft (Java)", restored.TitleRu);
+            Assert.Equal(builtins, launcher.Cards.Count);
+        }
+        finally
+        {
+            File.Delete(exe);
+        }
     }
 
     [Fact]

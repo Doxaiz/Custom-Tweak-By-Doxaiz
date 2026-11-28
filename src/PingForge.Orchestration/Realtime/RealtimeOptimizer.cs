@@ -1,4 +1,5 @@
 using PingForge.Core.Models;
+using PingForge.Core.Statistics;
 
 namespace PingForge.Orchestration.Realtime;
 
@@ -24,8 +25,19 @@ public sealed class RealtimeOptimizer
 
     private readonly List<OptimizationActionDescriptor> _applied = new();
     private readonly List<double> _baselineWindows = new();
+
+    /// <summary>Разброс в тех же окнах «до»: без него нельзя сказать «стало стабильнее», только «стало быстрее».</summary>
+    private readonly List<double> _baselineJitter = new();
     private readonly List<PathMeasurement> _recentWindows = new();
     private readonly List<string> _warnings = new();
+
+    /// <summary>
+    /// История замеров сессии с метками времени — источник графика сети. Отдельно от
+    /// <see cref="_recentWindows"/>: то окно «последних N измерений» для логики контроля,
+    /// а здесь — вся сессия с датами, чтобы график показывал динамику, а не последнее значение.
+    /// </summary>
+    private readonly object _historyGate = new();
+    private readonly List<RealtimeMeasurementPoint> _history = new();
 
     private RealtimeOptions _options = new();
     private RealtimeOptimizationState _state = RealtimeOptimizationState.Idle;
@@ -39,6 +51,34 @@ public sealed class RealtimeOptimizer
     private double? _lastLossPercent;
     private string? _activePathId;
     private bool _appliedRouteAction;
+
+    /// <summary>
+    /// Пути, на которых уже пробовали и качество не улучшилось. Второй раз туда не идём:
+    /// переключение между двумя плохими путями — это флаппинг, а не оптимизация.
+    /// </summary>
+    private readonly HashSet<string> _failedPathIds = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Почему последнее переключение не состоялось: это уходит в честный статус при деградации.</summary>
+    private string? _switchProblemRu;
+
+    /// <summary>
+    /// Хороших окон подряд с момента последней проверки «нет ли пути быстрее». Игровые ускорители
+    /// постоянно перепроверяют альтернативы; мы делаем это редко и по расписанию, потому что каждый
+    /// замер всех путей — это временные /32 в таблице маршрутов, а не бесплатная операция.
+    /// </summary>
+    private int _healthyWindowsSinceReview;
+
+    /// <summary>Когда реально переключили маршрут: чаще, чем раз в cooldown, не переключаемся.</summary>
+    private DateTime? _lastSwitchUtc;
+
+    /// <summary>Сколько окон прошло с последней проверки «не сменился ли сервер игры».</summary>
+    private int _windowsSinceServerCheck;
+
+    /// <summary>
+    /// Базовая линия относится к прежнему серверу (он сменился посреди сессии). Такие числа нужны
+    /// только для контроля деградации; в отчёте «до/после» их показывать нельзя — это разные серверы.
+    /// </summary>
+    private bool _baselineIsForAnotherServer;
     private int _consecutiveBadWindows;
     private int _consecutiveGoodWindows;
     private DateTime _startedUtc;
@@ -63,10 +103,34 @@ public sealed class RealtimeOptimizer
 
     public RealtimeSnapshot Current => BuildSnapshot();
 
+    /// <summary>
+    /// История замеров этой сессии (с метками времени) — из неё строится график сети в окне.
+    /// Оценка сверху по объёму: <see cref="HistoryLimit"/> точек при контроле раз в 2 с — это
+    /// 30 минут. Неизмеренные окна лежат здесь точками с null-полями: разрыв на графике, а не ноль.
+    /// </summary>
+    public IReadOnlyList<RealtimeMeasurementPoint> RecentSamples
+    {
+        get
+        {
+            lock (_historyGate)
+            {
+                return _history.ToList();
+            }
+        }
+    }
+
+    /// <summary>Сколько точек истории храним: 900 окон по 2 с — 30 минут. Дальше старые уходят.</summary>
+    private const int HistoryLimit = 900;
+
     /// <summary>Событие для интерфейса: панель обновляется без опроса.</summary>
     public event Action<RealtimeSnapshot>? Updated;
 
     private const int RecentWindowLimit = 12;
+
+    // Способы замера «до» и последнего замера. Из них строится запись журнала: постоянная строка
+    // «LiveFlow» на любой замер была неправдой, как только способов стало больше одного.
+    private string _baselineMethodTag = string.Empty;
+    private string _lastMethodTag = string.Empty;
 
     public async Task<RealtimeSnapshot> StartAsync(
         RealtimeOptions? options = null,
@@ -107,15 +171,33 @@ public sealed class RealtimeOptimizer
 
         _flow = PickFlow(flows, preferredGame);
 
+        // Лобби/творческий: игра уже запущена, но публичного адреса матча ещё нет (RemotePort 0, endpoint "—").
+        // Раньше это считалось “игра не найдена”, хотя процесс Фортнайта уже был в памяти.
+        if (_flow.RemotePort == 0 || _flow.RemoteEndpoint == "—" || _flow.RemoteEndpoint == "-")
+        {
+            string lobbyTail = string.IsNullOrWhiteSpace(noGameReason) ? string.Empty : " " + noGameReason;
+            return Fail(
+                $"Игра уже запущена: {_flow.GameTitleRu} найден в системе (PID {_flow.ProcessId}). Вы сейчас в лобби/творческом режиме — публичного адреса сервера матча пока нет. " +
+                "Твики Windows уже можно применить в разделе «Твики» (снижают задержки ввода и очереди), а маршрут и QoS применятся как только зайдёте в матч с живым адресом сервера — нажмите кнопку снова в матче." + lobbyTail);
+        }
+
+        // Честно про источник чисел: у замера два источника, и человек должен знать, какой сработал.
+        // Если служба видит события UDP-потока игры, задержка берётся из самого потока (пары «отправка → ответ»)
+        // и лишних пакетов нет. Если событий нет — идут пробы к адресу сервера (ICMP-эхо и TCP-рукопожатие),
+        // а это несколько пакетов сверх трафика игры. Способ замера называется рядом с числом, а не угадывается.
         SetState(RealtimeOptimizationState.MeasuringBaseline,
             $"Меряем исходный пинг до {_flow.RemoteEndpoint}: {_options.BaselineWindows} окна по {_options.SamplesPerWindow} проб. " +
-            "Числа берутся из живого потока игры, лишние пакеты не отправляются.");
+            "Источник чисел — живой поток игры, если служба видит его события: тогда задержка считается по парам " +
+            "«отправка → ответ» и лишних пакетов нет. Если событий нет, идут пробы к адресу сервера " +
+            "(ICMP-эхо и TCP-рукопожатие) — это несколько пакетов сверх трафика игры. Что именно сработало, " +
+            "написано рядом с числом.");
 
         for (int i = 0; i < Math.Max(1, _options.BaselineWindows); i++)
         {
             ct.ThrowIfCancellationRequested();
 
             PathMeasurement window = await MeasureAsync(ct).ConfigureAwait(false);
+            RecordHistory(window);
             if (!window.IsMeasurable)
             {
                 _warnings.Add($"Окно замера «до» не удалось: {window.MethodRu}");
@@ -123,13 +205,22 @@ public sealed class RealtimeOptimizer
             }
 
             _baselineWindows.Add(window.RttMedianMs);
+            if (window.JitterMs is { } baselineJitter)
+            {
+                _baselineJitter.Add(baselineJitter);
+            }
+
+            _baselineMethodTag = ProbeMethodTags.Tag(window.Method);
             UpdateFloor(window.RttMedianMs);
         }
 
         if (_baselineWindows.Count == 0)
         {
+            // Игру называем даже в отказе: человек должен видеть, какой именно поток не измеряется,
+            // иначе «не измеряется» нечем проверить — непонятно, ту ли игру вообще нашли.
             return Fail(
-                "Живой поток игры не измеряется: игра может быть в меню, либо трафик идёт не туда, где мы ищем. " +
+                $"Живой поток игры {_flow.GameTitleRu} ({_flow.RemoteEndpoint}:{_flow.RemotePort}) не измеряется: " +
+                "игра может быть в меню, либо трафик идёт не туда, где мы ищем. " +
                 "Зайдите в матч и повторите — выдуманные числа мы не показываем.");
         }
 
@@ -181,6 +272,7 @@ public sealed class RealtimeOptimizer
 
         // Контрольное окно после применения: выигрыш должен быть подтверждён, а не заявлен.
         PathMeasurement confirmation = await MeasureAsync(ct).ConfigureAwait(false);
+        RecordHistory(confirmation);
         if (confirmation.IsMeasurable)
         {
             _confirmationRttMs = confirmation.RttMedianMs;
@@ -193,9 +285,12 @@ public sealed class RealtimeOptimizer
         {
             verdict = "Применено. Первое контрольное измерение ещё не пришло.";
         }
-        else if (confirmed <= baselineValue + 0.5)
+        else if (confirmed <= baselineValue + GainVerdict.MeaningfulMs)
         {
-            verdict = $"Применено. Пинг: было {baselineValue:F0} мс, стало {confirmed:F0} мс (медиана живого потока).";
+            // Одно контрольное окно — ещё не доказательство: разница в пределах шума остаётся разницей в пределах шума.
+            verdict = $"Применено. Пинг: было {baselineValue:F0} мс, стало {confirmed:F0} мс (медиана живого потока). " +
+                $"Разница меньше порога значимости {GainVerdict.MeaningfulMs:0.#} мс — выигрышем её пока не называем, " +
+                "решение будет по контрольным окнам.";
         }
         else
         {
@@ -222,8 +317,17 @@ public sealed class RealtimeOptimizer
             return Current;
         }
 
+        // Матчмейкер мог выдать другой сервер, не перезапуская игру: тогда маршрут /32 остался
+        // на адресе, где игры уже нет. Проверяем это до замера — иначе окна будут «не измеряются»,
+        // и оптимизация будет воевать с пустым адресом.
+        if (await TryRebindServerAsync(ct).ConfigureAwait(false))
+        {
+            return Current;
+        }
+
         PathMeasurement window = await MeasureAsync(ct).ConfigureAwait(false);
         _recentWindows.Add(window);
+        RecordHistory(window);
         if (_recentWindows.Count > RecentWindowLimit)
         {
             _recentWindows.RemoveAt(0);
@@ -248,13 +352,32 @@ public sealed class RealtimeOptimizer
         _lastLossPercent = window.LossPercent;
         UpdateFloor(window.RttMedianMs);
 
-        bool degraded = window.LossPercent > _options.DegradationLossPercent
-                        || window.JitterMs > _options.DegradationJitterMs
+        // После смены сервера «до» набирается заново — иначе сравнивать новый сервер было бы не с чем,
+        // а порог деградации по RTT остался бы от прежнего адреса.
+        if (_baselineRttMs is null)
+        {
+            _baselineWindows.Add(window.RttMedianMs);
+            if (window.JitterMs is { } lateJitter)
+            {
+                _baselineJitter.Add(lateJitter);
+            }
+
+            if (_baselineWindows.Count >= Math.Max(1, _options.BaselineWindows))
+            {
+                _baselineRttMs = Median(_baselineWindows);
+            }
+        }
+
+        // Порог деградации сравнивается только с измеренным: «джиттер не измерен» — это не «джиттер ноль»,
+        // и тишина в этом поле не должна ни скрывать деградацию по RTT, ни выдумывать её.
+        bool degraded = (window.LossPercent is { } loss && loss > _options.DegradationLossPercent)
+                        || (window.JitterMs is { } jitter && jitter > _options.DegradationJitterMs)
                         || (_baselineRttMs is { } baseline && window.RttMedianMs > baseline + _options.DegradationRttMarginMs);
 
         if (degraded)
         {
             _consecutiveGoodWindows = 0;
+            _healthyWindowsSinceReview = 0;
             _consecutiveBadWindows++;
 
             if (_consecutiveBadWindows >= _options.DegradedWindowsBeforeSwitch)
@@ -262,14 +385,15 @@ public sealed class RealtimeOptimizer
                 bool switched = await TrySwitchPathAsync(window, ct).ConfigureAwait(false);
                 if (!switched)
                 {
+                    string why = _switchProblemRu ?? "альтернативного пути у этого сервера нет";
                     await DegradeAsync(
-                        $"Качество просело: {window.RttMedianMs:F0} мс, джиттер {window.JitterMs:F1} мс, потери {window.LossPercent:F1}%. " +
-                        "Альтернативного пути у этого сервера нет — твиками такое не лечится.", ct).ConfigureAwait(false);
+                        $"Качество просело: {window.RttMedianMs:F0} мс, джиттер {window.JitterRu}, потери {window.LossRu}. " +
+                        $"Переключиться не вышло: {why} — твиками такое не лечится.", ct).ConfigureAwait(false);
                 }
             }
             else
             {
-                SetStatus($"Внимание: окно хуже обычного ({window.RttMedianMs:F0} мс, джиттер {window.JitterMs:F1} мс). " +
+                SetStatus($"Внимание: окно хуже обычного ({window.RttMedianMs:F0} мс, джиттер {window.JitterRu}). " +
                           $"Ждём подтверждения ({_consecutiveBadWindows} из {_options.DegradedWindowsBeforeSwitch}).");
             }
 
@@ -292,7 +416,15 @@ public sealed class RealtimeOptimizer
             return Current;
         }
 
-        SetState(RealtimeOptimizationState.ActiveMonitoring, BuildRunningStatus(window));
+        // Штатное окно: раз в N хороших окон проверяем, не нашлось ли пути ощутимо быстрее того,
+        // на котором сидим. Решение — только по измеренным числам этой же сессии.
+        (bool upgraded, string? reviewNoteRu) = await TryUpgradePathAsync(window, ct).ConfigureAwait(false);
+        if (upgraded)
+        {
+            return Current;
+        }
+
+        SetState(RealtimeOptimizationState.ActiveMonitoring, reviewNoteRu ?? BuildRunningStatus(window));
         return Current;
     }
 
@@ -340,21 +472,24 @@ public sealed class RealtimeOptimizer
 
         double? finalRttMs = _lastRttMs ?? _confirmationRttMs;
         PathMeasurement final = await MeasureAsync(ct).ConfigureAwait(false);
+        RecordHistory(final);
         if (final.IsMeasurable)
         {
             finalRttMs = final.RttMedianMs;
         }
 
-        double? improvement = _baselineRttMs is { } baseline && finalRttMs is { } after
+        double? reportBaseline = _baselineIsForAnotherServer ? null : _baselineRttMs;
+
+        double? improvement = reportBaseline is { } baseline && finalRttMs is { } after
             ? Math.Round(baseline - after, 1)
             : null;
 
-        string summary = BuildHonestSummary(finalRttMs, improvement, everythingReverted);
+        string summary = BuildHonestSummary(reportBaseline, finalRttMs, improvement, everythingReverted);
 
         var report = new RealtimeStopReport(
             GameTitleRu: _flow?.GameTitleRu ?? "Игра не определена",
             Endpoint: _flow?.RemoteEndpoint ?? "—",
-            BaselineRttMs: _baselineRttMs,
+            BaselineRttMs: reportBaseline,
             FinalRttMs: finalRttMs,
             FloorRttMs: _floorRttMs,
             ImprovementMs: improvement,
@@ -363,11 +498,17 @@ public sealed class RealtimeOptimizer
             AppliedActionTitles: _applied.Select(a => a.TitleRu).ToList(),
             RevertMessagesRu: revertMessages,
             EverythingReverted: everythingReverted,
-            HonestSummaryRu: summary);
+            HonestSummaryRu: summary,
+            BaselineMethodTag: _baselineMethodTag,
+            FinalMethodTag: _lastMethodTag);
 
         _applied.Clear();
         _appliedRouteAction = false;
         _activePathId = null;
+        _failedPathIds.Clear();
+        _switchProblemRu = null;
+        _healthyWindowsSinceReview = 0;
+        _lastSwitchUtc = null;
         SetState(RealtimeOptimizationState.Stopped, summary);
         return report;
     }
@@ -412,48 +553,394 @@ public sealed class RealtimeOptimizer
 
     private async Task<bool> TrySwitchPathAsync(PathMeasurement current, CancellationToken ct)
     {
+        _switchProblemRu = null;
+
         if (_pathOptions is null || _flow is null || !_options.AllowRoutingChanges)
         {
+            _switchProblemRu = "маршруты менять нельзя: смена пути выключена в настройках";
             return false;
         }
 
         IReadOnlyList<RealtimePathOption> options = await _pathOptions.GetOptionsAsync(_flow, ct).ConfigureAwait(false);
-        RealtimePathOption? next = options.FirstOrDefault(o => !string.Equals(o.PathId, _activePathId, StringComparison.OrdinalIgnoreCase));
+
+        // Путь, на котором уже пробовали и стало хуже, второй раз не выбираем: иначе контроль
+        // будет прыгать между двумя плохими путями и рвать соединение чаще, чем чинить его.
+        RealtimePathOption? next = options.FirstOrDefault(option =>
+            !string.Equals(option.PathId, _activePathId, StringComparison.OrdinalIgnoreCase)
+            && !_failedPathIds.Contains(option.PathId));
 
         if (next is null)
         {
+            _switchProblemRu = options.Count == 0
+                ? "альтернативного пути у этого сервера нет"
+                : "других путей не осталось: на всех проверенных уже было хуже";
             return false;
         }
 
-        _warnings.Add($"Переключение пути: {current.RttMedianMs:F0} мс на текущем, пробуем «{next.DisplayName}».");
+        return await ApplyPathSwitchAsync(
+            next,
+            $"Переключение пути: {current.RttMedianMs:F0} мс на текущем, пробуем «{next.DisplayName}».",
+            $"Переключились на путь «{next.DisplayName}». Смотрим, стало ли лучше: решение принимается по замерам, а не по ожиданиям.",
+            markCurrentPathFailed: true,
+            ct).ConfigureAwait(false);
+    }
 
-        bool routeWasApplied = _appliedRouteAction;
+    /// <summary>
+    /// «Нет ли пути быстрее?» — то, чем игровые ускорители занимаются постоянно. У нас это делается
+    /// редко и честно: раз в <see cref="RealtimeOptions.HealthyWindowsBetweenRouteReviews"/> хороших
+    /// окон, не чаще <see cref="RealtimeOptions.EffectiveRouteUpgradeCooldown"/>, и только по числам,
+    /// измеренным в той же сессии. Текущий путь в норме — значит, его никто не «спасает»: уходим
+    /// только если альтернатива быстрее ощутимо, а не на величину шума.
+    /// </summary>
+    private async Task<(bool Upgraded, string? NoteRu)> TryUpgradePathAsync(PathMeasurement window, CancellationToken ct)
+    {
+        if (_pathOptions is null || _flow is null || !_options.AllowRoutingChanges || !_appliedRouteAction)
+        {
+            return (false, null);
+        }
+
+        if (_options.HealthyWindowsBetweenRouteReviews <= 0)
+        {
+            return (false, null);
+        }
+
+        _healthyWindowsSinceReview++;
+        if (_healthyWindowsSinceReview < _options.HealthyWindowsBetweenRouteReviews)
+        {
+            return (false, null);
+        }
+
+        _healthyWindowsSinceReview = 0;
+
+        if (_lastSwitchUtc is { } lastSwitch
+            && _clock() - lastSwitch < _options.EffectiveRouteUpgradeCooldown)
+        {
+            // Только что переключились (например, после просадки): даём маршруту пожить,
+            // иначе контроль будет дёргать игру переключениями туда-обратно.
+            return (false, null);
+        }
+
+        IReadOnlyList<RealtimePathOption> options = await _pathOptions.GetOptionsAsync(_flow, ct).ConfigureAwait(false);
+        if (options.Count == 0)
+        {
+            // Свежие замеры не нашли узла, который быстрее прямого пути. Держать маршрут через узел
+            // «потому что раньше было лучше» — самообман, но и снять его на ходу нельзя: маршрут
+            // снимается остановкой оптимизации. Говорим об этом прямо, а не молчим.
+            return (false,
+                $"{BuildRunningStatus(window)} Свежие замеры не нашли узла быстрее прямого пути. " +
+                "Возможно, маршрут через узел уже не нужен: снять его можно остановкой оптимизации — трафик пойдёт как обычно.");
+        }
+
+        RealtimePathOption? active = options.FirstOrDefault(option =>
+            string.Equals(option.PathId, _activePathId, StringComparison.OrdinalIgnoreCase));
+
+        if (active is null)
+        {
+            // Текущий узел выпал из вариантов: в свежих замерах он хуже прямого пути.
+            return (false,
+                $"{BuildRunningStatus(window)} Текущий маршрут в свежих замерах оказался хуже прямого и выпал из вариантов. " +
+                "Снять его и вернуться на прямой можно остановкой оптимизации — сама она маршрут не снимает.");
+        }
+
+        // Без измеренных чисел активного пути сравнивать не с чем — молча остаёмся.
+        if (active.MedianRttMs is not { } activeMs)
+        {
+            return (false, null);
+        }
+
+        RealtimePathOption? better = options
+            .Where(option => !string.Equals(option.PathId, _activePathId, StringComparison.OrdinalIgnoreCase)
+                             && !_failedPathIds.Contains(option.PathId)
+                             && option.MedianRttMs.HasValue)
+            .OrderBy(option => option.MedianRttMs!.Value)
+            .FirstOrDefault();
+
+        if (better?.MedianRttMs is not { } betterMs)
+        {
+            return (false, $"{BuildRunningStatus(window)} Других измеренных путей нет — остаёмся на текущем.");
+        }
+
+        // Порог — «не меньше 3 мс» и не меньше разброса серий обоих путей: шум не победа.
+        // Разброс берётся только измеренный: неизмеренный в формулу не подставляется нулём, а
+        // называется словами ниже. Иначе «выигрыш больше шума» — утверждение о шуме, которого не видели.
+        double measuredSpread = new[] { active.SpreadMs, better.SpreadMs }
+            .Where(spread => spread.HasValue)
+            .Select(spread => spread!.Value)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        double required = Math.Max(_options.RouteUpgradeMarginMs, measuredSpread);
+
+        string noiseNote = active.SpreadMs.HasValue && better.SpreadMs.HasValue
+            ? string.Empty
+            : $" {ThresholdNotes.NoiseUnmeasuredRu}";
+
+        double gain = activeMs - betterMs;
+
+        if (gain < required)
+        {
+            return (false,
+                $"{BuildRunningStatus(window)} Проверили альтернативы: «{better.DisplayName}» не быстрее текущего " +
+                $"на ощутимую величину (разница {gain:F1} мс при пороге {required:F1} мс).{noiseNote} Остаёмся на текущем пути.");
+        }
+
+        bool switched = await ApplyPathSwitchAsync(
+            better,
+            $"Поиск пути быстрее: «{better.DisplayName}» измерен на {gain:F1} мс лучше текущего " +
+            $"(порог {required:F1} мс).{noiseNote} Пробуем.",
+            $"Переключились на путь «{better.DisplayName}»: в этой сессии замеров он на {gain:F1} мс быстрее прежнего. " +
+            "Решение по числам, а не по ожиданиям; если станет хуже — вернёмся: прежний путь остаётся рабочим кандидатом.",
+            markCurrentPathFailed: false,
+            ct).ConfigureAwait(false);
+
+        if (!switched)
+        {
+            return (false,
+                $"{BuildRunningStatus(window)} Путь «{better.DisplayName}» выглядел быстрее ({gain:F1} мс), " +
+                $"но переключиться не удалось: {_switchProblemRu ?? "причина неизвестна"}. Остаёмся на текущем.");
+        }
+
+        return (true, null);
+    }
+
+    /// <summary>
+    /// Общее ядро переключения: снять прежний маршрут, поставить новый, при отказе вернуть прежний.
+    /// <paramref name="markCurrentPathFailed"/> — путь, с которого уходим, был плохим (тогда в него
+    /// больше не возвращаемся) или просто медленнее (тогда он остаётся рабочим кандидатом).
+    /// </summary>
+    private async Task<bool> ApplyPathSwitchAsync(
+        RealtimePathOption next,
+        string startMessageRu,
+        string successMessageRu,
+        bool markCurrentPathFailed,
+        CancellationToken ct)
+    {
+        _switchProblemRu = null;
+        _warnings.Add(startMessageRu);
+
+        OptimizationActionDescriptor? previous = _appliedRouteAction
+            ? _applied.FirstOrDefault(action => action.Kind == OptimizationActionKind.RouteForGame)
+            : null;
+
+        if (previous is not null)
+        {
+            // Прежний маршрут снимаем ДО добавления нового: исполнитель не перезаписывает /32,
+            // который уже стоит в таблице (это защита от чужих маршрутов) — свой прежний он тоже
+            // не перезапишет, и «переключение» молча осталось бы на старом узле.
+            OptimizationActionOutcome revert = await RevertAsync(previous, ct).ConfigureAwait(false);
+            _applied.Remove(previous);
+            _appliedRouteAction = false;
+
+            if (!revert.Succeeded)
+            {
+                // Маршрут не снялся: добавлять второй /32 на тот же адрес нельзя — в таблице
+                // окажется два пути, и какой победит, решит метрика, а не наши замеры.
+                _applied.Add(previous);
+                _appliedRouteAction = true;
+                _switchProblemRu = $"прежний маршрут не снялся ({revert.MessageRu})";
+                _warnings.Add($"Переключение отменено: {_switchProblemRu}.");
+                return false;
+            }
+        }
+
         OptimizationActionOutcome outcome = await _actions.ApplyAsync(next.Action, ct).ConfigureAwait(false);
+
         if (!outcome.Succeeded)
         {
             _warnings.Add($"Переключиться не удалось: {outcome.MessageRu}");
+            _switchProblemRu = $"новый маршрут не применился ({outcome.MessageRu})";
+
+            if (previous is not null)
+            {
+                OptimizationActionOutcome back = await _actions.ApplyAsync(previous, ct).ConfigureAwait(false);
+                if (back.Succeeded)
+                {
+                    _applied.Add(previous);
+                    _appliedRouteAction = true;
+                    _warnings.Add("Прежний маршрут возвращён: трафик идёт как до попытки переключения.");
+                }
+                else
+                {
+                    _warnings.Add(
+                        $"Прежний маршрут вернуть не удалось ({back.MessageRu}): трафик идёт по маршруту по умолчанию, " +
+                        "сеть надо проверить вручную — «Починить сеть».");
+                }
+            }
+
             return false;
         }
 
-        if (routeWasApplied)
+        if (markCurrentPathFailed && _activePathId is not null)
         {
-            OptimizationActionDescriptor? previous = _applied.FirstOrDefault(a => a.Kind == OptimizationActionKind.RouteForGame);
-            if (previous is not null)
-            {
-                await RevertAsync(previous, ct).ConfigureAwait(false);
-                _applied.Remove(previous);
-            }
+            _failedPathIds.Add(_activePathId);
         }
 
         _applied.Add(next.Action);
         _appliedRouteAction = true;
         _activePathId = next.PathId;
+        _lastSwitchUtc = _clock();
+        _healthyWindowsSinceReview = 0;
         _consecutiveBadWindows = 0;
         _consecutiveGoodWindows = 0;
-        SetState(RealtimeOptimizationState.ActiveMonitoring,
-            $"Переключились на путь «{next.DisplayName}». Смотрим, стало ли лучше: решение принимается по замерам, а не по ожиданиям.");
+        SetState(RealtimeOptimizationState.ActiveMonitoring, successMessageRu);
         return true;
     }
+
+    /// <summary>
+    /// Смена сервера посреди сессии. Игровые ускорители перестраивают маршрут под новый адрес матча;
+    /// без этого наш /32 остаётся на старом адресе, живой поток «перестаёт измеряться», и программа
+    /// честно сообщает о деградации там, где на самом деле сменился сервер.
+    ///
+    /// Правила:
+    ///   • проверяем редко (раз в <see cref="RealtimeOptions.WindowsBetweenServerChecks"/> окон):
+    ///     чтение таблицы соединений — не бесплатная операция;
+    ///   • пока прежний адрес виден у того же процесса, ничего не меняем: у игры бывает не одно
+    ///     соединение, и «новое» может быть служебным, а не матчем;
+    ///   • прежний маршрут снимаем ДО того, как провайдер узнает новый поток: исполнитель снимает
+    ///     маршрут по адресу, который платформа считает текущим, — иначе сняли бы не тот адрес;
+    ///   • числа «до» начинаем мерить заново: прежний пинг к другому серверу к новому не относится.
+    /// </summary>
+    private async Task<bool> TryRebindServerAsync(CancellationToken ct)
+    {
+        if (_flow is null || _options.WindowsBetweenServerChecks <= 0)
+        {
+            return false;
+        }
+
+        _windowsSinceServerCheck++;
+        if (_windowsSinceServerCheck < _options.WindowsBetweenServerChecks)
+        {
+            return false;
+        }
+
+        _windowsSinceServerCheck = 0;
+
+        IReadOnlyList<GameFlowInfo> flows;
+        try
+        {
+            flows = await _watcher.FindActiveGameFlowsAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Таблица соединений может быть недоступна: это не повод объявлять смену сервера.
+            _warnings.Add($"Не удалось перечитать таблицу соединений ({ex.GetType().Name}) — продолжаем на прежнем сервере.");
+            return false;
+        }
+
+        GameFlowInfo current = _flow;
+
+        bool currentStillVisible = flows.Any(flow => !IsDifferentServer(flow, current)
+            && (flow.ProcessId == current.ProcessId
+                || string.Equals(flow.ProcessName, current.ProcessName, StringComparison.OrdinalIgnoreCase)));
+
+        if (currentStillVisible)
+        {
+            return false;
+        }
+
+        GameFlowInfo? next = flows.FirstOrDefault(flow => flow.ProcessId == current.ProcessId && IsDifferentServer(flow, current))
+            ?? flows.FirstOrDefault(flow => string.Equals(flow.ProcessName, current.ProcessName, StringComparison.OrdinalIgnoreCase)
+                                            && IsDifferentServer(flow, current));
+
+        if (next is null)
+        {
+            // Игры в таблице нет вовсе: не выдумываем «смену сервера», обычная логика деградации
+            // сообщит, что поток не измеряется.
+            return false;
+        }
+
+        var notes = new List<string>
+        {
+            $"Сервер игры сменился: было {current.RemoteEndpoint}:{current.RemotePort}, стало {next.RemoteEndpoint}:{next.RemotePort}. " +
+            "Маршрут ставим заново. Замеры «до» относятся к прежнему серверу, поэтому выигрыш за эту сессию " +
+            "мы заявлять не будем: сравнивать пинг двух разных серверов — не результат оптимизации."
+        };
+
+        OptimizationActionDescriptor? previousRoute = _appliedRouteAction
+            ? _applied.FirstOrDefault(action => action.Kind == OptimizationActionKind.RouteForGame)
+            : null;
+
+        if (previousRoute is not null)
+        {
+            OptimizationActionOutcome revert = await RevertAsync(previousRoute, ct).ConfigureAwait(false);
+            _applied.Remove(previousRoute);
+            _appliedRouteAction = false;
+
+            // Старый маршрут не снялся — новый /32 на другой адрес всё равно можно поставить,
+            // но о мусоре в таблице надо сказать прямо.
+            notes.Add(revert.Succeeded
+                ? $"Маршрут к прежнему серверу {current.RemoteEndpoint} снят."
+                : $"Маршрут к прежнему серверу {current.RemoteEndpoint} снять не удалось ({revert.MessageRu}): удалите его вручную или кнопкой «Починить сеть».");
+        }
+
+        _flow = next;
+        _activePathId = null;
+        _failedPathIds.Clear();
+        _lastSwitchUtc = null;
+        _healthyWindowsSinceReview = 0;
+        _windowsSinceServerCheck = 0;
+        _consecutiveBadWindows = 0;
+        _consecutiveGoodWindows = 0;
+        _baselineRttMs = null;
+        _baselineIsForAnotherServer = true;
+        _confirmationRttMs = null;
+        _floorRttMs = null;
+        _lastRttMs = null;
+        _lastJitterMs = null;
+        _lastLossPercent = null;
+        _baselineWindows.Clear();
+        _baselineJitter.Clear();
+        _recentWindows.Clear();
+        // Сервер сменился — прежний способ замера «до» к новому серверу не относится.
+        _baselineMethodTag = string.Empty;
+
+        if (_pathOptions is not null && _options.AllowRoutingChanges)
+        {
+            IReadOnlyList<RealtimePathOption> options = await _pathOptions.GetOptionsAsync(next, ct).ConfigureAwait(false);
+            RealtimePathOption? preferred = options.FirstOrDefault();
+
+            if (preferred is null)
+            {
+                notes.Add("По свежим замерам узлы не быстрее прямого пути — маршрут к новому серверу не ставим.");
+            }
+            else
+            {
+                OptimizationActionOutcome apply = await _actions.ApplyAsync(preferred.Action, ct).ConfigureAwait(false);
+                if (apply.Succeeded)
+                {
+                    _applied.Add(preferred.Action);
+                    _appliedRouteAction = true;
+                    _activePathId = preferred.PathId;
+                    notes.Add($"Новый маршрут: «{preferred.DisplayName}».");
+                }
+                else
+                {
+                    notes.Add($"Маршрут к новому серверу не поставлен: {apply.MessageRu}");
+                }
+            }
+        }
+
+        foreach (string note in notes)
+        {
+            _warnings.Add(note);
+        }
+
+        string status = string.Join(" ", notes);
+        if (_state == RealtimeOptimizationState.ReadOnlyNoAdmin)
+        {
+            SetStatus(status);
+        }
+        else
+        {
+            SetState(RealtimeOptimizationState.ActiveMonitoring, status);
+        }
+
+        return true;
+    }
+
+    private static bool IsDifferentServer(GameFlowInfo candidate, GameFlowInfo current) =>
+        candidate.RemotePort != current.RemotePort
+        || !string.Equals(candidate.RemoteEndpoint, current.RemoteEndpoint, StringComparison.OrdinalIgnoreCase);
 
     private async Task DegradeAsync(string reason, CancellationToken ct)
     {
@@ -486,7 +973,16 @@ public sealed class RealtimeOptimizer
 
         try
         {
-            return await _measurement.MeasurePathAsync(_flow.RemoteEndpoint, _flow.RemotePort, ct).ConfigureAwait(false);
+            PathMeasurement measurement = await _measurement
+                .MeasurePathAsync(_flow.RemoteEndpoint, _flow.RemotePort, ct)
+                .ConfigureAwait(false);
+
+            if (measurement.IsMeasurable)
+            {
+                _lastMethodTag = ProbeMethodTags.Tag(measurement.Method);
+            }
+
+            return measurement;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -514,23 +1010,87 @@ public sealed class RealtimeOptimizer
     private void UpdateFloor(double rttMs) =>
         _floorRttMs = _floorRttMs is null ? rttMs : Math.Min(_floorRttMs.Value, rttMs);
 
+    /// <summary>
+    /// Записать окно замера в историю графика. Измеренное — с числами, неизмеренное — точкой
+    /// с null-полями и причиной: на графике это разрыв с подписью, а не «пинг 0 мс».
+    /// </summary>
+    private void RecordHistory(PathMeasurement window)
+    {
+        lock (_historyGate)
+        {
+            _history.Add(window.IsMeasurable
+                ? new RealtimeMeasurementPoint(
+                    _clock(),
+                    true,
+                    window.RttMinMs,
+                    window.RttMedianMs,
+                    window.RttP95Ms,
+                    window.JitterMs,
+                    window.LossPercent,
+                    window.Samples,
+                    window.MethodRu)
+                : RealtimeMeasurementPoint.Unmeasured(_clock(), window.MethodRu));
+
+            if (_history.Count > HistoryLimit)
+            {
+                _history.RemoveRange(0, _history.Count - HistoryLimit);
+            }
+        }
+    }
+
     private string BuildRunningStatus(PathMeasurement window)
     {
-        double? improvement = _baselineRttMs is { } baseline ? Math.Round(baseline - window.RttMedianMs, 1) : null;
+        // Сравниваем набор окон «до» и «после» с доверительным интервалом, а не две медианы с порогом 0,5 мс:
+        // иначе разброс в ±3 мс объявлялся бы выигрышем на каждой второй сессии.
+        GainVerdict gain = EvaluateGain();
 
-        string improvementText = improvement switch
+        string improvementText = gain.Outcome switch
         {
-            null => "выигрыш ещё считается",
-            > 0.5 => $"выигрыш {improvement:F0} мс против исходных {_baselineRttMs:F0} мс",
-            < -0.5 => $"пока хуже на {Math.Abs(improvement.Value):F0} мс",
-            _ => "выигрыша нет — пинг как был"
+            GainOutcome.Confirmed =>
+                $"выигрыш {Math.Abs(gain.GainMs ?? 0):0.#} мс против исходных {gain.MedianBeforeMs:F0} мс подтверждён по шуму " +
+                $"(95% ДИ [{gain.CiLowMs:+0.#;-0.#;0}; {gain.CiHighMs:+0.#;-0.#;0}])",
+            GainOutcome.Worse =>
+                $"пока хуже на {Math.Abs(gain.GainMs ?? 0):0.#} мс, и это больше шума " +
+                $"(95% ДИ [{gain.CiLowMs:+0.#;-0.#;0}; {gain.CiHighMs:+0.#;-0.#;0}])",
+            GainOutcome.WithinNoise =>
+                $"разница в пределах шума ({gain.MedianBeforeMs:F0} → {gain.MedianAfterMs:F0} мс, " +
+                $"95% ДИ [{gain.CiLowMs:+0.#;-0.#;0}; {gain.CiHighMs:+0.#;-0.#;0}]) — выигрышем это не считаем",
+            _ => _baselineRttMs is null
+                ? "выигрыш ещё считается"
+                : $"окон для вывода пока мало ({gain.AfterSamples} из {GainVerdict.MinimumSamples}) — выигрыш не заявляем"
         };
 
-        return $"Пинг {window.RttMedianMs:F0} мс (джиттер {window.JitterMs:F1} мс, потери {window.LossPercent:F1}%), {improvementText}. " +
+        return $"Пинг {window.RttMedianMs:F0} мс (джиттер {window.JitterRu}, потери {window.LossRu}), {improvementText}. " +
                $"Физический предел пути: {_floorRttMs:F0} мс.";
     }
 
-    private RealtimeSnapshot BuildSnapshot() => new(
+    /// <summary>
+    /// Сводка «до/после» по всем окнам с проверкой на шум. Если сервер сменился, «до» относится
+    /// к другому адресу — тогда вывод не делается вовсе, а не «примерно тот же».
+    /// </summary>
+    private GainVerdict EvaluateGain()
+    {
+        List<double> after = _recentWindows
+            .Where(w => w.IsMeasurable)
+            .Select(w => w.RttMedianMs)
+            .ToList();
+
+        List<double> afterJitter = _recentWindows
+            .Where(w => w.IsMeasurable && w.JitterMs is not null)
+            .Select(w => w.JitterMs!.Value)
+            .ToList();
+
+        List<double> before = _baselineIsForAnotherServer ? new List<double>() : _baselineWindows;
+        List<double> beforeJitter = _baselineIsForAnotherServer ? new List<double>() : _baselineJitter;
+
+        return GainVerdict.Evaluate(before, after, beforeJitter, afterJitter);
+    }
+
+    private RealtimeSnapshot BuildSnapshot()
+    {
+        GainVerdict gain = EvaluateGain();
+
+        return new RealtimeSnapshot(
         State: _state,
         StatusRu: _statusRu,
         GameTitleRu: _flow?.GameTitleRu,
@@ -540,42 +1100,70 @@ public sealed class RealtimeOptimizer
         FloorRttMs: _floorRttMs,
         CurrentJitterMs: _lastJitterMs,
         CurrentLossPercent: _lastLossPercent,
-        ImprovementMs: _baselineRttMs is { } baseline && (_lastRttMs ?? _confirmationRttMs) is { } now
+        // После смены сервера «выигрыш за сессию» не считаем: базовая линия принадлежит другому адресу.
+        ImprovementMs: !_baselineIsForAnotherServer && _baselineRttMs is { } baseline && (_lastRttMs ?? _confirmationRttMs) is { } now
             ? Math.Round(baseline - now, 1)
             : null,
         QualityLabelRu: QualityLabel(_lastRttMs ?? _confirmationRttMs ?? _baselineRttMs),
         AppliedActions: _applied.ToList(),
         Warnings: _warnings.ToList(),
-        UpdatedUtc: _clock());
+        UpdatedUtc: _clock(),
+        BaselineMethodTag: _baselineMethodTag,
+        FinalMethodTag: _lastMethodTag,
+        GainConfirmed: gain.IsConfirmedGain,
+        GainVerdictRu: gain.DescribeRu());
+    }
 
-    private string BuildHonestSummary(double? finalRttMs, double? improvement, bool everythingReverted)
+    private string BuildHonestSummary(double? baselineRttMs, double? finalRttMs, double? improvement, bool everythingReverted)
     {
         string revertText = everythingReverted
             ? "Изменения сняты, сеть в исходном состоянии."
             : "Часть изменений снять не удалось — нажмите «Починить сеть» и проверьте маршруты вручную.";
 
-        if (_baselineRttMs is not { } baseline || finalRttMs is not { } after)
+        if (baselineRttMs is not { } baseline || finalRttMs is not { } after)
         {
             return $"Замеры «до» или «после» недоступны, поэтому выигрыш не заявляем. {revertText}";
         }
 
-        if (improvement is > 0.5)
-        {
-            string floorText = _floorRttMs is { } floor
-                ? $" Лучший замер за сессию — {floor:F0} мс, ниже физического предела пути опуститься нельзя."
-                : string.Empty;
+        // Итог делается по набору окон с проверкой на шум. Обещание «стало лучше» теперь требует,
+        // чтобы 95-процентный интервал разницы целиком был выше порога значимости.
+        GainVerdict gain = EvaluateGain();
+        string floorTextForGain = _floorRttMs is { } floorMs
+            ? $" Лучший замер за сессию — {floorMs:F0} мс, ниже физического предела пути опуститься нельзя."
+            : string.Empty;
 
-            return $"Пинг снизился с {baseline:F0} до {after:F0} мс (медиана живого потока). Это измеренный результат, " +
-                   $"а не обещание.{floorText} {revertText}";
+        if (gain.Outcome == GainOutcome.Confirmed)
+        {
+            return $"Пинг снизился с {baseline:F0} до {after:F0} мс (медиана живого потока). {gain.DescribeRu()} " +
+                   $"Это измеренный результат, а не обещание.{floorTextForGain} {revertText}";
         }
 
-        if (improvement is < -0.5)
+        if (gain.Outcome == GainOutcome.Worse)
         {
-            return $"Стало хуже: {baseline:F0} → {after:F0} мс. Оптимизацию не оставляем: {revertText} " +
+            return $"Стало хуже: {baseline:F0} → {after:F0} мс. {gain.DescribeRu()} Оптимизацию не оставляем: {revertText} " +
                    "Причина в самом маршруте, а не в настройках Windows — тут помог бы только релей в обход проблемного участка.";
         }
 
-        return $"Заметного выигрыша нет: {baseline:F0} → {after:F0} мс. {revertText} " +
+        if (gain.Outcome == GainOutcome.WithinNoise)
+        {
+            return $"Заметного выигрыша нет: {baseline:F0} → {after:F0} мс. {gain.DescribeRu()} {revertText} " +
+                   "Честно: на этом маршруте оптимизация не помогает, а твики пинг на 40 мс не снижают — так не бывает.";
+        }
+
+        if (improvement is > GainVerdict.MeaningfulMs)
+        {
+            return $"Пинг изменился с {baseline:F0} до {after:F0} мс, но подтвердить это нечем. {gain.DescribeRu()} " +
+                   $"Выигрыш не заявляем — для вывода нужно не меньше {GainVerdict.MinimumSamples} окон «до» и «после»." +
+                   $"{floorTextForGain} {revertText}";
+        }
+
+        if (improvement is < -GainVerdict.MeaningfulMs)
+        {
+            return $"Стало хуже: {baseline:F0} → {after:F0} мс. {gain.DescribeRu()} Оптимизацию не оставляем: {revertText} " +
+                   "Причина в самом маршруте, а не в настройках Windows — тут помог бы только релей в обход проблемного участка.";
+        }
+
+        return $"Заметного выигрыша нет: {baseline:F0} → {after:F0} мс. {gain.SummaryRu} {revertText} " +
                "Честно: на этом маршруте оптимизация не помогает, а твики пинг на 40 мс не снижают — так не бывает.";
     }
 
@@ -641,8 +1229,13 @@ public sealed class RealtimeOptimizer
     {
         _applied.Clear();
         _baselineWindows.Clear();
+        _baselineJitter.Clear();
         _recentWindows.Clear();
         _warnings.Clear();
+        lock (_historyGate)
+        {
+            _history.Clear();
+        }
         _flow = null;
         _baselineRttMs = null;
         _floorRttMs = null;
@@ -652,6 +1245,15 @@ public sealed class RealtimeOptimizer
         _lastLossPercent = null;
         _activePathId = null;
         _appliedRouteAction = false;
+        _failedPathIds.Clear();
+        _switchProblemRu = null;
+        _healthyWindowsSinceReview = 0;
+        _lastSwitchUtc = null;
+        _windowsSinceServerCheck = 0;
+        _baselineIsForAnotherServer = false;
+        // Метки способа относятся к своей сессии: без сброса новый замер унаследовал бы чужой способ.
+        _baselineMethodTag = string.Empty;
+        _lastMethodTag = string.Empty;
         _consecutiveBadWindows = 0;
         _consecutiveGoodWindows = 0;
     }

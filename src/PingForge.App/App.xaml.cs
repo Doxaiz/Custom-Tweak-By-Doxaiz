@@ -3,6 +3,8 @@ using System.Security.Principal;
 using System.Threading;
 using System.Windows;
 using PingForge.App.ViewModels;
+using PingForge.Network.Windows;
+using PingForge.Probing.Access;
 using PingForge.Tweaks;
 
 namespace PingForge.App;
@@ -35,6 +37,13 @@ public partial class App : Application
     /// <summary>Каталог читается из той же сборки, что применяет служба: описания и вердикты совпадают.</summary>
     public TweakCatalog Catalog { get; private set; } = null!;
 
+    /// <summary>
+    /// Порты платформы Windows для анализа (задача F): советники задержки ввода и проверки настроек
+    /// читают реальные значения — реестр, PnP-устройства, свойства сетевых карт. Создаются здесь,
+    /// а не внутри моделей: их состав видно в одном месте, и их можно освободить при выходе.
+    /// </summary>
+    private PingForge.Tweaks.Windows.WindowsTweakPlatform? _analysisPlatform;
+
     public EngineClient Engine { get; private set; } = null!;
 
     public MainViewModel MainScreen { get; private set; } = null!;
@@ -60,6 +69,14 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Служебный режим дочернего процесса: подержать настоящее TCP-соединение, пока родитель читает
+        // его статистику. Проверяется именно то, что делает служба, — чтение потока ЧУЖОГО процесса.
+        if (PingForge.Probing.HoldTcpRequest.TryParse(e.Args, out PingForge.Probing.HoldTcpRequest? hold))
+        {
+            Shutdown(HoldTcpRunner.Run(hold!));
+            return;
+        }
 
         SelfCheckMode = HasArgument(e.Args, "--self-check");
         QuietMode = HasArgument(e.Args, "--quiet");
@@ -120,7 +137,12 @@ public partial class App : Application
     private void Build()
     {
         Step("Собираю каталог твиков");
-        Catalog = new TweakCatalog(new TweakPlatformPorts());
+        // Задача F: каталог получает настоящие порты Windows. Витрина (строки, пресеты) от этого
+        // не меняется — она читает только описания. Зато советники анализа теперь снимают
+        // фактические значения, а не отвечают «не поддерживается».
+        var analysisPlatform = new PingForge.Tweaks.Windows.WindowsTweakPlatform();
+        _analysisPlatform = analysisPlatform;
+        Catalog = new TweakCatalog(analysisPlatform.ToCatalogPorts());
 
         Step("Читаю настройки");
         var dialogs = new WpfDialogs();
@@ -136,14 +158,51 @@ public partial class App : Application
         Step("Собираю модели представления");
         Engine = new EngineClient(new NamedPipeEngineChannel());
 
-        MainScreen = new MainViewModel(Engine, dialogs, runsAsAdministrator: IsAdministrator());
+        // pollStatusWhileOptimizing: пока оптимизация идёт, окно редко (раз в 3 с) спрашивает status —
+        // команда только читает. Так график сети живёт без собственных зондов: точки приходят
+        // из тех же замеров, что уже делает оптимизация.
+        // «Проверить сеть» (задача G) собирается здесь же: ей нужны настоящий движок, адрес живой
+        // сессии и список кодов каталога — рекомендации сверяются с ним, а не верятся на слово.
+        var tweakRows = TweakRowFactory.BuildAll(Catalog);
+        MainScreen = new MainViewModel(
+            Engine,
+            dialogs,
+            runsAsAdministrator: IsAdministrator(),
+            pollStatusWhileOptimizing: true,
+            networkCheck: new NetworkCheckViewModel(
+                NetworkCheckWiring.Build(analysisPlatform, Engine, () => MainScreen?.Endpoint, IsAdministrator()),
+                ApplyRecommendedInTweaks,
+                tweakRows.Select(row => row.Code).ToList()),
+            serverPath: new ServerPathViewModel(
+                new IcmpServerPathRunner(new SystemNetIcmpProbe()),
+                () => MainScreen?.LiveGameEndpoint),
+            // «Блокировки и доступ»: живой замер до сайта. Ничего не меняет и не обходит —
+            // один обычный запрос по кнопке, вывод по тому, что видно на пути.
+            access: new AccessCheckViewModel(new LiveAccessProbe()));
         Tweaks = new TweaksViewModel(
             Engine,
             dialogs,
-            TweakRowFactory.BuildAll(Catalog),
+            tweakRows,
             TweakRowFactory.BuildPresets(Catalog));
-        Journal = new JournalViewModel(Engine, settings.JournalRowsShown);
-        Settings = new SettingsViewModel(Engine, store, dialogs);
+
+        // Карточка «Задержка ввода» (задача F): советник из PingForge.Analysis, подключённый к окну.
+        Tweaks.AttachInputLatency(new InputLatencyViewModel(
+            AnalysisWiring.BuildInputLatency(analysisPlatform, Catalog),
+            Tweaks.ShowOnlyCodes));
+
+        // Задача J: «Журнал» получает вторую вкладку «Сессии»; очистка истории спрашивает
+        // подтверждение тем же окном, что и остальные необратимые действия.
+        Journal = new JournalViewModel(Engine, settings.JournalRowsShown, dialogs);
+
+        // Блок «Проверка настроек» (задача F): разбор конфликтов и советы по твикам, только чтение.
+        // Кнопка «Показать в твиках» фильтрует список и переключает раздел — тот же путь, что клик по меню.
+        Settings = new SettingsViewModel(
+            Engine,
+            store,
+            dialogs,
+            check: new SettingsCheckViewModel(
+                AnalysisWiring.BuildSettingsCheck(analysisPlatform, Catalog, () => MainScreen.Endpoint),
+                ShowInTweaks));
         Games = new GameLauncherViewModel(
             new WindowsGameLocator(),
             new ProcessGameStarter(),
@@ -224,20 +283,37 @@ public partial class App : Application
     /// </summary>
     private void HideSplash()
     {
-        if (_splash is null)
+        SplashWindow? splash = _splash;
+        if (splash is null)
         {
             return;
         }
 
+        TimeSpan shown = DateTime.UtcNow - _splashShownUtc;
+        TimeSpan remaining = TimeSpan.FromMilliseconds(700) - shown;
+        if (remaining <= TimeSpan.Zero)
+        {
+            CloseSplash(splash);
+            return;
+        }
+
+        // Не блокируем поток интерфейса. Раньше здесь стоял Thread.Sleep до 700 мс: окно уже
+        // показано, а программа в это время не отвечала — на медленной машине это выглядело
+        // как «окно зависло при запуске». Заставка закрывается по таймеру сама.
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = remaining };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            CloseSplash(splash);
+        };
+        timer.Start();
+    }
+
+    private void CloseSplash(SplashWindow splash)
+    {
         try
         {
-            TimeSpan shown = DateTime.UtcNow - _splashShownUtc;
-            if (shown < TimeSpan.FromMilliseconds(700))
-            {
-                Thread.Sleep(TimeSpan.FromMilliseconds(700) - shown);
-            }
-
-            _splash.Close();
+            splash.Close();
         }
         catch (Exception ex)
         {
@@ -245,7 +321,10 @@ public partial class App : Application
         }
         finally
         {
-            _splash = null;
+            if (ReferenceEquals(_splash, splash))
+            {
+                _splash = null;
+            }
         }
     }
 
@@ -352,9 +431,42 @@ public partial class App : Application
         Shutdown();
     }
 
+    /// <summary>
+    /// Задача F: кнопка «Показать в твиках» из блока проверки настроек. Сначала фильтр списка
+    /// по кодам, затем переход в раздел «Твики» — тем же путём, что и клик по меню.
+    /// </summary>
+    private void ShowInTweaks(IReadOnlyList<string> codes)
+    {
+        Tweaks.ShowOnlyCodes(codes);
+        Shell?.ShowTweaksSection();
+    }
+
+    /// <summary>
+    /// Задача G: «Применить рекомендованное» из проверки сети. Никакого своего применения:
+    /// отмечаем ровно рекомендованные коды в разделе «Твики», переходим туда и запускаем обычную
+    /// кнопку применения — подтверждение, точка восстановления, снапшот и проверка живут там.
+    /// Если коды в каталоге не нашлись (не должны: модель сверяется с каталогом заранее),
+    /// честно говорим, что применять нечего, а не делаем вид, что применили.
+    /// </summary>
+    private void ApplyRecommendedInTweaks(IReadOnlyList<string> codes)
+    {
+        int matched = Tweaks.SelectCodesForApply(codes);
+        if (matched == 0)
+        {
+            MainScreen.ShowNotice(
+                "Применить нечего",
+                "Проверка сети передала коды, которых нет в каталоге этой сборки. Ничего не применялось.");
+            return;
+        }
+
+        Shell?.ShowTweaksSection();
+        _ = Tweaks.ApplySelectedCommand.ExecuteAsync();
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         _instance?.Dispose();
+        _analysisPlatform?.Dispose();
         base.OnExit(e);
     }
 

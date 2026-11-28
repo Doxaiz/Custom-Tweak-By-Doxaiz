@@ -1,3 +1,5 @@
+using PingForge.Core.Models;
+
 namespace PingForge.Orchestration.Realtime;
 
 /// <summary>
@@ -108,7 +110,7 @@ public static class TrayMenuBuilder
         {
             isRunning
                 ? new TrayMenuItem(TrayCommand.StopOptimization, "Остановить оптимизацию",
-                    true, $"Снять маршрут и политику QoS, вернуть сеть как было ({pingText})")
+                    true, StopTooltipRu(snapshot, pingText))
                 : new TrayMenuItem(TrayCommand.StartOptimization, "Оптимизировать соединение",
                     isAdministrator ? snapshot.State != RealtimeOptimizationState.FindingGame : true,
                     isAdministrator
@@ -133,6 +135,60 @@ public static class TrayMenuBuilder
     }
 
     /// <summary>
+    /// Способ замера словами для трея: та же пара «до/после», что называет окно, — чтобы человек
+    /// не читал в окне один способ, а в меню другой. Способ не назван — строки нет вовсе.
+    /// </summary>
+    public static string MethodRu(RealtimeSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        bool known = !string.IsNullOrWhiteSpace(snapshot.FinalMethodTag)
+            || !string.IsNullOrWhiteSpace(snapshot.BaselineMethodTag);
+
+        return known
+            ? ProbeMethodTags.DescribePairRu(snapshot.BaselineMethodTag, snapshot.FinalMethodTag)
+            : string.Empty;
+    }
+
+    private static string StopTooltipRu(RealtimeSnapshot snapshot, string pingText)
+    {
+        var facts = new List<string>(4) { pingText, SpreadRu(snapshot) };
+
+        // Выигрыш живёт здесь, а не в надписи значка: в 63 знака он не всегда влезает, а терять
+        // его совсем нельзя — в меню место есть.
+        if (snapshot.ImprovementMs is { } gain)
+        {
+            facts.Add(gain >= 1 ? $"выигрыш {gain:0} мс к исходному" : "выигрыша к исходному нет");
+        }
+
+        string method = MethodRu(snapshot);
+        if (method.Length > 0)
+        {
+            facts.Add(method);
+        }
+
+        return $"Снять маршрут и политику QoS, вернуть сеть как было ({string.Join("; ", facts)})";
+    }
+
+    /// <summary>
+    /// Разброс и потери словами для меню значка. Неизмеренное — «не измерено», а не «0 мс»:
+    /// живой замер потерь не измеряет вовсе, и ноль здесь был бы выдумкой.
+    /// </summary>
+    public static string SpreadRu(RealtimeSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        string jitter = snapshot.CurrentJitterMs is { } jitterMs
+            ? $"разброс {jitterMs:0.#} мс"
+            : "разброс не измерен";
+        string loss = snapshot.CurrentLossPercent is { } lossPercent
+            ? $"потери {lossPercent:0.#} %"
+            : "потери не измерены";
+
+        return $"{jitter}, {loss}";
+    }
+
+    /// <summary>
     /// Текст рядом со значком: короткий и без вранья. Нет измеренного пинга — так и пишем,
     /// и никогда не показываем «0 мс» вместо «нет данных».
     /// </summary>
@@ -140,26 +196,105 @@ public static class TrayMenuBuilder
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        string state = snapshot.State switch
-        {
-            RealtimeOptimizationState.ActiveMonitoring => "оптимизация работает",
-            RealtimeOptimizationState.Degraded => "оптимизация работает, качество просело",
-            RealtimeOptimizationState.MeasuringBaseline => "идёт замер",
-            RealtimeOptimizationState.ReadOnlyNoAdmin => "только замеры (нет прав)",
-            RealtimeOptimizationState.Stopped => "остановлено",
-            RealtimeOptimizationState.Failed => "не удалось: смотрите окно",
-            _ => "простой"
-        };
-
         if (snapshot.CurrentRttMs is not { } rtt)
         {
-            return $"Custom Tweak: {state}. Пинга нет — замеров пока не было.";
+            // Замера нет — так и говорим; способа тоже нет, и придумывать его не из чего.
+            return Fit("Пинга нет — замеров пока не было", snapshot.State, null, null);
         }
 
         string improvement = snapshot.ImprovementMs is { } gain
-            ? gain >= 1 ? $", выигрыш {gain:0} мс к исходному" : ", выигрыша к исходному нет"
-            : string.Empty;
+            ? gain >= 1 ? $"выигрыш {gain:0} мс" : "выигрыша нет"
+            : null;
 
-        return $"Custom Tweak: пинг {rtt:0} мс{improvement} · {state}";
+        return Fit($"пинг {rtt:0} мс", snapshot.State, MethodShortRu(snapshot), improvement);
     }
+
+    /// <summary>
+    /// Сколько знаков помещается в подсказку значка. WinForms обрезает её сам, поэтому длину держим
+    /// здесь: обрезанное посреди слова «· оптимизаци» — это не подсказка, а мусор.
+    /// </summary>
+    public const int MaxIconTextLength = 63;
+
+    /// <summary>
+    /// Короткое имя способа для значка. Пусто — когда способ не назван: молчание честнее выдумки.
+    /// </summary>
+    public static string MethodShortRu(RealtimeSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!string.IsNullOrWhiteSpace(snapshot.FinalMethodTag))
+        {
+            return ProbeMethodTags.ShortRu(snapshot.FinalMethodTag);
+        }
+
+        return string.IsNullOrWhiteSpace(snapshot.BaselineMethodTag)
+            ? string.Empty
+            : ProbeMethodTags.ShortRu(snapshot.BaselineMethodTag) + " (до)";
+    }
+
+    /// <summary>
+    /// Надпись из частей по убыванию важности: сначала «пинг, выигрыш, состояние, способ», затем
+    /// выигрыш уступает место способу, потом состояние говорит одним словом. Обрезки посреди слова
+    /// не бывает: не влезло — часть не показывается, а не режется.
+    /// </summary>
+    private static string Fit(string ping, RealtimeOptimizationState state, string? method, string? improvement)
+    {
+        string full = Join(ping, improvement, IconStateRu(state), method);
+        if (full.Length <= MaxIconTextLength)
+        {
+            return full;
+        }
+
+        string withoutGain = Join(ping, null, IconStateRu(state), method);
+        if (withoutGain.Length <= MaxIconTextLength)
+        {
+            return withoutGain;
+        }
+
+        string oneWord = Join(ping, null, IconStateShortRu(state), method);
+        return oneWord.Length <= MaxIconTextLength ? oneWord : Join(ping, null, null, method);
+    }
+
+    private static string Join(string ping, string? improvement, string? state, string? method)
+    {
+        var parts = new List<string>(4) { ping };
+        if (!string.IsNullOrEmpty(improvement))
+        {
+            parts.Add(improvement);
+        }
+
+        if (!string.IsNullOrEmpty(state))
+        {
+            parts.Add(state);
+        }
+
+        if (!string.IsNullOrEmpty(method))
+        {
+            parts.Add(method);
+        }
+
+        return "Custom Tweak: " + string.Join(" · ", parts);
+    }
+
+    /// <summary>Состояние для значка — словами, но короче, чем в окне.</summary>
+    public static string IconStateRu(RealtimeOptimizationState state) => state switch
+    {
+        RealtimeOptimizationState.ActiveMonitoring => "оптимизация работает",
+        RealtimeOptimizationState.Degraded => "работает, качество просело",
+        RealtimeOptimizationState.MeasuringBaseline => "идёт замер",
+        RealtimeOptimizationState.ReadOnlyNoAdmin => "только замеры (нет прав)",
+        RealtimeOptimizationState.Stopped => "остановлено",
+        RealtimeOptimizationState.Failed => "не удалось: смотрите окно",
+        _ => "простой"
+    };
+
+    private static string IconStateShortRu(RealtimeOptimizationState state) => state switch
+    {
+        RealtimeOptimizationState.ActiveMonitoring => "работает",
+        RealtimeOptimizationState.Degraded => "просело",
+        RealtimeOptimizationState.MeasuringBaseline => "замер",
+        RealtimeOptimizationState.ReadOnlyNoAdmin => "без прав",
+        RealtimeOptimizationState.Failed => "сбой",
+        _ => IconStateRu(state)
+    };
 }

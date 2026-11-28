@@ -1,13 +1,13 @@
 name: Сборка, тесты и готовые .exe
 
 # Что делает этот сценарий:
-#   1) собирает решение и прогоняет все 450 тестов;
+#   1) собирает решение и прогоняет все автотесты;
 #   2) выгружает каталог твиков, перерисовывает обе витрины и гоняет четыре чекера интерфейса;
 #   3) собирает .exe в двух видах, установщик (NSIS) и контрольные суммы, прикладывает их к сборке;
 #   4) проверяет установщик по-настоящему: тихо ставит на сборочной Windows, смотрит файлы, ярлыки,
 #      запись в «Программах и компонентах», службу, разговаривает со службой живой утилитой
 #      PingForge.EngineSmoke и тихо удаляет — после чего проверяет, что следов не осталось;
-#   5) на теге вида v0.2.0 — создаёт релиз с этими файлами.
+#   5) на теге вида v1.0.0 — создаёт (или перезаписывает) единственный релиз с этими файлами.
 #
 # Запускается на каждый push и вручную из вкладки Actions.
 
@@ -100,15 +100,51 @@ jobs:
 
       - name: Витрины — перерисовать
         run: |
-          python tools/render_ui_preview.py docs/catalog.json docs/pingforge-ui-preview.html
+          # Число автотестов берём из журнала прогона: вписанная руками цифра врёт через месяц.
+          $tests = 0
+          $trx = Get-ChildItem test-results -Filter *.trx -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($trx) {
+            [xml]$doc = Get-Content $trx.FullName -Raw
+            $tests = [int]$doc.TestRun.ResultSummary.Counters.total
+          }
+          if ($tests -gt 0) {
+            Write-Host "Автотестов из журнала прогона: $tests"
+            python tools/render_ui_preview.py docs/catalog.json docs/pingforge-ui-preview.html --tests $tests
+          } else {
+            Write-Host "Журнала тестов нет: макет честно скажет, что числа нет"
+            python tools/render_ui_preview.py docs/catalog.json docs/pingforge-ui-preview.html
+          }
           python tools/render_app_site.py docs/catalog.json docs/custom-tweak-by-doxaiz.html
         shell: pwsh
 
-      - name: Витрины — проверки
+      # Проверки разнесены по шагам, а упавшие проверки пишутся ещё и аннотацией: по имени шага
+      # сразу видно, что сломалось (макет или витрина), а текст «✗ …» остаётся в аннотациях даже
+      # когда журнал прогона недоступен.
+      - name: Витрины — jsdom
         run: |
           npm install jsdom --no-save --silent
-          node tools/check_ui_preview.js docs/pingforge-ui-preview.html
-          node tools/check_app_site.js docs/custom-tweak-by-doxaiz.html
+          if (-not (Test-Path node_modules/jsdom)) {
+            Write-Host "::error title=jsdom::пакет jsdom не установился — проверки макета не запустятся"
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Витрины — проверки подробного макета
+        run: |
+          node tools/check_ui_preview.js docs/pingforge-ui-preview.html 2>&1 | Tee-Object -Variable output
+          if ($LASTEXITCODE -ne 0) {
+            $output | Where-Object { $_ -match '✗|проблем' } | ForEach-Object { Write-Host "::error title=макет::$_" }
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Витрины — проверки витрины
+        run: |
+          node tools/check_app_site.js docs/custom-tweak-by-doxaiz.html 2>&1 | Tee-Object -Variable output
+          if ($LASTEXITCODE -ne 0) {
+            $output | Where-Object { $_ -match '✗|проблем' } | ForEach-Object { Write-Host "::error title=витрина::$_" }
+            exit 1
+          }
         shell: pwsh
 
       - name: Программа — компактная сборка (нужен .NET 10)
@@ -174,6 +210,10 @@ jobs:
             Get-Content $log | ForEach-Object { Write-Host "   $_" }
 
             if ($process.ExitCode -ne 0) {
+              # Хвост журнала — в аннотацию: аннотации видны через API даже там, где полные логи
+              # не скачать (например, из песочницы без доступа к хранилищу GitHub).
+              $tail = (Get-Content $log | Select-Object -Last 20 | Where-Object { $_.Trim() }) -join ' | '
+              if ($tail) { Write-Host "::error title=$title::$tail" }
               throw "${title}: самопроверка вернула код $($process.ExitCode). Подробности выше."
             }
           }
@@ -182,6 +222,105 @@ jobs:
           Check-App 'Компактная сборка' 'dist\compact\CustomTweakByDoxaiz.exe'
 
           Write-Host 'Окно, разделы, трей и каталог собираются на живой Windows.'
+
+      # Ж: единственные проверки, где программа шлёт настоящие пакеты и читает настоящий сетевой стек,
+      # а потом называет получившиеся числа. Две строки в журнале:
+      #   «ЖИВОЙ ЗАМЕР» — ICMP-эхо, а если ICMP закрыт, TCP-рукопожатие;
+      #   «ЖИВОЙ TCP-ЗАМЕР (iphlpapi)» — статистика уже открытого соединения из сетевого стека.
+      # Сети нет, ICMP запрещён или сбор статистики не включён — «пропущено» с причиной, а не зелёный
+      # результат. Ноль вместо задержки — отказ. Числа уходят в аннотацию: их видно через API даже
+      # там, где полные логи не скачать.
+      - name: Ж - живой замер на настоящей сети (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ann = 'file=src/PingForge.App/SelfCheck.cs,line=1'
+          $log = Join-Path $env:LOCALAPPDATA 'CustomTweakByDoxaiz\app-start.log'
+          $exe = 'dist\portable\CustomTweakByDoxaiz.exe'
+          if (-not (Test-Path $exe)) { throw "Нет файла: $exe" }
+
+          Remove-Item $log -ErrorAction SilentlyContinue
+          $process = Start-Process $exe -ArgumentList '--self-check' -Wait -PassThru
+          Write-Host "   код возврата: $($process.ExitCode)"
+
+          if (-not (Test-Path $log)) { throw "Журнала нет: $log — программа не дошла до записи журнала" }
+
+          $lines = @(Get-Content $log | Where-Object { $_ -match 'ЖИВОЙ' })
+          if ($lines.Count -eq 0) {
+            $tail = (Get-Content $log | Select-Object -Last 12 | Where-Object { $_.Trim() }) -join ' | '
+            Write-Host "::error $ann::живой замер: строк «ЖИВОЙ ЗАМЕР» в журнале нет. Хвост: $tail"
+            throw 'Строк «ЖИВОЙ ЗАМЕР» нет в журнале: проверка не запускалась'
+          }
+
+          if (-not ($lines | Where-Object { $_ -match 'iphlpapi' })) {
+            Write-Host "::notice $ann::живой TCP-замер: строки iphlpapi в журнале нет — проверка не дошла до неё"
+          }
+
+          # Чужой процесс: этим доказывается, что читается соединение не самопроверки, а другой программы, —
+          # ровно то, что делает служба с потоком игры. Строки нет — значит проверка не дошла до неё.
+          if (-not ($lines | Where-Object { $_ -match 'чужой процесс' })) {
+            Write-Host "::notice $ann::живой TCP-замер по чужому процессу: строки в журнале нет — проверка не дошла до неё"
+          }
+
+          foreach ($line in $lines) {
+            $safe = ($line -replace '%', '%25' -replace "`r", '' -replace "`n", ' ')
+            Write-Host "::notice $ann::$safe"
+          }
+
+          # Свойства сетевого адаптера: тот бэкенд, через который применяются NIC-твики. Проверка только
+          # читает — если у виртуальной карты свойства нет, это честное «пропущено» с причиной.
+          $nic = @(Get-Content $log | Where-Object { $_ -match 'ЖИВОЕ СВОЙСТВО NIC' })
+          if ($nic.Count -eq 0) {
+            Write-Host "::error $ann::чтение свойств NIC: строки «ЖИВОЕ СВОЙСТВО NIC» в журнале нет — проверка не запускалась"
+            throw 'Строки «ЖИВОЕ СВОЙСТВО NIC» нет в журнале'
+          }
+
+          foreach ($line in $nic) {
+            $safe = ($line -replace '%', '%25' -replace "`r", '' -replace "`n", ' ')
+            Write-Host "::notice $ann::$safe"
+          }
+
+          # Подпись своего файла: программа читает её у файла и говорит правду (в CI сборка не подписана).
+          $sign = @(Get-Content $log | Where-Object { $_ -match 'ПОДПИСЬ:' })
+          if ($sign.Count -eq 0) {
+            Write-Host "::error $ann::подпись файла: строки «ПОДПИСЬ:» в журнале нет — проверка не запускалась"
+            throw 'Строки «ПОДПИСЬ:» нет в журнале'
+          }
+
+          foreach ($line in $sign) {
+            $safe = ($line -replace '%', '%25' -replace "`r", '' -replace "`n", ' ')
+            Write-Host "::notice $ann::$safe"
+          }
+
+          # Замер доступа: карточка «Блокировки и доступ» действительно соединяется, а не рисует текст.
+          $access = @(Get-Content $log | Where-Object { $_ -match 'ДОСТУП:' })
+          if ($access.Count -eq 0) {
+            Write-Host "::error $ann::доступ: строки «ДОСТУП:» в журнале нет — замер не запускался"
+            throw 'Строки «ДОСТУП:» нет в журнале'
+          }
+
+          foreach ($line in $access) {
+            $safe = ($line -replace '%', '%25' -replace "`r", '' -replace "`n", ' ')
+            Write-Host "::notice $ann::$safe"
+          }
+
+          # Замер шума: программа меряет одно и то же соединение вперемешку и обязана сказать
+          # «разница в пределах шума». Если она засчитала такой разнице выигрыш — это и есть ложь,
+          # которую волна 51 убирает: фраза «стало лучше» без проверки значимости.
+          $noise = @(Get-Content $log | Where-Object { $_ -match 'ШУМ:' })
+          if ($noise.Count -eq 0) {
+            Write-Host "::error $ann::шум: строки «ШУМ:» в журнале нет — проверка честности выигрыша не запускалась"
+            throw 'Строки «ШУМ:» нет в журнале'
+          }
+
+          foreach ($line in $noise) {
+            $safe = ($line -replace '%', '%25' -replace "`r", '' -replace "`n", ' ')
+            Write-Host "::notice $ann::$safe"
+          }
+
+          $broken = @($lines + $nic + $sign + $access + $noise | Where-Object { $_ -match 'НЕ работает' })
+          if ($broken.Count -gt 0) { throw "Живой замер не работает: $($broken -join ' | ')" }
+          if ($process.ExitCode -ne 0) { throw "Самопроверка вернула код $($process.ExitCode)" }
 
       - name: Программа — снимок живого окна на Windows
         shell: pwsh
@@ -231,14 +370,21 @@ jobs:
                    '  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }',
                    '  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);',
                    '  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);',
+                   '  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);',
+                   '  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();',
                    '}'
           Add-Type -TypeDefinition ($pfWin -join [Environment]::NewLine)
 
+          # DPI: без этого окно и его прямоугольник считаются в «уменьшенных» пикселях,
+          # и на экране с масштабом снимок выходит обрезанным по правому краю.
+          [PfWin]::SetProcessDPIAware() | Out-Null
           [PfWin]::SetForegroundWindow($handle) | Out-Null
           Start-Sleep -Milliseconds 800
 
           # Снимок — только окно программы, а не весь рабочий стол: это картинка продукта,
           # и в ней не должно быть чужих окон сборочной машины.
+          # Снимаем PrintWindow, а не с экрана: окно 1180×820 бывает больше экрана раннера,
+          # и тогда CopyFromScreen терял правый край вместе с полосой прокрутки.
           $rect = New-Object PfWin+RECT
           [PfWin]::GetWindowRect($handle, [ref]$rect) | Out-Null
           $width = $rect.Right - $rect.Left
@@ -247,7 +393,14 @@ jobs:
 
           $bitmap = New-Object System.Drawing.Bitmap $width, $height
           $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-          $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+          $graphics.Clear([System.Drawing.Color]::FromArgb(7, 11, 20))
+          $hdc = $graphics.GetHdc()
+          $printed = [PfWin]::PrintWindow($handle, $hdc, 2)   # 2 = PW_RENDERFULLCONTENT
+          $graphics.ReleaseHdc($hdc)
+          if (-not $printed) {
+            Write-Host '  PrintWindow не смог — снимаю с экрана'
+            $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+          }
           $shot = Join-Path (Get-Location) 'dist\app-window.png'
           $bitmap.Save($shot, [System.Drawing.Imaging.ImageFormat]::Png)
           $graphics.Dispose(); $bitmap.Dispose()
@@ -263,23 +416,136 @@ jobs:
           Start-Sleep -Seconds 2
           Write-Host 'Окно показывается, программа закрыта. Снимок уйдёт в артефакты сборки.'
 
+      # Картинку в песочнице не посмотреть (артефакты лежат на чужом хранилище), поэтому
+      # о снимке говорит сама сборка: размер, средняя яркость и доля тёмных пикселей уходят
+      # в аннотацию. Так видно три вещи: окно снято целиком, тёмная тема применилась,
+      # и снимок не пустой. Это проверка доказательства, а не замена взгляду человека.
+      - name: Снимок окна — что на нём (размер и яркость)
+        if: always()
+        shell: pwsh
+        run: |
+          $shot = 'dist\app-window.png'
+          if (-not (Test-Path $shot)) {
+            Write-Host '::warning file=.github/workflows/build.yml,line=1::Снимка окна нет — о вёрстке судить нечем'
+            exit 0
+          }
+
+          Add-Type -AssemblyName System.Drawing
+          $bmp = New-Object System.Drawing.Bitmap $shot
+          $width = $bmp.Width
+          $height = $bmp.Height
+          $sum = 0.0
+          $dark = 0
+          $bright = 0
+          $n = 0
+          $min = 255.0
+          $max = 0.0
+          for ($y = 0; $y -lt $height; $y += 4) {
+            for ($x = 0; $x -lt $width; $x += 4) {
+              $c = $bmp.GetPixel($x, $y)
+              $l = 0.2126 * $c.R + 0.7152 * $c.G + 0.0722 * $c.B
+              $sum += $l
+              $n++
+              if ($l -lt 40) { $dark++ }
+              if ($l -gt 140) { $bright++ }
+              if ($l -lt $min) { $min = $l }
+              if ($l -gt $max) { $max = $l }
+            }
+          }
+          $bmp.Dispose()
+
+          $mean = if ($n -gt 0) { [math]::Round($sum / $n, 1) } else { 0 }
+          $darkPct = if ($n -gt 0) { [math]::Round(100 * $dark / $n, 1) } else { 0 }
+          $brightPct = if ($n -gt 0) { [math]::Round(100 * $bright / $n, 1) } else { 0 }
+          $line = "Снимок окна {0}x{1}: средняя яркость {2}%, тёмных {3}%, светлых {4}%" -f $width, $height, $mean, $darkPct, $brightPct
+          Write-Host "  $line"
+          Write-Host "::notice file=.github/workflows/build.yml,line=1::$line"
+
+          # Проверки, а не только цифры: аннотаций на шаг отводится немного, и «notice» с числами
+          # до человека может не дойти. Зато зелёный шаг означает, что условия ниже выполнены.
+          if (($max - $min) -lt 8) {
+            throw 'Снимок окна одноцветный: окно не отрисовалось, судить о вёрстке нечем'
+          }
+          if ($darkPct -lt 55) {
+            throw "Снимок окна не тёмный: тёмных пикселей $darkPct%, средняя яркость $mean% — тёмная тема, похоже, не применилась"
+          }
+          # Ширину сравниваем не с желаемыми 1180, а с MinWidth окна (860): на сборочной машине
+          # рабочий стол 1024x768, и Windows сама ужимает окно до рабочей области (в прогоне
+          # 44037445223 вышло 1008x704). Меньше MinWidth снимок быть не может — значит обрезан.
+          if ($width -lt 860) {
+            throw "Снимок окна шириной $width меньше MinWidth окна (860) — край обрезан, вёрстку по нему не проверить"
+          }
+          if ($mean -gt 60) {
+            Write-Host "::warning file=.github/workflows/build.yml,line=1::Снимок темноват наполовину: средняя яркость $mean%"
+          }
+
       - name: Установщик — собрать (NSIS)
         run: |
           $ErrorActionPreference = 'Stop'
-
-          # NSIS есть не на всякой сборочной машине: если его нет — ставим пакетным менеджером.
-          $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
-          if (-not (Test-Path $makensis)) {
-            $found = Get-Command makensis -ErrorAction SilentlyContinue
-            if ($found) {
-              $makensis = $found.Source
-            } else {
-              Write-Host 'NSIS не найден — ставлю через choco.'
-              choco install nsis --no-progress -y | Out-Null
-              $makensis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
-            }
+          # Ошибку makensis видно только в журнале, а журнал из песочницы не скачать: поэтому
+          # причина уходит в аннотацию — её читает и человек, и автоматическая проверка.
+          trap {
+            Write-Host "::error file=installer/CustomTweakByDoxaiz.nsi,line=1::NSIS: $($_.Exception.Message)"
+            exit 1
           }
-          if (-not (Test-Path $makensis)) { throw "Не нашёл makensis: $makensis" }
+
+          # NSIS есть не на всякой сборочной машине: если его нет — ставим и ищем в нескольких
+          # местах. Путь проверяем оба (x86 и x64): пакет может лечь в любой, а Get-Command в
+          # текущей сессии PATH не видит — Chocolatey обновляет его только для новых процессов.
+          function Find-Makensis {
+            foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+              if (-not $base) { continue }
+              $candidate = Join-Path $base 'NSIS\makensis.exe'
+              if (Test-Path $candidate) { return $candidate }
+            }
+
+            $found = Get-Command makensis -ErrorAction SilentlyContinue
+            if ($found) { return $found.Source }
+
+            return $null
+          }
+
+          # Chocolatey правит PATH только для новых процессов — текущему его надо перечитать.
+          function Update-PathFromRegistry {
+            $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+            $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+            $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ';'
+          }
+
+          $chocoExit = $null
+          $wingetExit = $null
+          $makensis = Find-Makensis
+          if (-not $makensis) {
+            Write-Host 'NSIS не найден — ставлю через choco.'
+            $chocoOutput = choco install nsis --no-progress -y 2>&1
+            $chocoExit = $LASTEXITCODE
+            Write-Host "choco exit: $chocoExit"
+            $chocoOutput | Select-Object -Last 25 | ForEach-Object { Write-Host $_ }
+            Update-PathFromRegistry
+            $makensis = Find-Makensis
+          }
+
+          if (-not $makensis) {
+            Write-Host 'choco не помог — пробую winget.'
+            $wingetOutput = winget install --id NSIS.NSIS --silent --accept-package-agreements --accept-source-agreements 2>&1
+            $wingetExit = $LASTEXITCODE
+            Write-Host "winget exit: $wingetExit"
+            $wingetOutput | Select-Object -Last 15 | ForEach-Object { Write-Host $_ }
+            Update-PathFromRegistry
+            $makensis = Find-Makensis
+          }
+
+          if (-not $makensis) {
+            Write-Host 'choco и winget не помогли — ищу makensis на диске.'
+            $makensis = (Get-ChildItem 'C:\Program Files*' -Filter makensis.exe -Recurse -ErrorAction SilentlyContinue |
+                Select-Object -First 1).FullName
+          }
+
+          if (-not $makensis) {
+            $tail = (($chocoOutput | Select-Object -Last 10) -join ' | ')
+            Write-Host "::error file=installer/CustomTweakByDoxaiz.nsi,line=1::NSIS не установился (choco exit $chocoExit, winget exit $wingetExit): $tail"
+            throw "Не нашёл makensis ни в Program Files, ни в PATH, ни на диске"
+          }
           Write-Host "makensis: $makensis"
 
           $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
@@ -292,8 +558,13 @@ jobs:
           Write-Host 'Файлы, из которых собирается установщик:'
           Get-ChildItem $sourceDir -File | Select-Object Name, @{n='МБ';e={[math]::Round($_.Length / 1MB, 1)}}
 
-          & $makensis -INPUTCHARSET UTF8 "-DVERSION=$version" "-DSOURCE_DIR=$sourceDir" "-DOUT_DIR=$outDir" "installer\CustomTweakByDoxaiz.nsi"
-          if ($LASTEXITCODE -ne 0) { throw "makensis вернул код $LASTEXITCODE" }
+          $makensisOutput = & $makensis -INPUTCHARSET UTF8 "-DVERSION=$version" "-DSOURCE_DIR=$sourceDir" "-DOUT_DIR=$outDir" "installer\CustomTweakByDoxaiz.nsi" 2>&1
+          $makensisOutput | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) {
+            $tail = ($makensisOutput | Select-Object -Last 12) -join ' | '
+            Write-Host "::error file=installer/CustomTweakByDoxaiz.nsi,line=1::makensis exit $LASTEXITCODE : $tail"
+            throw "makensis вернул код $LASTEXITCODE"
+          }
 
           Get-Item "dist\CustomTweakByDoxaiz-Setup-$version.exe" | Select-Object Name, @{n='МБ';e={[math]::Round($_.Length / 1MB, 1)}}
         shell: pwsh
@@ -466,7 +737,7 @@ jobs:
             New-Item -ItemType Directory -Force test-results | Out-Null
             $out | Set-Content test-results\routing-live.log -Encoding utf8
 
-            $routeLine = (($out -split "`n" | Select-String -SimpleMatch '[6/6]') -join '').Trim()
+            $routeLine = (($out -split "`n" | Select-String -SimpleMatch '[6/7]') -join '').Trim()
             $checks = (($out -split "`n" | Where-Object { $_ -match 'x1b|\[\d/\d\]' -or $_ -match '[0-9]/[0-9]' }) -join ' | ').Trim()
             $checks = $checks -replace '%','%25' -replace "`r",''
             Write-Host "::notice $ann::routing-live exit=$code; checks: $checks"
@@ -476,13 +747,230 @@ jobs:
               Write-Host "::error $ann::routing-live tail: $last"
               throw "EngineSmoke exit $code"
             }
-            if ($routeLine -notmatch '6/6') { throw 'line [6/6] missing from smoke output' }
+            if ($routeLine -notmatch '6/7') { throw 'line [6/7] missing from smoke output' }
 
             $uninstaller = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\Uninstall.exe'
             if (Test-Path $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait | Out-Null }
             Write-Host "::notice $ann::routing-live OK: $routeLine"
           } catch {
             Write-Host "::error $ann::routing-live failed: $($_.Exception.Message -replace '%','%25')"
+            exit 1
+          }
+
+      # G1: распознавание игрового потока на живой Windows — Minecraft (Java) и Fortnite.
+      # Настоящих игр на раннере нет (лицензия, аккаунт, GPU), поэтому проверяется живой сетевой поток
+      # процесса с именем клиента игры: служба видит то же, что у человека с запущенной игрой.
+      - name: "G1 - game flow detection: Minecraft/Fortnite names (live)"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ann = 'file=tools/games-live-checks.ps1,line=1'
+          try {
+            $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+            $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
+            $smoke = "${{ runner.temp }}/art/bin/PingForge.EngineSmoke/release/PingForge.EngineSmoke.exe"
+            if (-not (Test-Path $setup)) { throw "no setup file: $setup" }
+            if (-not (Test-Path $smoke)) { throw "no smoke file: $smoke" }
+
+            $svc = Get-Service -Name PingForge -ErrorAction SilentlyContinue
+            if ($null -eq $svc) {
+              $install = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+              if ($install.ExitCode -ne 0) { throw "setup exit $($install.ExitCode)" }
+              (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(120))
+              Start-Sleep -Seconds 4
+            } elseif ($svc.Status -ne 'Running') {
+              Start-Service PingForge
+              (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+            }
+
+            & tools\games-live-checks.ps1 -SmokePath $smoke
+            $code = $LASTEXITCODE
+            Write-Host "::notice $ann::games-live exit=$code"
+
+            $uninstaller = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\Uninstall.exe'
+            if (Test-Path $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait | Out-Null }
+
+            if ($code -ne 0) { throw "games live checks exit $code" }
+          } catch {
+            Write-Host "::error $ann::games-live failed: $($_.Exception.Message -replace '%','%25')"
+            $uninstaller = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz\Uninstall.exe'
+            if (Test-Path $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait | Out-Null }
+            exit 1
+          }
+
+      # Задача U: повреждённый файл базы не должен ронять службу в цикле рестартов.
+      # Шаг сам ставит установщик, портит заголовок базы, проверяет запуск и убирает за собой.
+      - name: "U - corrupted database: service starts (live)"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+          $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
+          $smoke = "${{ runner.temp }}/art/bin/PingForge.EngineSmoke/release/PingForge.EngineSmoke.exe"
+          if (-not (Test-Path $setup)) { throw "no setup file: $setup" }
+          if (-not (Test-Path $smoke)) { throw "no smoke file: $smoke" }
+          & tools\u-live-checks.ps1 -SetupPath $setup -SmokePath $smoke
+          if ($LASTEXITCODE -ne 0) { throw "U live checks exit $LASTEXITCODE" }
+
+      - name: T - uninstall leaves nothing and update keeps state (live)
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $ann = 'file=scripts/uninstall-service.ps1,line=1'
+
+          function Query-Engine {
+              param([string]$Pipe, [string]$Command, [hashtable]$CmdArgs)
+              $p = New-Object System.IO.Pipes.NamedPipeClientStream('.', $Pipe, [System.IO.Pipes.PipeDirection]::InOut)
+              try {
+                  try { $p.Connect(8000) } catch { return $null }
+                  $req = [ordered]@{ id = [Guid]::NewGuid().ToString('N'); command = $Command }
+                  if ($CmdArgs) { $req['args'] = $CmdArgs }
+                  $b = [Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $req -Compress))
+                  $p.Write([BitConverter]::GetBytes([int32]$b.Length), 0, 4)
+                  $p.Write($b, 0, $b.Length)
+                  $p.Flush()
+                  $h = New-Object byte[] 4
+                  for ($i = 0; $i -lt 4; ) { $n = $p.Read($h, $i, 4 - $i); if ($n -le 0) { return $null }; $i += $n }
+                  $len = [BitConverter]::ToInt32($h, 0)
+                  if ($len -le 0 -or $len -gt 1048576) { return $null }
+                  $body = New-Object byte[] $len
+                  for ($i = 0; $i -lt $len; ) { $n = $p.Read($body, $i, $len - $i); if ($n -le 0) { return $null }; $i += $n }
+                  return [Text.Encoding]::UTF8.GetString($body) | ConvertFrom-Json
+              } finally { $p.Dispose() }
+          }
+
+          function Clean-Answer([string]$text) {
+              if (-not $text) { return '' }
+              ($text -replace '[\r\n]+', ' ' -replace '%', '%25').Trim()
+          }
+
+          try {
+            Write-Host "::notice $ann::T start: live cycles of task T"
+            New-Item -ItemType Directory -Force test-results | Out-Null
+            Start-Transcript -Path test-results\t-uninstall.log -Force | Out-Null
+
+            $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content Directory.Build.props -Raw)).Groups[1].Value
+            $setup = "dist\CustomTweakByDoxaiz-Setup-$version.exe"
+            $installDir = Join-Path $env:ProgramFiles 'Custom Tweak By Doxaiz'
+            $dataDir = Join-Path $env:ProgramData 'PingForge'
+            $mainPipe = 'PingForge.Engine.v1'
+            $roPipe = 'PingForge.Engine.ReadOnly.v1'
+
+            function Purge-All {
+                Get-Service PingForge -ErrorAction SilentlyContinue | ForEach-Object {
+                    sc.exe stop PingForge | Out-Null; Start-Sleep -Seconds 2
+                    sc.exe delete PingForge | Out-Null; Start-Sleep -Seconds 2
+                }
+                if (Test-Path $dataDir) { Remove-Item $dataDir -Recurse -Force -ErrorAction SilentlyContinue }
+                if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue }
+            }
+
+            function Install-Quiet([string]$Setup) {
+                $proc = Start-Process $Setup -ArgumentList '/S' -Wait -PassThru
+                if ($proc.ExitCode -ne 0) { throw "setup /S exit $($proc.ExitCode)" }
+                (Get-Service -Name PingForge).WaitForStatus('Running', [TimeSpan]::FromSeconds(90))
+                Start-Sleep -Seconds 3
+            }
+
+            # ── цикл A: установка → применение → удаление с откатом (требование 1 и 5) ─────────
+            Purge-All
+            Install-Quiet $setup
+
+            $apply = Query-Engine $mainPipe 'apply-tweaks' @{ tweaks = 'TCP_NO_DELAY' }
+            Write-Host "::notice $ann::T apply ok=$($apply.ok) msg=$(Clean-Answer $apply.messageRu)"
+            if (-not $apply -or -not $apply.ok) { throw 'T: apply-tweaks (safe TCP_NODELAY) failed on cycle A' }
+
+            # Скрипт снятия лежит ВНЕ папки установки на время своего запуска: иначе он удалит сам себя на ходу.
+            $scriptTmp = Join-Path $env:RUNNER_TEMP 't-uninstall-service.ps1'
+            Copy-Item (Join-Path $installDir 'uninstall-service.ps1') $scriptTmp -Force
+
+            & $scriptTmp -NonInteractive
+            $refusalCode = $LASTEXITCODE
+            Write-Host "::notice $ann::T refusal-exit=$refusalCode (ожидался 2: есть применённые изменения, выбор не задан)"
+            if ($refusalCode -ne 2) { throw "T: uninstall without choice must exit 2, got $refusalCode" }
+            if (-not (Get-Service PingForge -ErrorAction SilentlyContinue)) { throw 'T: refusal path deleted the service' }
+
+            & $scriptTmp -RollbackAndRemove -RemoveData
+            $cleanCode = $LASTEXITCODE
+            Write-Host "::notice $ann::T rollback+remove exit=$cleanCode"
+            if ($cleanCode -ne 0) { throw "T: uninstall with rollback exit $cleanCode" }
+            if (Get-Service PingForge -ErrorAction SilentlyContinue) { throw 'T: service left behind' }
+            if (Test-Path $dataDir) { throw 'T: data left behind after -RemoveData' }
+            if (Test-Path $installDir) { throw 'T: install dir left behind' }
+            Write-Host "::notice $ann::T-cycleA OK: applied tweak -> refusal -> rollback + clean removal"
+
+            # ── цикл B: установка поверх работающей службы (требование 3) ─────────────────────
+            Install-Quiet $setup
+            $apply2 = Query-Engine $mainPipe 'apply-tweaks' @{ tweaks = 'TCP_NO_DELAY' }
+            if (-not $apply2 -or -not $apply2.ok) { throw 'T: apply-tweaks failed on cycle B' }
+            $settingsFile = Join-Path $dataDir 'settings.json'
+            $settingsHash = if (Test-Path $settingsFile) { (Get-FileHash $settingsFile).Hash } else { 'absent' }
+            $dbBefore = (Get-Item (Join-Path $dataDir 'pingforge.db')).Length
+
+            # Тот же установщик поверх работыющей службы — проверка, что занятый бинарник службы
+            # заменяется (net stop в секции установки), а данные и журнал остаются.
+            Install-Quiet $setup
+            $ping = Query-Engine $roPipe 'ping'
+            $pd = $null
+            if ($ping -and $ping.dataJson) { $pd = $ping.dataJson | ConvertFrom-Json }
+            $svcVersion = if ($pd) { [string]$pd.appVersion } else { 'unknown' }
+            Write-Host "::notice $ann::T upgraded service version=$svcVersion expected=$version"
+            if ($svcVersion -ne $version) { throw "T: version after upgrade is $svcVersion, expected $version" }
+
+            $settingsHash2 = if (Test-Path $settingsFile) { (Get-FileHash $settingsFile).Hash } else { 'absent' }
+            if ($settingsHash2 -ne $settingsHash) { throw 'T: update touched settings.json' }
+            $dbAfter = (Get-Item (Join-Path $dataDir 'pingforge.db')).Length
+            if ($dbAfter -lt $dbBefore) { throw "T: database shrank during update ($dbBefore -> $dbAfter)" }
+            $journal = Query-Engine $roPipe 'journal-tail' @{ limit = '50' }
+            if (-not $journal -or -not $journal.ok) { throw 'T: journal unreadable after update' }
+            if ($journal.dataJson -notmatch 'TCP_NO_DELAY' -and $journal.messageRu -notmatch 'TCP_NO_DELAY') {
+                throw 'T: applied tweak entry disappeared from journal during update'
+            }
+            $rb = Query-Engine $mainPipe 'rollback'
+            Write-Host "::notice $ann::T rollback-from-old-snapshot ok=$($rb.ok) msg=$(Clean-Answer $rb.messageRu)"
+            if (-not $rb -or -not $rb.ok) { throw 'T: rollback from pre-update snapshot failed' }
+            Write-Host "::notice $ann::T-cycleB OK: over-install kept settings/journal/snapshot, version updated, rollback works"
+
+            # ── цикл C: апгрейд поверх ПОСЛЕДНЕЙ подтверждённой стабильной версии ────────────
+            # Базу не выдумываем и не хардкодим: просим GitHub API. Если latest — это уже текущая
+            # собираемая версия (релизный тег гонится за кодом), берём предыдущий релиз списка.
+            try {
+                Purge-All
+                $hdr = @{ Accept = 'application/vnd.github+json'; Authorization = "Bearer $env:GITHUB_TOKEN" }
+                $rels = Invoke-RestMethod "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases?per_page=5" -Headers $hdr
+                $baseRelease = $rels | Where-Object { -not $_.prerelease -and $_.tag_name -ne "v$version" } | Select-Object -First 1
+                if (-not $baseRelease) { throw 'нет предыдущего стабильного релиза для базового сравнения' }
+                Write-Host "::notice $ann::T upgrade baseline = $($baseRelease.tag_name) (latest stable, confirmed by API)"
+                $asset = $baseRelease.assets | Where-Object { $_.name -like '*Setup*.exe' } | Select-Object -First 1
+                if (-not $asset) { throw "у $($baseRelease.tag_name) нет Setup-ассета" }
+                $oldSetup = Join-Path $env:RUNNER_TEMP ('setup-' + $baseRelease.tag_name + '.exe')
+                Invoke-WebRequest -Uri $asset.url -Headers @{ Accept = 'application/octet-stream'; Authorization = "Bearer $env:GITHUB_TOKEN" } -OutFile $oldSetup
+                Install-Quiet $oldSetup
+                $oldApply = Query-Engine $mainPipe 'apply-tweaks' @{ tweaks = 'TCP_NO_DELAY' }
+                Write-Host "::notice $ann::T $($baseRelease.tag_name) apply ok=$($oldApply.ok) msg=$(Clean-Answer $oldApply.messageRu)"
+                if (-not $oldApply -or -not $oldApply.ok) { throw "базовый релиз отклонил безопасный твик" }
+                Install-Quiet $setup
+                $ping3 = Query-Engine $roPipe 'ping'
+                $pd3 = if ($ping3 -and $ping3.dataJson) { $ping3.dataJson | ConvertFrom-Json } else { $null }
+                $v3 = if ($pd3) { [string]$pd3.appVersion } else { 'unknown' }
+                if ($v3 -ne $version) { throw "T: after upgrade over $($baseRelease.tag_name) version is $v3, expected $version" }
+                $journal3 = Query-Engine $roPipe 'journal-tail' @{ limit = '100' }
+                if (-not $journal3 -or -not $journal3.ok) { throw "T: journal from $($baseRelease.tag_name) unreadable after upgrade" }
+                $rb3 = Query-Engine $mainPipe 'rollback'
+                if (-not $rb3 -or -not $rb3.ok) { throw "T: rollback of $($baseRelease.tag_name)-era snapshot failed" }
+                Write-Host "::notice $ann::T-cycleC OK: $($baseRelease.tag_name) -> $version, journal kept, rollback works"
+            } catch {
+                Write-Host "::notice $ann::T baseline-release stage did not run: $(Clean-Answer $_.Exception.Message)"
+            }
+
+            Purge-All
+            Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "::notice $ann::T-live OK: uninstall asks and reverts, update keeps everything"
+          } catch {
+            Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "::error $ann::T failed: $(($_.Exception.Message -replace '[\r\n]+',' ') -replace '%','%25')"
             exit 1
           }
 
@@ -584,4 +1072,6 @@ jobs:
             test-results/service.log
             test-results/routing-live.log
             test-results/c7-live-checks.log
+            test-results/t-uninstall.log
+            test-results/u-live.log
           if-no-files-found: warn

@@ -93,7 +93,7 @@ def tweak_card(t: dict) -> str:
     <p class="tw-sub">{esc(trim(t["whatItDoesRu"], 150))}</p>
     <details class="tw-more">
       <summary>Подробнее</summary>
-      <p>{esc(trim(t["gamingJustificationRu"], 260))}</p>
+      <p>{esc(trim(t["gamingJustificationRu"], 232))}</p>
       <p class="meta">{impact(t["ping"], "пинг")} · {impact(t["speed"], "скорость")} ·
         {impact(t["stability"], "стабильность")} · записываем: {value}</p>
       <p class="meta dim"><code>{esc(t["resourceLocator"])}</code> · {esc(trim(t["defaultValueNoteRu"], 90))}</p>
@@ -113,18 +113,32 @@ def polyline(values: list[float], top: float, width: int, height: int) -> str:
     return " ".join(f"{i * step:.1f},{height - min(v, top) * scale:.1f}" for i, v in enumerate(values))
 
 
-def chart(title: str, unit: str, top: float, series: list[tuple[str, str, list]], width: int = 380, height: int = 120) -> str:
+def chart(title: str, unit: str, top: float, series: list[tuple[str, str, list]],
+          width: int = 380, height: int = 120, gid: str = "g") -> str:
+    """График «было/стало»: сетка в фоне, заливка под последней линией, точка на её конце."""
     grid = "".join(
-        f'<line x1="0" y1="{height * k / 4:.0f}" x2="{width}" y2="{height * k / 4:.0f}" stroke="#1d2635" stroke-width="1"/>'
+        f'<line class="gl" x1="0" y1="{height * k / 4:.0f}" x2="{width}" y2="{height * k / 4:.0f}"/>'
         for k in range(5))
-    lines = "".join(
-        f'<polyline fill="none" stroke="{color}" stroke-width="2.4" stroke-linejoin="round" '
-        f'points="{polyline(values, top, width, height)}"/>'
-        for _, color, values in series)
+    lines, dots = [], []
+    for _, color, values in series:
+        pts = polyline(values, top, width, height)
+        lines.append(f'<polyline fill="none" stroke="{color}" stroke-width="2.6" stroke-linejoin="round" '
+                     f'stroke-linecap="round" points="{pts}"/>')
+        last_y = height - min(values[-1], top) * (height / top)
+        dots.append(f'<circle cx="{width}" cy="{last_y:.1f}" r="3.6" fill="{color}" '
+                    f'stroke="#0d1420" stroke-width="1.8"/>')
+    last_label, last_color, last_values = series[-1]
+    area = (f'<polygon fill="url(#{gid})" points="0,{height} '
+            f'{polyline(last_values, top, width, height)} {width},{height}"/>')
     legend = "".join(f'<span><i style="background:{color}"></i>{esc(label)}</span>' for label, color, _ in series)
     return f"""<figure class="chart">
   <figcaption>{esc(title)} <span class="dim">· {esc(unit)}</span></figcaption>
-  <svg viewBox="-30 -6 {width + 46} {height + 24}" role="img" aria-label="{esc(title)}">{grid}{lines}
+  <svg viewBox="-30 -8 {width + 46} {height + 26}" role="img" aria-label="{esc(title)}">
+    <defs><linearGradient id="{gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="{last_color}" stop-opacity=".26"/>
+      <stop offset="1" stop-color="{last_color}" stop-opacity="0"/>
+    </linearGradient></defs>
+    {grid}{area}{"".join(lines)}{"".join(dots)}
     <text x="0" y="{height + 16}" class="ax">0 с</text>
     <text x="{width}" y="{height + 16}" class="ax" text-anchor="end">60 с</text>
     <text x="-6" y="10" class="ax" text-anchor="end">{top:g}</text>
@@ -155,8 +169,9 @@ def build(data: dict) -> str:
         + "\n".join(tweak_card(t) for t in items)
         for code, title, items in groups)
 
+    free_chip = " <span class='chip tiny'>free</span>"
     games_rows = "\n".join(
-        f'<tr><td>{esc(g["gameRu"])}{" <span class=\'chip tiny\'>free</span>" if g.get("isFreeToPlay") else ""}</td>'
+        f'<tr><td>{esc(g["gameRu"])}{free_chip if g.get("isFreeToPlay") else ""}</td>'
         f'<td class="dim mono">{esc(g["processName"])}</td>'
         f'<td class="dim">{esc(trim(", ".join(g.get("regionsRu") or []), 46))}</td>'
         f'<td class="dim">{esc(trim("; ".join(g.get("portsRu") or []) or "по факту соединения", 44))}</td></tr>'
@@ -167,8 +182,9 @@ def build(data: dict) -> str:
         f'<span class="mono">{esc(d["primary"])}</span><span class="dim">{esc(trim(d["noteRu"], 48))}</span></div>'
         for d in routes["dns"])
 
+    free_price = "<span class='chip tiny free'>0 ₽</span>"
     path_rows = "\n".join(
-        f'<tr><td>{esc(p["kindRu"])}</td><td>{"<span class=\'chip tiny free\'>0 ₽</span>" if p.get("isFree") else esc(p["costRu"])}</td>'
+        f'<tr><td>{esc(p["kindRu"])}</td><td>{free_price if p.get("isFree") else esc(p["costRu"])}</td>'
         f'<td class="dim">{esc(trim(p["safetyRu"], 60))}</td></tr>'
         for p in routes["pathKinds"])
 
@@ -181,17 +197,18 @@ def build(data: dict) -> str:
         return f'<div class="stat {tone}"><b>{esc(value)}</b><span>{esc(label)}</span></div>'
 
     stats = "".join([
-        stat("78 мс", "пинг сейчас", "good"),
+        stat("78 мс", "пинг", "good"),
         stat("−42 мс", "было 120 мс"),
         stat("2,4 мс", "джиттер"),
         stat("0,0 %", "потери"),
         stat("92 Мбит/с", "скорость"),
-        stat("360", "проб за минуту"),
+        stat("360", "проб"),
     ])
 
     actions = "".join(
-        f'<li><b>{esc(a["titleRu"])}</b><span class="dim">{esc(trim(a["detailRu"], 120))}</span></li>'
-        for a in data["realtime"]["plannerActions"])
+        f'<li><span class="act-n">{i}</span><span class="act-body"><b>{esc(a["titleRu"])}</b>'
+        f'<span class="dim">{esc(trim(a["detailRu"], 96))}</span></span></li>'
+        for i, a in enumerate(data["realtime"]["plannerActions"], start=1))
 
     profile_cards = "".join(
         f'<div class="card prof"><b>{esc(p["titleRu"])}</b>'
@@ -306,21 +323,36 @@ def build(data: dict) -> str:
     <main class="content">
 
       <section class="page" id="page-optimize">
-        <h1>Оптимизация соединения</h1>
+        <div class="page-head">
+          <h1>Оптимизация соединения</h1>
+        </div>
         <div class="hero">
-          <button class="pb">Оптимизировать соединение</button>
-          <div class="hero-text">
+          <div class="hero-left">
+            <span class="hero-kicker"><i></i>живой поток игры</span>
+            <div class="hero-num"><b>78</b><span>мс</span><em>−42 мс · было 120 мс</em></div>
+            <p class="dim small">Медиана живого потока, не лучший кадр.</p>
+            <div class="hero-actions">
+              <button class="pb"><span class="pb-icon">▶</span>Оптимизировать соединение</button>
+            </div>
+            <p class="dim small">Fortnite · 3.4.5.6:9000</p>
+          </div>
+          <div class="hero-right">
             <div class="stats">{stats}</div>
-            <p class="dim small">Fortnite · 3.4.5.6:9000 · маршрут для игрового сервера · QoS DSCP 46 · 6 твиков из 47</p>
+            <div class="path-strip">
+              <span class="ps-node">вы</span><i class="ps-line"></i>
+              <span class="ps-node">роутер</span><i class="ps-line"></i>
+              <span class="ps-node">провайдер</span><i class="ps-line hot"></i>
+              <span class="ps-node end">сервер</span>
+            </div>
           </div>
         </div>
 
         <div class="charts">
-          {chart("Задержка до игрового сервера", "мс", 150, [("до", "#64748b", PING_BEFORE), ("после", ACCENT, PING_AFTER)])}
+          {chart("Задержка до игрового сервера", "мс", 150, [("до", "#64748b", PING_BEFORE), ("после", ACCENT, PING_AFTER)], gid="lat")}
           {chart("Джиттер", "мс", 12, [("до", "#64748b", [9.8, 8.4, 7.6, 10.2, 6.9, 8.1, 7.2, 6.4, 7.8, 6.1, 7.4, 6.8, 6.2]),
-                                        ("после", ACCENT2, [2.4, 2.1, 1.9, 2.6, 2.0, 1.8, 2.2, 1.7, 1.9, 2.1, 1.8, 1.6, 1.8])])}
+                                        ("после", ACCENT2, [2.4, 2.1, 1.9, 2.6, 2.0, 1.8, 2.2, 1.7, 1.9, 2.1, 1.8, 1.6, 1.8])], gid="jit")}
         </div>
-        <p class="dim small">Окно 60 секунд · 360 проб · замеры ICMP и TCP одновременно.</p>
+        <p class="note-row">Окно 60 секунд · 360 проб · ICMP и TCP одновременно.</p>
 
         <h2 class="grp">Что сделала программа</h2>
         <ul class="acts">{actions}</ul>
@@ -436,7 +468,7 @@ def build(data: dict) -> str:
 
   <footer class="foot">
     <span>{esc(product["name"])}</span>
-    <span class="dim">Визуальный макет интерфейса. Данные — из каталога проекта: {len(tweaks)} твиков, {len(routes["games"])} игр, {len(routes["dns"])} DNS, {len(perf)} профиля.</span>
+    <span class="dim">Визуальный макет интерфейса. Данные — из каталога проекта.</span>
   </footer>
 </div>
 
@@ -463,7 +495,7 @@ code{font-family:"Cascadia Mono",Consolas,monospace;font-size:12px;color:#cfe0f5
 
 .win{max-width:1180px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:18px;
   overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5)}
-.bar{display:flex;align-items:center;gap:12px;padding:11px 16px;background:#0c1220;border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:12px;padding:11px 16px;background:linear-gradient(180deg,#0e1626,#0b111d);border-bottom:1px solid var(--line)}
 .dots{display:flex;gap:6px}.dots i{width:10px;height:10px;border-radius:50%;background:#22304a;display:block}
 .dots i:first-child{background:#3b4a68}
 .brand{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;
@@ -485,7 +517,7 @@ nav.side label:hover{background:#121a2b;color:var(--text)}
 .side-foot{margin-top:auto;padding:12px 10px 4px;font-size:12px;border-top:1px solid var(--line)}
 
 .content{padding:20px 22px 26px;max-width:100%}
-h1{font-size:21px;margin:0 0 14px}
+h1{font-size:22px;margin:0 0 14px;letter-spacing:-.01em}
 h2.grp{font-size:14px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
   margin:22px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:baseline}
 h2.grp .count{font-size:12px;color:var(--dim);letter-spacing:0}
@@ -496,34 +528,88 @@ h2.grp.f-fps{border-color:#3b2f5e}h2.grp.f-input{border-color:#5a4a1c}
 .state{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .state:focus-visible ~ .body{outline:none}
 
-.hero{display:flex;gap:20px;align-items:center;flex-wrap:wrap;background:linear-gradient(150deg,#152036,#101725);
-  border:1px solid var(--line2);border-radius:16px;padding:18px 20px}
-.pb{flex:0 0 auto;border:0;cursor:pointer;font:700 15px/1 inherit;color:#04101f;padding:20px 26px;border-radius:999px;
-  background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 12px 30px rgba(56,189,248,.25)}
-.hero-text{flex:1 1 320px;min-width:280px}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px}
-.stat{background:#0f1725;border:1px solid var(--line);border-radius:12px;padding:9px 11px}
-.stat b{display:block;font-size:17px}
+.page-head{display:flex;align-items:center;gap:12px;margin:0 0 14px}
+.page-head h1{margin:0}
+.page-head .chip{margin-left:auto}
+
+/* Главный экран: крупное «сейчас», кнопка действия и полоса пути до сервера. */
+.hero{position:relative;display:grid;grid-template-columns:minmax(280px,1.05fr) minmax(300px,1fr);gap:20px;
+  background:linear-gradient(155deg,#16223a 0%,#111a29 58%,#0e1522 100%);
+  border:1px solid var(--line2);border-radius:18px;padding:20px 22px;overflow:hidden}
+.hero::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(70% 90% at 96% -25%,color-mix(in srgb,var(--accent) 22%,transparent),transparent 62%)}
+.hero-left,.hero-right{position:relative;z-index:1}
+.hero-left{display:flex;flex-direction:column;gap:10px;min-width:0}
+.hero-left p{margin:0;max-width:46ch}
+.hero-kicker{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--dim)}
+.hero-kicker i{width:7px;height:7px;border-radius:50%;background:var(--accent2);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--accent2) 18%,transparent)}
+.hero-num{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:2px 0 0}
+.hero-num b{font-size:46px;line-height:.95;letter-spacing:-.03em;font-weight:750;color:var(--accent);
+  text-shadow:0 6px 24px color-mix(in srgb,var(--accent) 28%,transparent)}
+.hero-num span{font-size:15px;color:var(--muted)}
+.hero-num em{font-style:normal;font-size:12px;color:var(--accent2);border:1px solid #1f4034;
+  background:color-mix(in srgb,var(--accent2) 12%,transparent);border-radius:999px;padding:3px 10px}
+.hero-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px}
+.pb{display:inline-flex;align-items:center;gap:10px;border:0;cursor:pointer;
+  font:700 15px/1 "Segoe UI",Roboto,system-ui,sans-serif;color:#04101f;padding:15px 24px;border-radius:999px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 14px 34px rgba(56,189,248,.28);
+  transition:transform .15s ease,box-shadow .15s ease}
+.pb:hover{transform:translateY(-1px);box-shadow:0 18px 40px rgba(56,189,248,.34)}
+.pb-icon{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;
+  background:rgba(4,16,31,.18);font-size:10px}
+.hero-right{display:flex;flex-direction:column;gap:12px;justify-content:space-between}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.stat{background:#0f1725;border:1px solid var(--line);border-radius:12px;padding:9px 11px;
+  transition:border-color .15s ease,transform .15s ease}
+.stat:hover{border-color:var(--line2);transform:translateY(-1px)}
+.stat b{display:block;font-size:16.5px;line-height:1.25;font-variant-numeric:tabular-nums}
 .stat span{font-size:11.5px;color:var(--dim)}
+.stat.good{border-color:#1f4034}
 .stat.good b{color:var(--accent2)}
 
+.path-strip{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  border:1px dashed var(--line2);border-radius:12px;padding:9px 11px;background:#0d1420}
+.ps-node{font-size:11.5px;color:var(--muted);background:#152036;border:1px solid var(--line);
+  border-radius:999px;padding:2px 9px;white-space:nowrap}
+.ps-node.end{color:var(--accent);border-color:#22506e}
+.ps-line{flex:1 1 14px;min-width:14px;height:2px;border-radius:2px;background:#26344d}
+.ps-line.hot{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.ps-note{margin:0;font-size:11.5px;color:var(--dim)}
+
 .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin:16px 0 6px}
-.chart{margin:0;background:#0d1420;border:1px solid var(--line);border-radius:14px;padding:10px 12px 6px}
-.chart figcaption{font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.chart{margin:0;background:linear-gradient(180deg,#101a29,#0d1420);border:1px solid var(--line);
+  border-radius:14px;padding:11px 13px 7px}
+.chart figcaption{font-size:12.5px;color:var(--muted);margin-bottom:4px;letter-spacing:.01em}
 .chart svg{width:100%;height:auto;display:block}
+.gl{stroke:#1b2536;stroke-width:1}
 .ax{fill:#6f7f9c;font-size:10px}
-.legend{display:flex;gap:14px;font-size:11.5px;color:var(--dim)}
+.legend{display:flex;gap:14px;font-size:11.5px;color:var(--dim);padding-top:2px}
 .legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.note-row{margin:8px 0 0;font-size:12.5px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+.note-row .dim{color:var(--dim)}
 
 .acts{list-style:none;margin:0;padding:0;display:grid;gap:8px}
-.acts li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 13px;font-size:13.5px}
-.acts li span{display:block;margin-top:2px}
+.acts li{display:flex;gap:11px;align-items:flex-start;background:var(--card);border:1px solid var(--line);
+  border-radius:12px;padding:11px 13px;font-size:13.5px}
+.acts li:hover{border-color:var(--line2)}
+.act-n{flex:0 0 22px;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;
+  font-size:11.5px;font-weight:700;color:#04101f;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.act-body{display:block;min-width:0}
+.act-body span{display:block;margin-top:2px}
 
 .inds{display:flex;flex-wrap:wrap;gap:7px}
 .ind{display:inline-flex;gap:6px;align-items:baseline;background:#0f1725;border:1px solid var(--line);
-  border-radius:9px;padding:5px 9px;font-size:12.5px}
+  border-left:2px solid #22506e;border-radius:9px;padding:5px 10px;font-size:12.5px}
+.ind:hover{border-color:var(--line2);border-left-color:var(--accent)}
 .ind-t{font-weight:600}
 .ind-u{color:var(--dim);font-size:11.5px}
+
+@media (max-width:980px){
+  .hero{grid-template-columns:1fr;padding:18px}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
 .row.presets{gap:8px;margin-bottom:6px}
 
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}

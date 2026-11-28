@@ -33,12 +33,21 @@ public static class CatalogSafetyAudit
         ("W32Time", "Правила запрещают отключать службу синхронизации времени.")
     };
 
+    /// <summary>
+    /// Предел на один поиск. Шаблоны собраны из простых слов и по построению не могут «взорваться»,
+    /// но предел ставится всё равно: проверка каталога — не место, где можно зависнуть из-за регулярки.
+    /// </summary>
+    public static readonly TimeSpan TextSearchTimeout = TimeSpan.FromMilliseconds(500);
+
     // Важно искать по границам слов: подстрочный поиск ловил «чит» внутри «Отключить».
     private static readonly Regex[] ForbiddenTextPatterns = new[]
     {
         "инжект", "inject", "античит", "anticheat", "чит", "читы", "обход блокировки",
         "обойти бан", "ping 0", "пинг 0"
-    }.Select(term => new Regex($@"\b{Regex.Escape(term)}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)).ToArray();
+    }.Select(term => new Regex(
+        $@"\b{Regex.Escape(term)}\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        TextSearchTimeout)).ToArray();
 
     private static readonly string[] ForbiddenTextTerms =
     {
@@ -71,9 +80,17 @@ public static class CatalogSafetyAudit
 
             for (int i = 0; i < ForbiddenTextPatterns.Length; i++)
             {
-                if (ForbiddenTextPatterns[i].IsMatch(haystack))
+                try
                 {
-                    problems.Add($"{d.Code}: в описании есть запрещённое обещание или тема «{ForbiddenTextTerms[i]}».");
+                    if (ForbiddenTextPatterns[i].IsMatch(haystack))
+                    {
+                        problems.Add($"{d.Code}: в описании есть запрещённое обещание или тема «{ForbiddenTextTerms[i]}».");
+                    }
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    problems.Add($"{d.Code}: поиск запрещённых слов не уложился в {TextSearchTimeout.TotalMilliseconds:0} мс — " +
+                                 "описание слишком тяжёлое для проверки, значит его нельзя пропускать.");
                 }
             }
 
@@ -115,7 +132,24 @@ public static class CatalogSafetyAudit
         return false;
     }
 
-    /// <summary>Ни одно значение из системы не должно попадать в командную строку как есть.</summary>
-    public static bool LooksLikeCleanCliToken(string value) =>
-        !string.IsNullOrWhiteSpace(value) && !Regex.IsMatch(value, @"[\s""'&|<>^%!;]");
+    /// <summary>
+    /// Ни одно значение из системы не должно попадать в командную строку как есть.
+    /// При сбое или превышении предела ответ — «не годится»: сомнительное значение опаснее отказа.
+    /// </summary>
+    public static bool LooksLikeCleanCliToken(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            return !Regex.IsMatch(value, @"[\s""'&|<>^%!;]", RegexOptions.None, TextSearchTimeout);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return false;
+        }
+    }
 }

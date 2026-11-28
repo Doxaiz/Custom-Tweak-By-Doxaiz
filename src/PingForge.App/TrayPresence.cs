@@ -69,7 +69,11 @@ public sealed class TrayPresence : IDisposable
         }
 
         string tip = TrayMenuBuilder.TooltipFor(snapshot);
-        _icon.Text = tip.Length > 63 ? tip[..63] : tip;
+        // Сборщик подсказок держит надпись в пределах, которые знает Windows; ножницы здесь —
+        // только защита от будущей ошибки, а не способ уместить текст.
+        _icon.Text = tip.Length > TrayMenuBuilder.MaxIconTextLength
+            ? tip[..TrayMenuBuilder.MaxIconTextLength]
+            : tip;
     }
 
     /// <summary>
@@ -89,14 +93,20 @@ public sealed class TrayPresence : IDisposable
             _app.MainScreen.Endpoint,
             _app.MainScreen.BaselineRttMs,
             _app.MainScreen.CurrentRttMs,
-            FloorRttMs: null,
-            CurrentJitterMs: null,
-            CurrentLossPercent: null,
+            FloorRttMs: _app.MainScreen.FloorRttMs,
+            CurrentJitterMs: _app.MainScreen.CurrentJitterMs,
+            CurrentLossPercent: _app.MainScreen.CurrentLossPercent,
             _app.MainScreen.ImprovementMs,
             _app.MainScreen.QualityRu,
             [],
             [],
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            BaselineMethodTag: _app.MainScreen.LiveBaselineMethodTag ?? string.Empty,
+            FinalMethodTag: _app.MainScreen.LiveMethodTag ?? string.Empty,
+            // Значок в трее показывает те же числа, что и окно, и честность у них общая:
+            // без подтверждения значимости выигрыш не считается измеренным.
+            GainConfirmed: _app.MainScreen.GainConfirmed,
+            GainVerdictRu: _app.MainScreen.GainVerdictRu ?? string.Empty);
     }
 
     private async void Execute(TrayCommand command)

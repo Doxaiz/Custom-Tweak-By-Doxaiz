@@ -72,6 +72,118 @@ public class ViewModelTests
     }
 
     [Fact]
+    public async Task Окно_читает_из_ответа_службы_выигрыш_разброс_потери_и_предел_пути()
+    {
+        // Раньше служба отдавала окну только «до» и «сейчас»: выигрыш, разброс, потери и предел пути
+        // оставались внутри снапшота, и окно писало «заметного выигрыша нет» при измеренном выигрыше.
+        var channel = new FakeEngineChannel
+        {
+            BaselineRttMs = 120,
+            CurrentRttMs = 78,
+            ImprovementMs = 42,
+            FloorRttMs = 74,
+            CurrentJitterMs = 2,
+            CurrentLossPercent = null,
+        };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Equal(42.0, main.ImprovementMs!.Value, 3);
+        Assert.Equal(74.0, main.FloorRttMs!.Value, 3);
+        Assert.Equal(2.0, main.CurrentJitterMs!.Value, 3);
+        Assert.Null(main.CurrentLossPercent);
+
+        Assert.Contains("стало лучше на 42 мс", main.RttLineRu);
+        Assert.Contains("разброс 2 мс", main.RttLineRu);
+        Assert.Contains("лучший замер 74 мс", main.RttLineRu);
+        // Живой замер потерь не измеряет — так и написано, нуля нет.
+        Assert.Contains("потери не измерены", main.RttLineRu);
+        Assert.DoesNotContain("потери 0", main.RttLineRu);
+    }
+
+    [Fact]
+    public async Task Окно_называет_способ_замера()
+    {
+        // Служба называет способ рядом с числом; окно обязано его показать, иначе «78 мс» от статистики
+        // соединения и «78 мс» от проб выглядят одинаково.
+        var channel = new FakeEngineChannel
+        {
+            MethodRu = "живой поток игры (TCP-статистика)",
+            BaselineMethodRu = "живой поток игры (TCP-статистика)",
+        };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Equal("Способ замера: живой поток игры (TCP-статистика).", main.MethodLineRu);
+    }
+
+    [Fact]
+    public async Task Разные_способы_до_и_после_называются_оба()
+    {
+        var channel = new FakeEngineChannel
+        {
+            MethodRu = "TCP-рукопожатие",
+            BaselineMethodRu = "живой поток игры (TCP-статистика)",
+        };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Contains("сейчас — TCP-рукопожатие", main.MethodLineRu);
+        Assert.Contains("до — живой поток игры (TCP-статистика)", main.MethodLineRu);
+    }
+
+    [Fact]
+    public async Task Без_названного_способа_строки_нет()
+    {
+        var channel = new FakeEngineChannel { MethodRu = null, BaselineMethodRu = null };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Equal(string.Empty, main.MethodLineRu);
+        Assert.DoesNotContain("Способ замера", main.RttLineRu);
+    }
+
+    [Fact]
+    public async Task Метка_способа_без_подписи_всё_равно_называет_способ()
+    {
+        // Подпись служба может не прислать, а метку — прислать. Молчать, когда способ известен
+        // хотя бы меткой, значило бы скрыть от человека правду: окно называет его само.
+        var channel = new FakeEngineChannel { MethodRu = null, MethodTag = "live-tcp" };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Equal("live-tcp", main.LiveMethodTag);
+        Assert.Contains("живой поток игры (TCP-статистика)", main.MethodLineRu);
+    }
+
+    [Fact]
+    public async Task Окно_и_трей_берут_способ_из_одной_метки()
+    {
+        // Метка — общий источник: окно строит по ней подпись, значок в трее — короткое имя.
+        // Один замер, названный двумя разными способами на двух экранах, — это уже враньё.
+        var channel = new FakeEngineChannel
+        {
+            MethodRu = "живой поток игры (пассивные метки)",
+            BaselineMethodRu = "живой поток игры (пассивные метки)",
+            MethodTag = "live-udp",
+            BaselineMethodTag = "live-udp",
+        };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Contains("пассивные метки", main.MethodLineRu);
+        Assert.Equal("live-udp", main.LiveMethodTag);
+        Assert.Equal(PingForge.Core.Models.ProbeMethodTags.Ru("live-udp"), main.LiveMethodRu);
+        Assert.Equal("живой UDP-поток", PingForge.Core.Models.ProbeMethodTags.ShortRu(main.LiveMethodTag));
+    }
+
+    [Fact]
     public async Task Выигрыша_нет_так_и_написано()
     {
         // Двойник называет одни и те же числа и в ответе на запуск, и в состоянии — как настоящая служба.
@@ -87,6 +199,30 @@ public class ViewModelTests
 
         Assert.Contains("заметного выигрыша нет", main.RttLineRu);
         Assert.DoesNotContain("лучше", main.RttLineRu);
+    }
+
+    [Fact]
+    public async Task Разница_в_пределах_шума_не_называется_улучшением_в_окне()
+    {
+        // Служба прислала число (1,2 мс), но не подтвердила значимость: при разбросе замера в 5 мс
+        // такая разница — шум. Окно обязано сказать «в пределах шума», а не «стало лучше на 1,2 мс».
+        var channel = new FakeEngineChannel
+        {
+            BaselineRttMs = 120,
+            CurrentRttMs = 118.8,
+            ImprovementMs = 1.2,
+            GainConfirmed = false,
+            GainVerdictRu = "Разница в пределах шума: медиана 120 → 118,8 мс, 95% ДИ [-1,4; 3,1] накрывает ноль.",
+        };
+
+        var main = new MainViewModel(new EngineClient(channel), new FakeDialogs());
+        await main.OptimizeCommand.ExecuteAsync();
+
+        Assert.Equal(1.2, main.ImprovementMs!.Value, 0.01);
+        Assert.False(main.GainConfirmed);
+        Assert.Contains("разница в пределах шума", main.RttLineRu);
+        Assert.DoesNotContain("стало лучше", main.RttLineRu);
+        Assert.Contains("в пределах шума", main.GainVerdictRu!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -377,7 +513,7 @@ public class ViewModelTests
 
         Assert.Equal(21, tweaks.CheckedCount);
         Assert.All(tweaks.Rows.Where(row => !row.IsRecommended), row => Assert.False(row.IsOn));
-        Assert.Contains("21 твиков из 47", tweaks.StatusRu);
+        Assert.Contains("21 твик из 47", tweaks.StatusRu);
     }
 
     [Fact]
@@ -390,7 +526,8 @@ public class ViewModelTests
         Assert.Equal(44, tweaks.CheckedCount);
         Assert.All(tweaks.Rows.Where(row => row.IsDangerous), row => Assert.False(row.IsOn));
         Assert.Contains("не советуем", tweaks.StatusRu);
-        Assert.Contains("3 штуки", tweaks.StatusRu);
+        // Число опасных названо числом, а не «3 штуки»: форма одна на все числа.
+        Assert.Contains("«не советуем»: 3", tweaks.StatusRu);
     }
 
     [Fact]
@@ -461,7 +598,7 @@ public class ViewModelTests
 
         await tweaks.ApplySelectedCommand.ExecuteAsync();
 
-        Assert.Contains("3 твиков", dialogs.Confirmations[0].Title);
+        Assert.Contains("3 твика", dialogs.Confirmations[0].Title);
         Assert.Contains("1 с вердиктом «не советуем»", dialogs.Confirmations[0].Message);
 
         EngineRequest request = channel.Requests.Single(r => r.Command == EngineCommandKind.ApplyTweaks);
@@ -636,9 +773,9 @@ public class ViewModelTests
         Assert.Equal(47, rows.Count);
         Assert.Equal(23, rows.Count(row => row.IsRecommended));
         Assert.Equal(23, rows.Count(row => row.EnabledByDefault));
-        Assert.Equal(19, rows.Count(row => row.IsInLowPingPreset));
+        Assert.Equal(18, rows.Count(row => row.IsInLowPingPreset));
         Assert.Equal(5, rows.Count(row => row.IsInMaxSpeedPreset));
-        Assert.Equal(23, rows.Count(row => row.IsInFpsPreset));
+        Assert.Equal(24, rows.Count(row => row.IsInFpsPreset));
         Assert.Equal(3, rows.Count(row => row.IsDangerous));
         Assert.All(rows, row =>
         {
@@ -655,11 +792,11 @@ public class ViewModelTests
         var catalog = new TweakCatalog(new TweakPlatformPorts());
         IReadOnlyList<PresetViewModel> presets = TweakRowFactory.BuildPresets(catalog);
 
-        Assert.Equal(19, presets[0].Count);
+        Assert.Equal(18, presets[0].Count);
         Assert.Equal(5, presets[1].Count);
-        Assert.Equal(23, presets[2].Count);
+        Assert.Equal(24, presets[2].Count);
 
-        // Тот же состав, что применит служба: иначе подпись «19» была бы неправдой.
+        // Тот же состав, что применит служба: иначе подпись «18» была бы неправдой.
         Assert.Equal(catalog.GetByPreset(TweakProfilePreset.LowLatencyGaming).Count, presets[0].Count);
     }
 
@@ -710,5 +847,29 @@ public class ViewModelTests
         public void Dispose()
         {
         }
+    }
+    // ── ответ программы: тон, а не один цвет на всё ─────────────────────────────────────────────
+
+    [Fact]
+    public void Отказ_предупреждение_и_сообщение_различаются_тоном()
+    {
+        // Раньше «Оптимизация не запустилась» и «Починка сети прошла» рисовались одним циановым:
+        // отказ читался как успех. Теперь тон задаётся тем, чем закончилось действие.
+        (MainViewModel main, _, _) = BuildMain();
+
+        main.ShowNotice("Оптимизация не запустилась", "Запущенная игра не найдена.");
+        Assert.True(main.NoticeIsProblem);
+        Assert.False(main.NoticeIsWarning);
+
+        main.ShowNotice("Починка сети", "Снято остатков: 2.", NoticeTone.Info);
+        Assert.False(main.NoticeIsProblem);
+        Assert.False(main.NoticeIsWarning);
+
+        main.ShowNotice("Версии различаются", "Окно 1.0.0, служба 1.0.1.", NoticeTone.Warning);
+        Assert.True(main.NoticeIsWarning);
+        Assert.False(main.NoticeIsProblem);
+
+        main.DismissNoticeCommand.Execute(null);
+        Assert.False(main.IsNoticeVisible);
     }
 }

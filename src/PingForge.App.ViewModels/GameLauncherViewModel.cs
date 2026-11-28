@@ -1,4 +1,4 @@
-using PingForge.Core.Models;
+﻿using PingForge.Core.Models;
 using PingForge.Network;
 
 namespace PingForge.App.ViewModels;
@@ -34,6 +34,7 @@ public sealed class GameCardViewModel : ObservableObject
 {
     private readonly Func<GameCardViewModel, Task> _open;
     private readonly Func<GameCardViewModel, Task> _choose;
+    private readonly GameRegionsViewModel? _regions;
     private string _statusRu;
     private string? _executablePath;
     private bool _isRunning;
@@ -43,18 +44,20 @@ public sealed class GameCardViewModel : ObservableObject
         KnownGame game,
         string? executablePath,
         Func<GameCardViewModel, Task> open,
-        Func<GameCardViewModel, Task> choose)
+        Func<GameCardViewModel, Task> choose,
+        GameRegionsViewModel? regions = null)
     {
         Game = game ?? throw new ArgumentNullException(nameof(game));
         _open = open ?? throw new ArgumentNullException(nameof(open));
         _choose = choose ?? throw new ArgumentNullException(nameof(choose));
+        _regions = regions;
         _executablePath = executablePath;
 
         OpenCommand = new AsyncRelayCommand(() => _open(this), () => !IsBusy);
         ChoosePathCommand = new AsyncRelayCommand(() => _choose(this), () => !IsBusy);
 
         _statusRu = executablePath is null
-            ? "Не найдена на диске — укажите .exe, и программа запомнит путь."
+            ? "Не найдена на диске — укажите файл игры или ярлык с рабочего стола, и программа запомнит путь."
             : $"Найдена: {executablePath}";
     }
 
@@ -75,7 +78,20 @@ public sealed class GameCardViewModel : ObservableObject
 
     public string AntiCheatRu => $"{Game.AntiCheatName}: {AnticheatText(Game.AntiCheat)}";
 
-    /// <summary>Что игра значит для сетевого слоя: маршрут и QoS разрешены всем, фильтр — нет.</summary>
+    /// <summary>
+    /// Задача D: где серверы этой игры. Данные — из GameRouteCatalog, для игры вне справочника —
+    /// честное «неизвестно». «Пинга до региона» здесь нет: измеряется только выданный сервер.
+    /// </summary>
+    public string RegionsHeadingRu => GameRegionsViewModel.HeadingRu;
+
+    public string RegionsLineRu => _regions?.RegionsLineRu(ProcessName) ?? GameRegionsViewModel.UnknownRegionsRu;
+
+    public string PortsLineRu => _regions?.PortsLineRu(ProcessName) ?? GameRegionsViewModel.UnpublishedPortsRu;
+
+    /// <summary>
+    /// Что игра значит для сетевого слоя: маршрут и QoS разрешены всем — это настройки Windows.
+    /// Перехвата пакетов в программе нет ни для одной игры, и обещать «не поднимать фильтр» нечего.
+    /// </summary>
     public string NoteRu => string.IsNullOrWhiteSpace(Game.NoteRu)
         ? "Маршрут и приоритет пакетов применяются; в память игры программа не лезет."
         : Game.NoteRu;
@@ -142,12 +158,9 @@ public sealed class GameCardViewModel : ObservableObject
         }
     }
 
-    private static string AnticheatText(AntiCheatStatus status) => status switch
-    {
-        AntiCheatStatus.VerifiedSafe => "маршрут и QoS — проверено",
-        AntiCheatStatus.KnownKernelConflict => "только маршрут и QoS, без фильтра пакетов",
-        _ => "маршрут и QoS — можно, совместимость не проверялась",
-    };
+    // Слова — из одного источника (AntiCheatNotes): карточка, предупреждение движка и доклад детектора
+    // должны говорить про анти-чит одно и то же.
+    private static string AnticheatText(AntiCheatStatus status) => AntiCheatNotes.ActionsRu(status);
 }
 
 /// <summary>
@@ -176,13 +189,15 @@ public sealed class GameLauncherViewModel : ObservableObject
         IExecutablePicker picker,
         IAppSettingsStore store,
         MainViewModel main,
-        IReadOnlyList<KnownGame>? games = null)
+        IReadOnlyList<KnownGame>? games = null,
+        GameRegionsViewModel? regions = null)
     {
         _probe = probe ?? throw new ArgumentNullException(nameof(probe));
         _starter = starter ?? throw new ArgumentNullException(nameof(starter));
         _picker = picker ?? throw new ArgumentNullException(nameof(picker));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _main = main ?? throw new ArgumentNullException(nameof(main));
+        Regions = regions ?? new GameRegionsViewModel();
 
         AppSettings loaded = store.Load();
         IReadOnlyList<KnownGame> catalog = games ?? GameProcessCatalog.DefaultGames;
@@ -202,13 +217,17 @@ public sealed class GameLauncherViewModel : ObservableObject
                 game,
                 remembered.TryGetValue(game.ProcessName, out string? path) && File.Exists(path) ? path : null,
                 OpenAsync,
-                ChoosePathAsync)));
+                ChoosePathAsync,
+                Regions)));
 
         FindGamesCommand = new AsyncRelayCommand(FindInstalledAsync);
         AddGameCommand = new AsyncRelayCommand(AddGameFromPickerAsync);
     }
 
     public IReadOnlyList<GameCardViewModel> Cards => _cards;
+
+    /// <summary>Справочник регионов и портов (задача D): один на окно, данные из GameRouteCatalog.</summary>
+    public GameRegionsViewModel Regions { get; }
 
     public AsyncRelayCommand FindGamesCommand { get; }
 
@@ -237,7 +256,13 @@ public sealed class GameLauncherViewModel : ObservableObject
     public async Task FindInstalledAsync()
     {
         StatusRu = "Ищу игры в библиотеках Steam и обычных папках…";
-        IReadOnlyCollection<string> names = _cards.Select(card => card.ProcessName).ToArray();
+
+        // Общий процесс (javaw.exe) искать на диске бессмысленно: найденный чужой javaw.exe — не игра,
+        // и кнопка «Открыть» запустила бы его без аргументов. Такую игру человек открывает лаунчером сам.
+        IReadOnlyCollection<string> names = _cards
+            .Where(card => !card.Game.RequiresPortMatch)
+            .Select(card => card.ProcessName)
+            .ToArray();
 
         try
         {
@@ -270,7 +295,7 @@ public sealed class GameLauncherViewModel : ObservableObject
             await ChoosePathAsync(card).ConfigureAwait(true);
             if (!card.HasPath)
             {
-                card.StatusRu = "Без пути запускать нечего: нажмите «Указать .exe» и выберите файл игры.";
+                card.StatusRu = "Без пути запускать нечего: нажмите «Указать файл» и выберите .exe игры или её ярлык.";
                 return;
             }
         }
@@ -301,34 +326,67 @@ public sealed class GameLauncherViewModel : ObservableObject
         }
     }
 
-    /// <summary>Указать .exe вручную и запомнить путь — при следующем запуске искать не придётся.</summary>
+    /// <summary>
+    /// Указать файл игры вручную и запомнить путь — при следующем запуске искать не придётся.
+    /// Ярлык с рабочего стола и ссылка тоже подходят: программа найдёт по ним .exe.
+    /// </summary>
     public async Task ChoosePathAsync(GameCardViewModel card)
     {
-        string? path = _picker.Pick(card.TitleRu);
-        if (string.IsNullOrWhiteSpace(path))
+        string? picked = _picker.Pick(card.TitleRu);
+        if (string.IsNullOrWhiteSpace(picked))
         {
             card.StatusRu = "Путь не выбран — игра осталась ненайденной.";
             return;
         }
 
-        card.SetPath(path);
-        StatusRu = SavePath(card) ?? card.StatusRu;
+        if (!GameExecutableResolver.TryResolve(picked, File.Exists, out string executable, out string note, out string errorRu))
+        {
+            card.StatusRu = $"Файл не подошёл: {errorRu}";
+            return;
+        }
+
+        card.SetPath(executable);
+        StatusRu = SavePath(card) ?? (note.Length == 0 ? card.StatusRu : $"{note} {card.StatusRu}");
         OnPropertyChanged(nameof(SummaryRu));
         await Task.CompletedTask.ConfigureAwait(true);
     }
 
-    /// <summary>Выбрать .exe через диалог и добавить своей игрой; название — по имени файла, переименовать можно в карточке.</summary>
+    /// <summary>
+    /// Выбрать файл через диалог и добавить своей игрой. Файл не обязан быть .exe: ярлык с рабочего
+    /// стола и файл ссылки тоже подходят — программа найдёт по ним исполняемый файл игры и скажет,
+    /// на что именно указывает выбор. Название берётся из имени файла, переименовать можно в карточке.
+    /// </summary>
     public async Task AddGameFromPickerAsync()
     {
-        string? path = _picker.Pick("Выберите .exe своей игры");
-        if (string.IsNullOrWhiteSpace(path))
+        string? picked = _picker.Pick("Выберите файл игры, её ярлык с рабочего стола или ссылку");
+        if (string.IsNullOrWhiteSpace(picked))
         {
             StatusRu = "Игра не добавлена: файл не выбран.";
             return;
         }
 
-        string title = Path.GetFileNameWithoutExtension(path.Trim());
-        await AddCustomGameAsync(path, title).ConfigureAwait(true);
+        if (!GameExecutableResolver.TryResolve(picked, File.Exists, out string executable, out string note, out string errorRu))
+        {
+            StatusRu = $"Игра не добавлена: {errorRu}";
+            return;
+        }
+
+        string pickedTitle = Path.GetFileNameWithoutExtension(picked.Trim());
+        await AddCustomGameAsync(executable, pickedTitle).ConfigureAwait(true);
+
+        if (!StatusRu.StartsWith("Своя игра", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // Что именно нашлось по выбранному файлу и когда служба увидит процесс: уже запущенную игру —
+        // сразу, не запущенную — когда человек её откроет. Обещать «вижу игру» до запуска нельзя.
+        string processName = GameProcessCatalog.Normalize(executable);
+        string visibility = _starter.IsRunning(processName)
+            ? $"Процесс «{processName}» уже запущен — служба видит его в списке процессов."
+            : $"Процесс «{processName}» появится в списке, когда игра запустится.";
+
+        StatusRu = note.Length > 0 ? $"{note} {StatusRu} {visibility}" : $"{StatusRu} {visibility}";
     }
 
     /// <summary>
@@ -337,7 +395,12 @@ public sealed class GameLauncherViewModel : ObservableObject
     /// </summary>
     public Task AddCustomGameAsync(string? executablePath, string? titleRu)
     {
-        var existing = _cards.Select(card => card.ProcessName).ToArray();
+        // Общий процесс (javaw.exe/java.exe) дублем не считается: свою игру поверх него человек
+        // добавляет осознанно — иначе сервер на нестандартном порту не оптимизировать никак.
+        var existing = _cards
+            .Where(card => !card.Game.RequiresPortMatch)
+            .Select(card => card.ProcessName)
+            .ToArray();
         if (!CustomGameValidation.TryCreate(executablePath, titleRu, File.Exists, existing, out CustomGameEntry? entry, out string errorRu))
         {
             StatusRu = $"Игра не добавлена: {errorRu}";
@@ -345,11 +408,35 @@ public sealed class GameLauncherViewModel : ObservableObject
         }
 
         KnownGame game = CustomGameValidation.ToKnownGame(entry!);
-        var card = new GameCardViewModel(game, executablePath!.Trim(), OpenAsync, ChoosePathAsync);
-        _cards.Add(card);
+        var card = new GameCardViewModel(game, executablePath!.Trim(), OpenAsync, ChoosePathAsync, Regions);
+
+        int existingIndex = -1;
+        for (int index = 0; index < _cards.Count; index++)
+        {
+            if (string.Equals(_cards[index].ProcessName, game.ProcessName, StringComparison.OrdinalIgnoreCase))
+            {
+                existingIndex = index;
+                break;
+            }
+        }
+
+        bool replacedBuiltin = existingIndex >= 0;
+        if (replacedBuiltin)
+        {
+            _cards[existingIndex] = card;
+        }
+        else
+        {
+            _cards.Add(card);
+        }
+
         SaveCustomGames(extraPath: (game.ProcessName, executablePath.Trim()));
-        StatusRu = $"Своя игра «{game.TitleRu}» добавлена. Анти-чит у неё неизвестен — программа этого не скрывает. " +
-            "Служба подхватит её при следующем запуске службы.";
+        StatusRu = replacedBuiltin
+            ? $"Своя игра «{game.TitleRu}» заменила встроенную запись для общего процесса {game.ProcessName}: " +
+              "теперь этот процесс считается вашей игрой на любом порту. Анти-чит неизвестен — программа этого не скрывает. " +
+              "Служба подхватит замену при следующем запуске службы."
+            : $"Своя игра «{game.TitleRu}» добавлена. Анти-чит у неё неизвестен — программа этого не скрывает. " +
+              "Служба подхватит её при следующем запуске службы.";
         OnPropertyChanged(nameof(SummaryRu));
         return Task.CompletedTask;
     }
@@ -365,6 +452,23 @@ public sealed class GameLauncherViewModel : ObservableObject
         }
 
         _cards.Remove(card);
+
+        // Если своей игрой был назван общий процесс (javaw.exe), встроенная запись возвращается:
+        // без неё карточка Minecraft исчезла бы из списка до перезапуска окна.
+        KnownGame? builtin = GameProcessCatalog.DefaultGames.FirstOrDefault(game =>
+            game.RequiresPortMatch &&
+            string.Equals(game.ProcessName, card.ProcessName, StringComparison.OrdinalIgnoreCase));
+        if (builtin is not null)
+        {
+            string? remembered = _store.Load().GamePaths?.GetValueOrDefault(builtin.ProcessName);
+            _cards.Add(new GameCardViewModel(
+                builtin,
+                !string.IsNullOrWhiteSpace(remembered) && File.Exists(remembered) ? remembered : null,
+                OpenAsync,
+                ChoosePathAsync,
+                Regions));
+        }
+
         SaveCustomGames();
         StatusRu = $"Своя игра «{card.TitleRu}» удалена. Теперь этот процесс снова «кандидат, а не игра» — " +
             "оптимизация для него не запустится, пока игру не добавят снова.";

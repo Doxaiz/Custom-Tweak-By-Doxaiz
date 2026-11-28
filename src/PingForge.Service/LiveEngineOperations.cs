@@ -1,6 +1,7 @@
 using System.Text.Json;
 using PingForge.Core.Abstractions;
 using PingForge.Core.Models;
+using PingForge.Data;
 using PingForge.Data.Repositories;
 using PingForge.Orchestration.Realtime;
 using PingForge.Service.Protocol;
@@ -31,6 +32,26 @@ public sealed class LiveEngineOperations : IEngineOperations
     private readonly string _appVersion;
     private readonly ISystemStateReader? _stateReader;
     private readonly IRoutingService? _routing;
+    private readonly OptimizationSessionRepository? _sessions;
+
+    /// <summary>
+    /// Что случилось с базой при запуске (задача U): например, файл был повреждён и служба начала с
+    /// чистой базы. Такое нельзя прятать в журнале службы — про пропавшие снапшоты человек узнает
+    /// из ответа «служба жива» и из состояния.
+    /// </summary>
+    private readonly string? _databaseNote;
+
+    /// <summary>
+    /// Резервные копии базы (задача U). <c>null</c> — в этой сборке копии не подключены; тогда
+    /// честный отказ, а не «восстановлено».
+    /// </summary>
+    private readonly DatabaseBackupService? _backups;
+
+    /// <summary>
+    /// Сессия, начатая этой службой и ещё не закрытая. Именно она дописывается «после» при остановке;
+    /// после перезапуска службы незакрытая запись остаётся в базе и честно показывается незавершённой.
+    /// </summary>
+    private OptimizationSessionRecord? _currentSession;
 
     public LiveEngineOperations(
         ITweakCatalog catalog,
@@ -44,7 +65,10 @@ public sealed class LiveEngineOperations : IEngineOperations
         string productName = "Custom Tweak By Doxaiz",
         string? appVersion = null,
         ISystemStateReader? stateReader = null,
-        IRoutingService? routing = null)
+        IRoutingService? routing = null,
+        OptimizationSessionRepository? sessions = null,
+        string? databaseNote = null,
+        DatabaseBackupService? backups = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _snapshots = snapshots ?? throw new ArgumentNullException(nameof(snapshots));
@@ -57,6 +81,9 @@ public sealed class LiveEngineOperations : IEngineOperations
         _appVersion = appVersion ?? typeof(LiveEngineOperations).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
         _stateReader = stateReader;
         _routing = routing;
+        _sessions = sessions;
+        _databaseNote = string.IsNullOrWhiteSpace(databaseNote) ? null : databaseNote;
+        _backups = backups;
         IsElevationAvailable = isElevationAvailable;
     }
 
@@ -78,7 +105,8 @@ public sealed class LiveEngineOperations : IEngineOperations
             : $"Клиент не определён ({client.ProblemRu}) — считаю, что прав администратора у него нет.";
 
         string message = $"Служба жива: {_productName} {_appVersion}, протокол {EngineProtocol.Version}, " +
-            $"твиков в каталоге: {tweakCount}. {rights}. {clientNote}";
+            $"твиков в каталоге: {tweakCount}. {rights}. {clientNote}" +
+            (_databaseNote is null ? string.Empty : $" ВНИМАНИЕ: {_databaseNote}");
 
         string data = Encode(new PingData(
             _productName,
@@ -131,7 +159,8 @@ public sealed class LiveEngineOperations : IEngineOperations
             : $"Движок живой оптимизации подключён. Состояние: {StateRu(state)}.";
 
         string message = $"{realtimeNote} {gameNote} {pendingNote} " +
-            $"Профиль потребления: {ResourceBudgetOptions.DescribeProfile(profile)}.";
+            $"Профиль потребления: {ResourceBudgetOptions.DescribeProfile(profile)}." +
+            (_databaseNote is null ? string.Empty : $" ВНИМАНИЕ: {_databaseNote}");
 
         string data = Encode(new StatusData(
             _productName,
@@ -148,10 +177,58 @@ public sealed class LiveEngineOperations : IEngineOperations
             snapshot?.QualityLabelRu,
             EngineNames.ProfileWireName(profile),
             ResourceBudgetOptions.DescribeProfile(profile),
-            pending));
+            pending,
+            ChartSamples(),
+            // Окно показывает те же числа, что уже измерила служба. Раньше выигрыш, разброс, потери и
+            // предел пути оставались внутри снапшота: окно честно писало «заметного выигрыша нет»
+            // даже тогда, когда выигрыш был измерен.
+            snapshot?.ImprovementMs,
+            snapshot?.FloorRttMs,
+            snapshot?.CurrentJitterMs,
+            snapshot?.CurrentLossPercent,
+            // Способ замера едет и в состоянии, а не только в ответе на запуск: окно опрашивает
+            // состояние каждые пару секунд, и без этих полей строка «Способ замера» исчезала бы
+            // сразу после запуска — то есть человек видел бы способ ровно один раз.
+            DescribeMethod(snapshot?.FinalMethodTag),
+            DescribeMethod(snapshot?.BaselineMethodTag),
+            DescribeTag(snapshot?.FinalMethodTag),
+            DescribeTag(snapshot?.BaselineMethodTag),
+            // Подтверждён ли выигрыш по шуму: без этого флага окно писало «стало лучше на 1 мс»
+            // там, где разброс замера был 5 мс, то есть засчитывало шум.
+            snapshot?.GainConfirmed ?? false,
+            snapshot?.GainVerdictRu));
 
         return await Task.FromResult(EngineOperationResult.Success(message, data)).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Точки истории замеров для графика сети в разделе «Оптимизация» (задача F). Отдаются только
+    /// замеры этой сессии живой оптимизации: окно графика — максимум 15 минут, поэтому точки старше
+    /// не отдаются вовсе. Неизмеренное окно — точка с null-полями: разрыв на графике, а не ноль.
+    /// </summary>
+    private IReadOnlyList<ChartSampleData> ChartSamples()
+    {
+        if (_realtime is null)
+        {
+            return [];
+        }
+
+        DateTime cutoffUtc = DateTime.UtcNow - ChartWindowLimit;
+        return _realtime.RecentSamples
+            .Where(point => point.AtUtc >= cutoffUtc)
+            .Select(point => new ChartSampleData(
+                point.AtUtc,
+                point.IsMeasurable,
+                point.RttMinMs,
+                point.RttMedianMs,
+                point.RttP95Ms,
+                point.JitterMadMs,
+                point.LossPercent))
+            .ToList();
+    }
+
+    /// <summary>Максимальное окно графика: 15 минут. Дальше точки не отдаются — «за пределами запуска пусто».</summary>
+    private static readonly TimeSpan ChartWindowLimit = TimeSpan.FromMinutes(15);
 
     public async Task<EngineOperationResult> ApplyPresetAsync(
         TweakProfilePreset preset,
@@ -268,6 +345,62 @@ public sealed class LiveEngineOperations : IEngineOperations
         return new EngineOperationResult(report.Status != SnapshotRollbackStatus.Failed, message, data);
     }
 
+    public async Task<EngineOperationResult> RollbackSingleTweakAsync(string tweakCode, string? snapshotId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(tweakCode))
+        {
+            return EngineOperationResult.Failure("Не указан код твика для отката.");
+        }
+
+        string code = tweakCode.Trim();
+        IReadOnlyList<SystemSnapshot> snapshots = await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false);
+        if (snapshots.Count == 0)
+        {
+            return EngineOperationResult.Failure("Снапшотов нет: откатывать нечего.");
+        }
+
+        SystemSnapshot? target;
+        if (string.IsNullOrWhiteSpace(snapshotId))
+        {
+            target = snapshots.OrderByDescending(s => s.CreatedUtc).First();
+        }
+        else
+        {
+            target = snapshots.FirstOrDefault(s => string.Equals(s.SnapshotId, snapshotId.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (target is null)
+            {
+                return EngineOperationResult.Failure($"Снапшот «{snapshotId}» не найден. Есть {snapshots.Count} снапшотов.");
+            }
+        }
+
+        SnapshotItemEntry? entry = target.Entries.FirstOrDefault(e => string.Equals(e.TweakCode, code, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            return EngineOperationResult.Failure($"В снапшоте «{target.SnapshotId}» нет твика «{code}»: откатывать нечего.");
+        }
+
+        ITweak? tweak = _catalog.GetByCode(entry.TweakCode);
+        if (tweak is null)
+        {
+            return EngineOperationResult.Failure($"Твик «{entry.TweakCode}» отсутствует в каталоге — откат невозможен, проверьте параметр {entry.ResourceLocator} вручную.");
+        }
+
+        TweakOperationResult result = await tweak.RollbackAsync(entry, ct).ConfigureAwait(false);
+        bool ok = result.Outcome == TweakOutcome.RolledBack || result.Outcome == TweakOutcome.SkippedNoOp;
+        string msg = ok
+            ? $"Твик «{entry.TweakCode}» возвращён: было «{result.PreviousValueText}» → стало «{result.ActualSystemValueText}»."
+            : $"Не удалось вернуть твик «{entry.TweakCode}»: {result.FailureReasonRu ?? result.Outcome.ToString()}";
+
+        // Логируем откат одного твика — журнал остаётся честным
+        if (_journal is not null)
+        {
+            await _journal.AppendModificationLogAsync("ROLLBACK_SINGLE", result, ct).ConfigureAwait(false);
+        }
+
+        string data = Encode(new SingleRollbackData(target.SnapshotId, entry.TweakCode, ok, result.Outcome.ToString(), result.FailureReasonRu ?? string.Empty));
+        return new EngineOperationResult(ok, msg, data);
+    }
+
     public async Task<EngineOperationResult> RepairNetworkAsync(CancellationToken ct = default)
     {
         if (_journal is null)
@@ -346,6 +479,7 @@ public sealed class LiveEngineOperations : IEngineOperations
         if (!start)
         {
             RealtimeStopReport report = await _realtime.StopAsync(ct).ConfigureAwait(false);
+            await RecordSessionStopAsync(report, ct).ConfigureAwait(false);
             string message = report.HonestSummaryRu +
                 (report.EverythingReverted
                     ? " Все свои изменения сняты."
@@ -359,7 +493,11 @@ public sealed class LiveEngineOperations : IEngineOperations
                 report.FinalRttMs,
                 report.ImprovementMs,
                 report.EverythingReverted,
-                report.AppliedActionTitles));
+                report.AppliedActionTitles,
+                DescribeMethod(report.FinalMethodTag),
+                DescribeMethod(report.BaselineMethodTag),
+                DescribeTag(report.FinalMethodTag),
+                DescribeTag(report.BaselineMethodTag)));
 
             return new EngineOperationResult(report.EverythingReverted, message, data);
         }
@@ -369,9 +507,14 @@ public sealed class LiveEngineOperations : IEngineOperations
         PerfProfile profile = _readProfile?.Invoke() ?? PerfProfile.Balanced;
         var options = new RealtimeOptions(Budget: new ResourceBudgetOptions(profile));
 
+        DateTime startedUtc = DateTime.UtcNow;
+        string sessionId = Guid.NewGuid().ToString("N");
+
         RealtimeSnapshot snapshot = await _realtime
             .StartAsync(options, isAdministrator: IsElevationAvailable, preferredGame: null, ct: ct)
             .ConfigureAwait(false);
+
+        await RecordSessionStartAsync(sessionId, startedUtc, snapshot, ct).ConfigureAwait(false);
         // При отказе не добавляем хвост «Игра: не найдена, задержка: не измерено»: человек и так
         // читает причину отказа, а хвост превращает её в длинную склейку из двух предложений.
         string startMessage = snapshot.State switch
@@ -390,9 +533,139 @@ public sealed class LiveEngineOperations : IEngineOperations
             snapshot.CurrentRttMs,
             snapshot.ImprovementMs,
             EverythingReverted: true,
-            snapshot.AppliedActions.Select(action => action.TitleRu).ToList()));
+            snapshot.AppliedActions.Select(action => action.TitleRu).ToList(),
+            DescribeMethod(snapshot.FinalMethodTag),
+            DescribeMethod(snapshot.BaselineMethodTag),
+            DescribeTag(snapshot.FinalMethodTag),
+            DescribeTag(snapshot.BaselineMethodTag),
+            snapshot.GainConfirmed,
+            snapshot.GainVerdictRu));
 
         return new EngineOperationResult(snapshot.State != RealtimeOptimizationState.Failed, startMessage, startData);
+    }
+
+    public async Task<EngineOperationResult> SessionsAsync(int limit, CancellationToken ct = default)
+    {
+        if (_sessions is null)
+        {
+            return EngineOperationResult.Failure("История сессий не подключена: показать записи нечем.");
+        }
+
+        IReadOnlyList<OptimizationSessionRecord> records = await _sessions.GetRecentAsync(limit, ct).ConfigureAwait(false);
+        if (records.Count == 0)
+        {
+            return EngineOperationResult.Success(
+                "История сессий пуста: живая оптимизация ещё не запускалась. Это не ошибка — записывать пока нечего.",
+                Encode(new SessionsData(0, [])));
+        }
+
+        int completed = records.Count(record => record.IsCompleted);
+        int unfinished = records.Count - completed;
+        string message = $"Сессий: {records.Count}, завершено: {completed}, без итога: {unfinished}. " +
+            "Измеренные числа — только из сессий; «не завершена» никогда не превращается в улучшение.";
+
+        var rows = records
+            .Select(record => new SessionRowData(
+                record.SessionId,
+                record.StartedUtc,
+                record.StoppedUtc,
+                record.GameTitleRu,
+                record.Endpoint,
+                record.HasGame,
+                record.IsMeasurable,
+                record.BaselineRttMs,
+                record.FinalRttMs,
+                record.ImprovementMs,
+                record.Actions,
+                record.RollbackState,
+                OptimizationSessionMapping.RollbackStateRu(record.RollbackState),
+                record.IsCompleted,
+                record.StatusNoteRu,
+                record.Outcome,
+                ProbeMethodTags.DescribePairRu(record.BaselineMethodTag, record.FinalMethodTag),
+                ProbeMethodTags.PairDiffers(record.BaselineMethodTag, record.FinalMethodTag),
+                record.BaselineMethodTag,
+                record.FinalMethodTag))
+            .ToList();
+
+        return await Task.FromResult(EngineOperationResult.Success(
+            message, Encode(new SessionsData(records.Count, rows)))).ConfigureAwait(false);
+    }
+
+    public async Task<EngineOperationResult> ClearSessionsAsync(CancellationToken ct = default)
+    {
+        if (_sessions is null)
+        {
+            return EngineOperationResult.Failure("История сессий не подключена: очищать нечего.");
+        }
+
+        if (_currentSession is not null)
+        {
+            return EngineOperationResult.Failure(
+                "Живая оптимизация ещё идёт: её сессия пишется прямо сейчас. Остановите оптимизацию и очистите историю после этого — " +
+                "иначе запись вернулась бы при остановке.");
+        }
+
+        int deleted = await _sessions.DeleteAllAsync(ct).ConfigureAwait(false);
+        return EngineOperationResult.Success(
+            deleted == 0
+                ? "История сессий уже была пуста — удалять было нечего. Журнал изменений системы не тронут."
+                : $"История сессий очищена: удалено записей — {deleted}. Журнал изменений системы не тронут: он остался как был.");
+    }
+
+    /// <summary>
+    /// Начало сессии: пишется сразу, ещё до исхода. Если служба упадёт или сессия оборвётся,
+    /// запись останется с честным «не завершена, итог неизвестен» — без выдуманного улучшения.
+    /// </summary>
+    private async Task RecordSessionStartAsync(
+        string sessionId, DateTime startedUtc, RealtimeSnapshot snapshot, CancellationToken ct)
+    {
+        if (_sessions is null)
+        {
+            return;
+        }
+
+        OptimizationSessionRecord record = OptimizationSessionMapping.FromStart(sessionId, startedUtc, snapshot);
+        _currentSession = record;
+        await TrySaveSessionAsync(record, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Остановка: та же запись дописывается настоящими «после», действиями и пометкой откатa.
+    /// Нет измеренного «после» — сессия остаётся незавершённой, и это написано словами.
+    /// </summary>
+    private async Task RecordSessionStopAsync(RealtimeStopReport report, CancellationToken ct)
+    {
+        if (_sessions is null || _currentSession is not { } session)
+        {
+            return;
+        }
+
+        OptimizationSessionRecord completed = OptimizationSessionMapping.Complete(session, report, DateTime.UtcNow);
+
+        await TrySaveSessionAsync(completed, ct).ConfigureAwait(false);
+        _currentSession = null;
+    }
+
+    /// <summary>
+    /// История не должна ломать саму оптимизацию: сбой записи в базу не отменяет применение
+    /// и откат. Молчаливым это не остаётся — сессии в журнале просто не появится, и это видно.
+    /// </summary>
+    private async Task TrySaveSessionAsync(OptimizationSessionRecord record, CancellationToken ct)
+    {
+        if (_sessions is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _sessions.SaveAsync(record, ct).ConfigureAwait(false);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            // Сбой базы не должен отменять уже выполненные действия оптимизации.
+        }
     }
 
     public async Task<EngineOperationResult> SetPerfProfileAsync(PerfProfile profile, CancellationToken ct = default)
@@ -441,6 +714,17 @@ public sealed class LiveEngineOperations : IEngineOperations
             message += failures.Count > 0 ? $" Не получилось: {string.Join("; ", failures)}." : string.Empty;
         }
 
+        var rows = report.Results.Select(result => new BatchRowData(
+            result.TweakCode,
+            result.TweakTitleRu,
+            string.IsNullOrWhiteSpace(result.PreviousValueText) ? "не удалось прочитать" : result.PreviousValueText,
+            string.IsNullOrWhiteSpace(result.TargetValueText) ? "не удалось прочитать" : result.TargetValueText,
+            string.IsNullOrWhiteSpace(result.ActualSystemValueText) ? "не удалось прочитать" : result.ActualSystemValueText,
+            result.Outcome.ToString(),
+            DescribeOutcomeRu(result.Outcome, result.FailureReasonRu),
+            result.IsVerifiedInSystem || result.Outcome == TweakOutcome.SkippedNoOp,
+            result.RebootOrAdapterRestartRequired)).ToList();
+
         string data = Encode(new BatchData(
             report.Snapshot.SnapshotId,
             report.Results.Count,
@@ -450,10 +734,25 @@ public sealed class LiveEngineOperations : IEngineOperations
             report.FailedCount,
             report.RebootRequired,
             report.RestorePointStatus.ToString(),
-            failures));
+            failures,
+            rows));
 
         return new EngineOperationResult(everythingOk, message, data);
     }
+
+    private static string DescribeOutcomeRu(TweakOutcome outcome, string? reasonRu) => outcome switch
+    {
+        TweakOutcome.VerifiedEffective => "применён",
+        TweakOutcome.WrittenPendingRestart => "применён (нужна перезагрузка)",
+        TweakOutcome.Applied => "применён",
+        TweakOutcome.SkippedNoOp => "уже был таким",
+        TweakOutcome.SkippedUnsupported => $"не применён: {reasonRu ?? "не поддерживается"}",
+        TweakOutcome.SkippedUnparsable => $"не применён: {reasonRu ?? "не удалось прочитать"}",
+        TweakOutcome.SkippedUnsafeTarget => $"не применён: {reasonRu ?? "цель небезопасна"}",
+        TweakOutcome.RolledBack => "откачен",
+        TweakOutcome.Failed => $"ошибка: {reasonRu ?? "без объяснения"}",
+        _ => outcome.ToString()
+    };
 
     private static string StateWire(RealtimeOptimizationState state) => state switch
     {
@@ -566,11 +865,336 @@ public sealed class LiveEngineOperations : IEngineOperations
         return await _routing.MeasureAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Следы перед удалением (задача T). Считаем по фактическим хранилищам: журнал изменений,
+    /// незакрытые операции, список снапшотов, состояние живой оптимизации. Врём цифрам ровно
+    /// ничего: нет журнала — в ответе нули и честная оговорка, а не выдуманное «всё чисто».
+    /// </summary>
+    public async Task<EngineOperationResult> ReturnAllAsync(CancellationToken ct = default)
+    {
+        var steps = new List<string>();
+        int okSteps = 0, failSteps = 0;
+        bool needsReboot = false;
+
+        // 1. Остановить живую оптимизацию
+        if (_realtime is not null && _realtime.State is RealtimeOptimizationState.ActiveMonitoring or RealtimeOptimizationState.Degraded or RealtimeOptimizationState.MeasuringBaseline or RealtimeOptimizationState.ChoosingRoute or RealtimeOptimizationState.ApplyingActions)
+        {
+            try
+            {
+                RealtimeStopReport stopReport = await _realtime.StopAsync(ct).ConfigureAwait(false);
+                steps.Add($"живая оптимизация: {stopReport.HonestSummaryRu}");
+                if (stopReport.EverythingReverted) okSteps++; else failSteps++;
+            }
+            catch (Exception ex) { steps.Add($"живая оптимизация: не удалось остановить — {ex.Message}"); failSteps++; }
+        }
+        else
+        {
+            steps.Add("живая оптимизация: не была запущена — пропускаем");
+            okSteps++;
+        }
+
+        // 2. Откатить последний снапшот твиков
+        try
+        {
+            EngineOperationResult rollback = await RollbackAsync(null, ct).ConfigureAwait(false);
+            steps.Add($"твики: {rollback.MessageRu}");
+            if (rollback.Ok) okSteps++; else failSteps++;
+            if (rollback.MessageRu.Contains("перезагрузк", StringComparison.OrdinalIgnoreCase)) needsReboot = true;
+        }
+        catch (Exception ex) { steps.Add($"твики: ошибка отката — {ex.Message}"); failSteps++; }
+
+        // 3. Починить остатки (маршруты/QoS которые остались)
+        try
+        {
+            EngineOperationResult repair = await RepairNetworkAsync(ct).ConfigureAwait(false);
+            steps.Add($"остатки: {repair.MessageRu}");
+            if (repair.Ok) okSteps++; else failSteps++;
+        }
+        catch (Exception ex) { steps.Add($"остатки: ошибка проверки — {ex.Message}"); failSteps++; }
+
+        bool allOk = failSteps == 0;
+        string summary = steps.Count == 0 ? "Нечего возвращать: программа ещё ничего не меняла." : string.Join(" | ", steps);
+        if (!allOk) summary += " Часть изменений осталась — проверьте журнал.";
+        if (needsReboot) summary += " Нужна перезагрузка.";
+
+        var data = Encode(new ReturnAllData(okSteps, failSteps, needsReboot, steps));
+        return new EngineOperationResult(allOk, summary, data);
+    }
+
+    public async Task<EngineOperationResult> GetStorageInfoAsync(CancellationToken ct = default)
+    {
+        // Сбои чтения не глотаются: раньше здесь стояли пустые `catch { }`, и «0 КБ, снапшотов: 0»
+        // выглядело как факт, хотя означало «прочитать не смогли». Ноль должен значить ноль.
+        var readProblems = new List<string>();
+
+        long dbBytes = 0;
+        string dbPath = string.Empty;
+        try
+        {
+            dbBytes = await _snapshots.GetDatabaseFileSizeAsync(ct).ConfigureAwait(false);
+            dbPath = _snapshots.DatabasePath;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            readProblems.Add($"размер базы — {ex.Message}");
+        }
+
+        if (string.IsNullOrWhiteSpace(dbPath))
+        {
+            dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PingForge", "pingforge.db");
+            try
+            {
+                if (File.Exists(dbPath))
+                {
+                    dbBytes = new FileInfo(dbPath).Length;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                readProblems.Add($"размер файла базы — {ex.Message}");
+            }
+        }
+
+        int snapshotCount = 0;
+        int journalCount = 0;
+        try
+        {
+            snapshotCount = (await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false)).Count;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            readProblems.Add($"число снапшотов — {ex.Message}");
+        }
+
+        try
+        {
+            if (_journal is not null)
+            {
+                journalCount = await _journal.CountModificationLogEntriesAsync(ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            readProblems.Add($"число записей журнала — {ex.Message}");
+        }
+
+        // Задача U: рядом с размером — честное состояние базы: проходит ли quick_check, сколько
+        // резервных копий и не осталось ли отложенных испорченных файлов.
+        bool healthy = true;
+        string? integrityProblem = null;
+        int backupCount = 0;
+        string? latestBackupName = null;
+        int corruptFiles = 0;
+
+        if (_backups is not null)
+        {
+            var check = _backups.CheckIntegrity();
+            healthy = check.IsHealthy;
+            integrityProblem = check.ProblemRu;
+
+            IReadOnlyList<string> copies = _backups.ListBackups();
+            backupCount = copies.Count;
+            latestBackupName = backupCount == 0 ? null : Path.GetFileName(copies[0]);
+
+            try
+            {
+                corruptFiles = Directory.Exists(_backups.BackupDirectory)
+                    ? Directory.GetFiles(_backups.BackupDirectory, Path.GetFileName(dbPath) + ".corrupt-*").Length
+                    : 0;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                corruptFiles = 0;
+            }
+        }
+
+        string healthNote = healthy
+            ? "проверка целостности пройдена"
+            : $"проверка целостности не пройдена: {integrityProblem}";
+        string backupNote = _backups is null
+            ? "резервные копии в этой сборке не подключены"
+            : backupCount == 0
+                ? "резервных копий нет"
+                : $"резервных копий: {backupCount}, свежая — «{latestBackupName}»";
+        string corruptNote = corruptFiles == 0
+            ? string.Empty
+            : $" Отложенных испорченных файлов: {corruptFiles} — они лежат рядом и не удаляются.";
+
+        string readNote = readProblems.Count == 0
+            ? string.Empty
+            : $" Не прочитано: {string.Join("; ", readProblems)} — эти числа не «ноль», а «неизвестно».";
+
+        string message = $"База: {dbPath} — {dbBytes / 1024} КБ, снапшотов: {snapshotCount}, " +
+            $"записей журнала: {journalCount}. {healthNote}; {backupNote}.{corruptNote}{readNote}" +
+            (_databaseNote is null ? string.Empty : $" ВНИМАНИЕ: {_databaseNote}");
+
+        var data = Encode(new StorageInfoData(
+            dbPath,
+            dbBytes,
+            snapshotCount,
+            journalCount,
+            healthy,
+            integrityProblem,
+            backupCount,
+            latestBackupName,
+            corruptFiles));
+
+        return EngineOperationResult.Success(message, data);
+    }
+
+    /// <summary>
+    /// Восстановление базы из последней резервной копии (задача U). Единственная команда, которая
+    /// заменяет файл базы: поэтому без явного подтверждения отказ, и только когда оптимизация не идёт
+    /// (иначе восстановление вырвало бы из-под неё журнал текущей сессии).
+    /// </summary>
+    public Task<EngineOperationResult> RestoreDatabaseAsync(bool confirm, CancellationToken ct = default)
+    {
+        if (!confirm)
+        {
+            return Task.FromResult(EngineOperationResult.Failure(
+                "Восстановление базы из копии не подтверждено. Команда заменяет файл базы: журнал и " +
+                "снапшоты, сделанные после копии, пропадут. Повторите с confirm=yes, если это то, что нужно."));
+        }
+
+        if (_backups is null)
+        {
+            return Task.FromResult(EngineOperationResult.Failure(
+                "Резервные копии базы в этой сборке не подключены: восстанавливать не из чего."));
+        }
+
+        RealtimeOptimizationState state = _realtime?.State ?? RealtimeOptimizationState.Idle;
+        if (state is not (RealtimeOptimizationState.Idle or RealtimeOptimizationState.Stopped or RealtimeOptimizationState.Failed))
+        {
+            return Task.FromResult(EngineOperationResult.Failure(
+                $"Оптимизация идёт ({StateRu(state)}): база занята журналом текущей сессии. " +
+                "Остановите оптимизацию и повторите — иначе восстановление потеряет её записи."));
+        }
+
+        if (!_backups.TryRestoreLatest(out string? restored, out string? problem, out string? previous))
+        {
+            return Task.FromResult(EngineOperationResult.Failure(
+                $"Восстановить базу не удалось: {problem}. Копии лежат в {_backups.BackupDirectory}."));
+        }
+
+        // Сессия живёт в прежнем файле базы: после замены файла её больше нет.
+        _currentSession = null;
+
+        string name = Path.GetFileName(restored ?? string.Empty);
+        string message = $"База восстановлена из копии «{name}». Записи журнала и снапшоты, сделанные " +
+            "после этой копии, пропали — вернуть их нечем. Проверьте «Журнал», прежде чем откатывать изменения." +
+            (previous is null
+                ? string.Empty
+                : $" Прежний файл базы сохранён рядом как «{Path.GetFileName(previous)}» — служба сама его обратно не подставляет.");
+        var data = Encode(new DbRestoreData(restored ?? string.Empty, _backups.ListBackups().Count, previous));
+        return Task.FromResult(EngineOperationResult.Success(message, data));
+    }
+
+    public async Task<EngineOperationResult> CleanupSnapshotsAsync(int keepLast = 10, int olderThanDays = 30, CancellationToken ct = default)
+    {
+        keepLast = Math.Clamp(keepLast, 1, 1000);
+        olderThanDays = Math.Clamp(olderThanDays, 1, 3650);
+
+        IReadOnlyList<SystemSnapshot> all = await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false);
+        if (all.Count <= keepLast)
+        {
+            return EngineOperationResult.Success($"Чистить нечего: снапшотов {all.Count}, лимит {keepLast}.", Encode(new CleanupData(0, all.Count)));
+        }
+
+        DateTime cutoff = DateTime.UtcNow.AddDays(-olderThanDays);
+        var ordered = all.OrderByDescending(s => s.CreatedUtc).ToList();
+        var keepIds = new HashSet<string>(ordered.Take(keepLast).Select(s => s.SnapshotId), StringComparer.OrdinalIgnoreCase);
+        // Не удалять снапшоты новее cutoff
+        foreach (var s in ordered) if (s.CreatedUtc >= cutoff) keepIds.Add(s.SnapshotId);
+        // Не удалять снапшоты с незакрытой операцией
+        HashSet<string> pendingSnapshotIds = new(StringComparer.OrdinalIgnoreCase);
+        if (_journal is not null)
+        {
+            var pending = await _journal.GetPendingOperationsAsync(ct).ConfigureAwait(false);
+            foreach (var p in pending) if (!string.IsNullOrWhiteSpace(p.SnapshotId)) pendingSnapshotIds.Add(p.SnapshotId!);
+            foreach (var s in ordered) if (pendingSnapshotIds.Contains(s.SnapshotId)) keepIds.Add(s.SnapshotId);
+        }
+
+        int deleted = 0;
+        var deleteProblems = new List<string>();
+        foreach (var s in ordered)
+        {
+            if (keepIds.Contains(s.SnapshotId)) continue;
+            try
+            {
+                await _snapshots.DeleteSnapshotAsync(s.SnapshotId, ct).ConfigureAwait(false);
+                deleted++;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Раньше сбой удаления глотался, и «Удалено: N» читалось как «всё убрано».
+                deleteProblems.Add($"{s.SnapshotId} — {ex.Message}");
+            }
+        }
+
+        string deleteNote = deleteProblems.Count == 0
+            ? string.Empty
+            : $" Не удалось удалить ({deleteProblems.Count}): {string.Join("; ", deleteProblems)}.";
+        string msg = (deleted == 0
+            ? $"Старых снапшотов для удаления нет (всего {all.Count}, лимит {keepLast}, новее {olderThanDays} дн. не трогаем)."
+            : $"Удалено снапшотов: {deleted}, осталось: {all.Count - deleted}.") + deleteNote;
+        return EngineOperationResult.Success(msg, Encode(new CleanupData(deleted, all.Count - deleted)));
+    }
+
+    public async Task<EngineOperationResult> UninstallCheckAsync(CancellationToken ct = default)
+    {
+        int applied = 0;
+        int open = 0;
+        bool journalAvailable = _journal is not null;
+        if (_journal is not null)
+        {
+            applied = await _journal.CountModificationLogEntriesAsync(ct).ConfigureAwait(false);
+            IReadOnlyList<PendingOperationRecord> pendingOps =
+                await _journal.GetPendingOperationsAsync(ct).ConfigureAwait(false);
+            open = pendingOps.Count;
+        }
+
+        int snapshots = (await _snapshots.GetAllSnapshotsAsync(ct).ConfigureAwait(false)).Count(s => !s.WasRolledBack);
+        RealtimeOptimizationState realtimeState = _realtime?.State ?? RealtimeOptimizationState.Idle;
+        UninstallState state = new(applied, open, snapshots, realtimeState != RealtimeOptimizationState.Idle);
+
+        bool ask = UninstallGuard.MustAsk(state);
+        string options = ask
+            ? " Варианты: " + string.Join("; ", UninstallGuard.OptionsRu
+                .Select((option, index) => $"{index + 1}) {option}")) + $". По умолчанию — {UninstallGuard.OptionsRu[0].ToLowerInvariant()}."
+            : string.Empty;
+        string caveat = journalAvailable
+            ? string.Empty
+            : " Журнал изменений к этой службе не подключён: чисел по нему нет, есть только снапшоты.";
+
+        return EngineOperationResult.Success(
+            UninstallGuard.QuestionRu(state) + options +
+            (ask ? " " + UninstallGuard.KeepChangesWarningRu(state) + "." : string.Empty) + caveat,
+            Encode(new UninstallCheckData(
+                state.AppliedChanges,
+                state.OpenOperations,
+                state.Snapshots,
+                state.OptimizationRunning,
+                ask,
+                ask ? UninstallGuard.OptionsRu : Array.Empty<string>(),
+                UninstallGuard.QuestionRu(state),
+                ask ? UninstallGuard.KeepChangesWarningRu(state) : string.Empty)));
+    }
+
     private static string FormatMs(double? value) => value is null ? "не измерено" : $"{value.Value:0.#} мс";
 
     private static string Encode<T>(T payload) => JsonSerializer.Serialize(payload, EngineJson.Options);
 
     // ── то, что служба отдаёт в поле данных: интерфейс читает это как есть, без догадок ─────────
+
+    private sealed record UninstallCheckData(
+        int AppliedChanges,
+        int OpenOperations,
+        int Snapshots,
+        bool OptimizationRunning,
+        bool MustAsk,
+        IReadOnlyList<string> OptionsRu,
+        string QuestionRu,
+        string WarningRu);
 
     private sealed record PingData(
         string Product,
@@ -603,7 +1227,39 @@ public sealed class LiveEngineOperations : IEngineOperations
         string? QualityLabelRu,
         string ProfileWire,
         string ProfileRu,
-        int PendingOperations);
+        int PendingOperations,
+        IReadOnlyList<ChartSampleData> ChartSamples,
+        double? ImprovementMs = null,
+        double? FloorRttMs = null,
+        double? CurrentJitterMs = null,
+        double? CurrentLossPercent = null,
+        string? MethodRu = null,
+        string? BaselineMethodRu = null,
+        string? MethodTag = null,
+        string? BaselineMethodTag = null,
+        bool GainConfirmed = false,
+        string? GainVerdictRu = null);
+
+    /// <summary>Точка графика: все числа необязательные — «не измерялось» остаётся null, а не нулём.</summary>
+    private sealed record ChartSampleData(
+        DateTime AtUtc,
+        bool Measured,
+        double? RttMinMs,
+        double? RttMedianMs,
+        double? RttP95Ms,
+        double? JitterMadMs,
+        double? LossPercent);
+
+    private sealed record BatchRowData(
+        string Code,
+        string TitleRu,
+        string PreviousText,
+        string AppliedText,
+        string VerifiedText,
+        string Outcome,
+        string StatusRu,
+        bool Succeeded,
+        bool RebootNeeded);
 
     private sealed record BatchData(
         string SnapshotId,
@@ -614,7 +1270,8 @@ public sealed class LiveEngineOperations : IEngineOperations
         int Failed,
         bool RebootRequired,
         string RestorePointStatus,
-        IReadOnlyList<string> Failures);
+        IReadOnlyList<string> Failures,
+        IReadOnlyList<BatchRowData> Rows);
 
     private sealed record RollbackData(
         string SnapshotId,
@@ -624,11 +1281,33 @@ public sealed class LiveEngineOperations : IEngineOperations
         int Orphaned,
         DateTime CreatedUtc);
 
+    private sealed record SingleRollbackData(
+        string SnapshotId,
+        string TweakCode,
+        bool Succeeded,
+        string Outcome,
+        string ReasonRu);
+
     private sealed record RepairData(
         int PendingOperations,
         int Reverted,
         int LeftAsIs,
         IReadOnlyList<string> ByCategory);
+
+    private sealed record ReturnAllData(int OkSteps, int FailSteps, bool NeedsReboot, IReadOnlyList<string> StepsRu);
+    private sealed record StorageInfoData(
+        string DbPath,
+        long DbBytes,
+        int Snapshots,
+        int JournalRows,
+        bool Healthy,
+        string? IntegrityProblemRu,
+        int Backups,
+        string? LatestBackupName,
+        int CorruptFiles);
+
+    private sealed record DbRestoreData(string RestoredFrom, int RemainingBackups, string? PreviousCopyPath);
+    private sealed record CleanupData(int Deleted, int Remaining);
 
     private sealed record JournalRow(
         DateTime LoggedUtc,
@@ -642,8 +1321,56 @@ public sealed class LiveEngineOperations : IEngineOperations
         bool RebootNeeded,
         string ExplanationRu);
 
+    /// <summary>
+    /// Способ замера для окна. Пустая метка — это «не измерено», а не повод подставить привычное слово:
+    /// у сессии без замера способа нет, и выдумывать его нельзя.
+    /// </summary>
+    private static string? DescribeMethod(string? tag) =>
+        string.IsNullOrWhiteSpace(tag) ? null : ProbeMethodTags.Ru(tag);
+
+    /// <summary>
+    /// Метка способа рядом с подписью: подпись читает человек, метку — программа. Без метки окно
+    /// и значок в трее могут назвать один и тот же замер по-разному, и сверить их будет нечем.
+    /// </summary>
+    private static string? DescribeTag(string? tag) =>
+        string.IsNullOrWhiteSpace(tag) ? null : tag;
+
     private sealed record JournalData(int Count, IReadOnlyList<JournalRow> Records);
 
+    /// <summary>
+    /// Строка истории сессий. Все числа nullable: у незавершённой сессии «после» нет, и это
+    /// остаётся null, а не нулём и не «улучшением на 0 мс».
+    /// </summary>
+    private sealed record SessionRowData(
+        string SessionId,
+        DateTime StartedUtc,
+        DateTime? StoppedUtc,
+        string GameTitleRu,
+        string Endpoint,
+        bool HasGame,
+        bool IsMeasurable,
+        double? BaselineRttMs,
+        double? FinalRttMs,
+        double? ImprovementMs,
+        IReadOnlyList<string> Actions,
+        string RollbackState,
+        string RollbackStateRu,
+        bool IsCompleted,
+        string StatusRu,
+        string Outcome,
+        string MethodRu,
+        bool MethodsDiffer,
+        // Сырые метки способа нужны окну: по ним график по дням не смешивает числа разных способов,
+        // а сравнение двух сессий видит, что способы различаются. Подпись MethodRu для этого не годится.
+        string BaselineMethodTag,
+        string FinalMethodTag);
+
+    private sealed record SessionsData(int Count, IReadOnlyList<SessionRowData> Records);
+
+    /// <summary>
+    /// Ответ живой оптимизации. Способ замера идёт рядом с числами, потому что число без способа
+    /// ничего не доказывает: «12 мс» от статистики стека и «12 мс» от проб — разные утверждения.
+    /// </summary>
     private sealed record RealtimeData(
         string State,
         string? GameTitleRu,
@@ -652,7 +1379,13 @@ public sealed class LiveEngineOperations : IEngineOperations
         double? CurrentRttMs,
         double? ImprovementMs,
         bool EverythingReverted,
-        IReadOnlyList<string> AppliedActionTitles);
+        IReadOnlyList<string> AppliedActionTitles,
+        string? MethodRu,
+        string? BaselineMethodRu,
+        string? MethodTag,
+        string? BaselineMethodTag,
+        bool GainConfirmed = false,
+        string? GainVerdictRu = null);
 
     private sealed record ProfileData(string ProfileWire, string ProfileRu, int MeasurementsPerMinute);
 

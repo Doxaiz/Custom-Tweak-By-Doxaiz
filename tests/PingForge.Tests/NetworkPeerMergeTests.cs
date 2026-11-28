@@ -128,11 +128,12 @@ public class NetworkPeerMergeTests
 
         var names = new StubNames(new Dictionary<int, string> { [8124] = "FortniteClient-Win64-Shipping.exe" });
 
-        // Без источника собеседников поток найти нельзя — и это честно видно в отчёте.
+        // Без источника собеседников публичного адреса нет, но игру уже видно как запущенную (лобби) — честный отчёт, а не «ничего».
         var without = new WindowsGameFlowWatcher(table, names);
         GameFlowDetectionReport plain = await without.DetectAsync();
-        Assert.Empty(plain.Games);
-        Assert.Contains(plain.NotesRu, n => n.Contains("трассировки сетевого стека", StringComparison.Ordinal));
+        DetectedGameFlow lobby = Assert.Single(plain.Games);
+        Assert.Equal(-1, lobby.Score);
+        Assert.Contains("лобби", lobby.ReasonRu, StringComparison.OrdinalIgnoreCase);
 
         var with = new WindowsGameFlowWatcher(
             table,

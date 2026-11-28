@@ -69,11 +69,18 @@ public sealed class ProcessCommandPort : ICommandPort
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             TryKill(process);
+
+            // Процесс убит, а чтение его вывода осталось незавершённым. Раньше эти задачи просто
+            // бросали: их исключения (поток закрылся вместе с процессом) становились
+            // «ненаблюдаемыми» и всплывали при сборке мусора в случайном месте. Дожидаемся коротко
+            // и гасим — результат уже не нужен, важен порядок.
+            await DrainAsync(stdoutTask, stderrTask).ConfigureAwait(false);
             return CommandResult.Failed($"«{fileName}» не ответил за {_timeout.TotalSeconds:F0} с и был остановлен.");
         }
         catch (OperationCanceledException)
         {
             TryKill(process);
+            await DrainAsync(stdoutTask, stderrTask).ConfigureAwait(false);
             throw;
         }
 
@@ -81,6 +88,23 @@ public sealed class ProcessCommandPort : ICommandPort
             process.ExitCode,
             await stdoutTask.ConfigureAwait(false),
             await stderrTask.ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Дождаться чтения вывода после остановки процесса и погасить ошибки: читать уже нечего,
+    /// а «повисшая» задача чтения позже всплывает как ненаблюдаемое исключение.
+    /// </summary>
+    private static async Task DrainAsync(params Task<string>[] readers)
+    {
+        try
+        {
+            await Task.WhenAny(Task.WhenAll(readers), Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException
+                                       or InvalidOperationException)
+        {
+            // Поток закрылся вместе с процессом — это ожидаемо, а не ошибка запуска команды.
+        }
     }
 
     /// <summary>OEM-кодировка консоли текущей системы (на русской Windows — CP866).</summary>

@@ -32,8 +32,6 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Drawing
-Add-Type -AssemblyName System.Windows.Forms
-
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -102,11 +100,30 @@ public static class PfWin
         return SendMessageTimeout(hWnd, 0x0000, IntPtr.Zero, IntPtr.Zero, 0x0002, 2000, out result) != IntPtr.Zero;
     }
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
+
+    /// Считать процесс «понимающим DPI»: тогда GetWindowRect и PrintWindow возвращают
+    /// физические пиксели, а не уменьшенные системой координаты.
+    [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+
+    /// Размер экрана в пикселях — чтобы честно сказать, влезает ли окно на экран.
+    /// Через GetSystemMetrics, а не System.Windows.Forms: сборка Windows PowerShell 5.1 не
+    /// подключает WinForms к Add-Type, и такой код просто не скомпилировался бы.
+    public static string ScreenSize()
+    {
+        return GetSystemMetrics(0) + "x" + GetSystemMetrics(1);
+    }
+    [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
 }
 "@
 
 $shots = 0
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir -Force | Out-Null }
+
+# Один раз на процесс: без этого снимок окна и его координаты считаются в «уменьшенных»
+# пикселях, и на экране с масштабом 125 % картинка выходит обрезанной по правому краю.
+[PfWin]::SetProcessDPIAware() | Out-Null
+Write-Host "  [снимок] экран: $([PfWin]::ScreenSize())"
+
 
 function Say([string]$text) { Write-Host "  $text" }
 
@@ -122,9 +139,19 @@ function Save-Window([IntPtr]$handle, [string]$name)
     [PfWin]::SetForegroundWindow($handle) | Out-Null
     Start-Sleep -Milliseconds 600
 
+    # PrintWindow рисует САМО окно в память: снимок не зависит от того, что окно больше экрана
+    # или чем-то перекрыто. Раньше был CopyFromScreen — на сборочной машине экран меньше окна
+    # 1180×820, и правый край снимка просто обрезался, поэтому по нему нельзя было судить о вёрстке.
     $bitmap = New-Object System.Drawing.Bitmap $width, $height
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-    $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+    $graphics.Clear([System.Drawing.Color]::FromArgb(7, 11, 20))
+    $hdc = $graphics.GetHdc()
+    $printed = [PfWin]::PrintWindow($handle, $hdc, 2)   # 2 = PW_RENDERFULLCONTENT
+    $graphics.ReleaseHdc($hdc)
+    if (-not $printed) {
+        Say '[снимок] PrintWindow не смог — снимаю с экрана'
+        $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+    }
 
     $file = Join-Path $OutDir ("{0:d2}-{1}.png" -f $script:shots, $name)
     $bitmap.Save($file, [System.Drawing.Imaging.ImageFormat]::Png)
@@ -164,6 +191,23 @@ function Find-AllByName($root, [string]$name)
     $condition = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::NameProperty, $name)
     return @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition))
+}
+
+function Test-TextInWindow($root, [string]$needle)
+{
+    # Задача F: честные состояния новых блоков («Данных пока нет», кнопки проверок) обязаны
+    # быть видны человеку — ищем их среди всех текстов и кнопок окна.
+    foreach ($element in @($root.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition)))
+    {
+        try
+        {
+            if ($null -ne $element.Current.Name -and $element.Current.Name.Contains($needle)) { return $true }
+        }
+        catch { }
+    }
+    return $false
 }
 
 function Get-TextOfMainScreen($root)
@@ -545,6 +589,16 @@ $sections = @(
     @{ Name = 'Оптимизация'; Shot = 'раздел-оптимизация';  X = 120; Y = 118 }
 )
 
+# Задача F: в трёх разделах обязаны быть новые блоки. Ожидания — подстроки, которые видит человек.
+# Задача I: в «О программе» — кнопка обновлений и честный статус «ещё не проверяли» (доказательство,
+# что до нажатия программа никуда не ходила: иначе статус был бы другим).
+$sectionExpectations = @{
+    'Твики'       = @(@('Задержка ввода', 'карточка задержки ввода'), @('Проверить задержку ввода', 'кнопка проверки задержки ввода'))
+    'Настройки'   = @(@('Проверка настроек', 'блок проверки настроек'), @('Проверить настройки', 'кнопка проверки настроек'))
+    'Оптимизация' = @(@('График сети', 'карточка графика сети'), @('Данных пока нет', 'честная надпись пустого графика'), @('Проверить сеть', 'кнопка проверки сети'), @('ещё не запускалась', 'честный статус проверки сети до нажатия'))
+    'О программе' = @(@('Проверить обновления', 'кнопка проверки обновлений'), @('Обновления ещё не проверяли', 'честный статус до нажатия'), @('Текущая версия', 'строка текущей версии'))
+}
+
 # Диагностика: что вообще видит Windows в окне. Если пункты не находятся — по этому файлу видно почему.
 $rect = New-Object PfWin+RECT
 [PfWin]::GetWindowRect((Get-Process -Id $process.Id).MainWindowHandle, [ref]$rect) | Out-Null
@@ -584,9 +638,293 @@ foreach ($section in $sections)
     Start-Sleep -Milliseconds 1200
     Close-Dialogs $process.Id $handle ('сообщение-' + $section.Shot) | Out-Null
     Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) $section.Shot
+
+    # Задача F: новые блоки обязаны быть видны — снимок без блока был бы «красивой картинкой».
+    if ($sectionExpectations.ContainsKey($section.Name))
+    {
+        $sectionRoot = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+        foreach ($expectation in $sectionExpectations[$section.Name])
+        {
+            if (-not (Test-TextInWindow $sectionRoot $expectation[0]))
+            {
+                throw "В разделе «$($section.Name)» не видно: $($expectation[1]) (искал текст «$($expectation[0])»)"
+            }
+            Say "раздел «$($section.Name)»: $($expectation[1]) — на месте"
+        }
+    }
 }
 
-# ── 4. Итог ─────────────────────────────────────────────────────────────────────────────────────
+# ── 6. Проверка обновлений (задача I) ──────────────────────────────────────────────────────────
+Say ''
+Say '── Шаг 6: нажимаю «Проверить обновления» в разделе «О программе»'
+$handle = (Get-Process -Id $process.Id).MainWindowHandle
+$mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+$aboutNav = Find-ByName $mainWindow 'О программе' 8000
+if ($null -eq $aboutNav) { throw 'В меню нет раздела «О программе»' }
+Invoke-Element $aboutNav 'О программе' | Out-Null
+Start-Sleep -Milliseconds 900
+
+$checkUpdates = Find-ByName $mainWindow 'Проверить обновления' 8000
+if ($null -eq $checkUpdates) { throw 'Кнопки «Проверить обновления» нет в разделе «О программе»' }
+Invoke-Element $checkUpdates 'Проверить обновления' | Out-Null
+
+# Честных исходов три, и любой из них — настоящий результат, а не заготовка: «Доступна версия»,
+# «Обновлений нет» и «Проверить не удалось». Третий на сборочной машине даже вероятнее: репозиторий
+# приватный, и анонимный GitHub релизов не отдаёт — программа обязана сказать именно это, а не
+# молчать и не выдумывать «обновлений нет». Падаем только если итога нет вообще.
+$updateText = ''
+$updateDeadline = (Get-Date).AddSeconds(60)
+while ((Get-Date) -lt $updateDeadline)
+{
+    Start-Sleep -Milliseconds 700
+    if ($process.HasExited) { break }
+
+    Close-Dialogs $process.Id $handle | Out-Null
+    $rootNow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $updateText = Get-TextOfMainScreen $rootNow
+
+    if ($updateText -match 'Доступна версия|Обновлений нет|Проверить не удалось') { break }
+}
+
+Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) 'обновления-проверены'
+
+if ($updateText -notmatch 'Доступна версия|Обновлений нет|Проверить не удалось')
+{
+    $shown = ($updateText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 20) -join ' / '
+    throw "Проверка обновлений не дала честного итога за 60 секунд. Что было на экране: $shown"
+}
+
+$updateOutcome = if ($updateText -match 'Доступна версия') { 'найдена новая версия — программа показала номер, но скачивать ничего не стала' }
+    elseif ($updateText -match 'Обновлений нет') { 'обновлений нет — GitHub назвал ту же версию' }
+    else { 'проверить не удалось — GitHub не отдал релизы анонимно, и программа сказала об этом честно' }
+Say "исход проверки обновлений: $updateOutcome"
+
+# ── 7. Проверка сети (задача G) ────────────────────────────────────────────────────────────────
+Say ''
+Say '── Шаг 7: нажимаю «Проверить сеть» в разделе «Оптимизация»'
+$handle = (Get-Process -Id $process.Id).MainWindowHandle
+$mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+$optimizeNav = Find-ByName $mainWindow 'Оптимизация' 8000
+if ($null -eq $optimizeNav) { throw 'В меню нет раздела «Оптимизация»' }
+Invoke-Element $optimizeNav 'Оптимизация' | Out-Null
+Start-Sleep -Milliseconds 900
+
+$checkNetwork = Find-ByName $mainWindow 'Проверить сеть' 8000
+if ($null -eq $checkNetwork) { throw 'Кнопки «Проверить сеть» нет рядом с главной кнопкой' }
+Invoke-Element $checkNetwork 'Проверить сеть' | Out-Null
+
+# Прогон настоящий: DF-пробы, бенчмарк DNS, первые хопы — на живой сети раннера этому нужно время.
+# Ждём строку итога и предупреждение bufferbloat: оно обязано появиться ДО любой нагрузки канала.
+$netText = ''
+$netDeadline = (Get-Date).AddSeconds(150)
+while ((Get-Date) -lt $netDeadline)
+{
+    Start-Sleep -Milliseconds 900
+    if ($process.HasExited) { break }
+
+    $rootNow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $netText = Get-TextOfMainScreen $rootNow
+
+    if ($netText -match 'Итог из 7 пунктов' -and $netText -match 'на 10 секунд займём канал') { break }
+}
+
+if ($netText -notmatch 'Итог из 7 пунктов')
+{
+    $shown = ($netText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 20) -join ' / '
+    throw "Проверка сети не дошла до итога за 150 секунд. Что было на экране: $shown"
+}
+if ($netText -notmatch 'на 10 секунд займём канал')
+{
+    throw 'Предупреждения о нагрузке канала нет — bufferbloat обязан предупреждать до запуска'
+}
+if ($netText -notmatch 'Не применимо')
+{
+    throw 'Пункт Wi-Fi не сказал «не применимо» на проводном виртуальном адаптере раннера'
+}
+Say 'проверка отработала: итог из 7 пунктов на экране, Wi-Fi честно «не применимо», bufferbloat ждёт согласия'
+foreach ($line in ($netText -split "`r?`n" | Where-Object { $_.Trim() -match 'Итог из|приоритет|Проверено и в порядке|Без вывода|не предлагаем|можно применить' } | Select-Object -First 12))
+{
+    Say "    $($line.Trim())"
+}
+
+# Даём согласие. Кнопок «Понятно» может быть две: закрывашка карточки ответа и само согласие —
+# нажимаем все, что находятся: первая убирает ответ, последняя запускает нагрузку.
+Say 'даю согласие на замер bufferbloat (кнопка «Понятно»)'
+$tries = 0
+while ($tries -lt 5)
+{
+    $rootNow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $okButtons = Find-AllByName $rootNow 'Понятно'
+    if ($okButtons.Count -eq 0) { break }
+    Invoke-Element $okButtons[0] 'Понятно' | Out-Null
+    Start-Sleep -Milliseconds 900
+    $tries++
+}
+
+# Финал bufferbloat виден по итогу «не проверено — 0»: согласие принято, замер завершён.
+# Дальше — либо измеренные числа, либо честное «не удалось»: оба исхода настоящие.
+$bloatDone = $false
+$bloatDeadline = (Get-Date).AddSeconds(90)
+while ((Get-Date) -lt $bloatDeadline)
+{
+    Start-Sleep -Milliseconds 900
+    if ($process.HasExited) { break }
+
+    $rootNow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $netText = Get-TextOfMainScreen $rootNow
+
+    if ($netText -match 'не проверено — 0') { $bloatDone = $true; break }
+}
+
+Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) 'сеть-проверена'
+
+if (-not $bloatDone)
+{
+    $shown = ($netText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 20) -join ' / '
+    throw "Bufferbloat после согласия не завершился за 90 секунд. Что было на экране: $shown"
+}
+
+$bloatOutcome = if ($netText -match 'под нагрузкой \S+ мс') { 'замер bufferbloat дал измеренные числа' }
+    else { 'bufferbloat честно не измерился (точка замера или ICMP недоступны на раннере)' }
+Say "исход bufferbloat: $bloatOutcome"
+
+# ── 8. Путь до сервера (задача H) ──────────────────────────────────────────────────────────────
+# На сборочной машине игры нет, значит живой сессии нет — и трасса обязана честно отказаться,
+# не отправив ни одного пакета. Это и проверяем: кнопка есть, нажимается, текст честный,
+# строк «Проб отправлено» (признак реальной трассы) на экране быть не должно.
+Say ''
+Say '── Шаг 8: нажимаю «Показать путь» в разделе «Оптимизация» (живой игры на раннере нет)'
+$handle = (Get-Process -Id $process.Id).MainWindowHandle
+$mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+$optimizeNav = Find-ByName $mainWindow 'Оптимизация' 8000
+if ($null -eq $optimizeNav) { throw 'В меню нет раздела «Оптимизация»' }
+Invoke-Element $optimizeNav 'Оптимизация' | Out-Null
+Start-Sleep -Milliseconds 900
+
+$pathButton = Find-ByName $mainWindow 'Показать путь' 8000
+if ($null -eq $pathButton) { throw 'Кнопки «Показать путь» нет в разделе «Оптимизация» — блок «Путь до сервера» потерялся' }
+Invoke-Element $pathButton 'Показать путь' | Out-Null
+
+$pathText = ''
+$pathDeadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $pathDeadline)
+{
+    Start-Sleep -Milliseconds 700
+    if ($process.HasExited) { break }
+
+    $rootNow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $pathText = Get-TextOfMainScreen $rootNow
+
+    if ($pathText -match 'Сначала запустите игру') { break }
+}
+
+Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) 'путь-до-сервера'
+
+if ($pathText -notmatch 'Сначала запустите игру')
+{
+    $shown = ($pathText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 20) -join ' / '
+    throw "Блок «Путь до сервера» не сказал честно «Сначала запустите игру». Что было на экране: $shown"
+}
+if ($pathText -match 'Проб отправлено')
+{
+    throw 'Трасса отчиталась об отправленных пробах без живой игры — так быть не должно'
+}
+Say 'путь до сервера: без игры ни одного пакета, на экране честное «Сначала запустите игру»'
+
+# ── 9. История сессий (задача J) ──────────────────────────────────────────────────────────────
+# Оптимизацию на раннере никто не запускал, значит история обязана быть пустой. Проверяем, что
+# вкладка «Сессии» есть, кнопка обновления работает и на экране честный ответ: «пуста» (служба
+# ответила) или «не отвечает» (службы нет). Строк «было … → стало …» появиться не может.
+Say ''
+Say '── Шаг 9: открываю «Журнал» → вкладку «Сессии» и читаю историю'
+$journalNav = Find-ByName $mainWindow 'Журнал' 8000
+if ($null -eq $journalNav) { throw 'В меню нет раздела «Журнал»' }
+Invoke-Element $journalNav 'Журнал' | Out-Null
+Start-Sleep -Milliseconds 900
+
+# Вкладка — элемент выбора, а не кнопка: ищем именно тот, у которого есть SelectionItemPattern.
+$sessionsTab = $null
+$tabDeadline = (Get-Date).AddSeconds(8)
+while ((Get-Date) -lt $tabDeadline -and $null -eq $sessionsTab)
+{
+    foreach ($candidate in (Find-AllByName $mainWindow 'Сессии'))
+    {
+        $pattern = $null
+        if ($candidate.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$pattern))
+        {
+            $sessionsTab = $candidate
+            break
+        }
+    }
+    if ($null -eq $sessionsTab) { Start-Sleep -Milliseconds 300 }
+}
+if ($null -eq $sessionsTab) { throw 'В разделе «Журнал» нет вкладки «Сессии» — история сессий потерялась' }
+Invoke-Element $sessionsTab 'Сессии' | Out-Null
+Start-Sleep -Milliseconds 700
+
+$sessionsButton = Find-ByName $mainWindow 'Обновить сессии' 8000
+if ($null -eq $sessionsButton) { throw 'На вкладке «Сессии» нет кнопки «Обновить сессии»' }
+Invoke-Element $sessionsButton 'Обновить сессии' | Out-Null
+
+$sessionsText = ''
+$sessionsDeadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $sessionsDeadline)
+{
+    Start-Sleep -Milliseconds 700
+    if ($process.HasExited) { break }
+
+    $rootNow = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    $sessionsText = Get-TextOfMainScreen $rootNow
+
+    if ($sessionsText -match 'История сессий пуста' -or $sessionsText -match 'не отвечает') { break }
+}
+
+Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) 'история-сессий'
+
+if ($sessionsText -notmatch 'История сессий пуста' -and $sessionsText -notmatch 'не отвечает')
+{
+    $shown = ($sessionsText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 25) -join ' / '
+    throw "Вкладка «Сессии» не ответила ни «история пуста», ни «служба не отвечает». Что было на экране: $shown"
+}
+if ($sessionsText -match 'было \d+([.,]\d+)? мс → стало')
+{
+    throw 'История сессий показала «было → стало» без единой сессии — числа выдуманы'
+}
+Say 'история сессий: вкладка на месте, пустая история честно названа пустой, выдуманных чисел нет'
+
+# ── 10. Регионы игр и честная карточка DNS (задача D) ───────────────────────────────────────────
+# Проверяем то, что видит человек: у карточек «Игры» есть регионы и порты из справочника, а в
+# «Твиках» — карточка «DNS — это про вход, а не про пинг» со списком резолверов. Никаких чисел
+# «пинга до региона» здесь быть не может: игра не публикует адреса дата-центров.
+Say ''
+Say '── Шаг 10: смотрю регионы игр и карточку DNS'
+foreach ($check in @(
+    @{ Section = 'Игры';  Shot = 'шаг10-регионы-игр';  Name = 'регионы игр';
+       Texts = @('Где серверы этой игры', 'Где серверы:', 'Порты') },
+    @{ Section = 'Твики'; Shot = 'шаг10-карточка-dns'; Name = 'карточка DNS';
+       Texts = @('DNS — это про вход, а не про пинг', '1.1.1.1', 'не снижает пинг в матче') }))
+{
+    $handle = (Get-Process -Id $process.Id).MainWindowHandle
+    $mainWindow = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+    $nav = Find-ByName $mainWindow $check.Section 8000
+    if ($null -eq $nav) { throw "В меню нет раздела «$($check.Section)» — проверять $($check.Name) не на чем" }
+    Invoke-Element $nav $check.Section | Out-Null
+    Start-Sleep -Milliseconds 900
+
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle((Get-Process -Id $process.Id).MainWindowHandle)
+    foreach ($text in $check.Texts)
+    {
+        if (-not (Test-TextInWindow $root $text))
+        {
+            throw "В разделе «$($check.Section)» не видно $($check.Name): искал текст «$text»"
+        }
+    }
+
+    Save-Window ((Get-Process -Id $process.Id).MainWindowHandle) $check.Shot
+    Say "раздел «$($check.Section)»: $($check.Name) — на месте, тексты «$($check.Texts -join '», «')» найдены"
+}
+
+# ── 11. Итог ────────────────────────────────────────────────────────────────────────────────────
 Say ''
 if ($process.HasExited)
 {

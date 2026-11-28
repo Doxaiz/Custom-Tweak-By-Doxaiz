@@ -18,10 +18,14 @@ public sealed record DetectedGameFlow(
     public string EndpointText => $"{Flow.RemoteEndpoint}:{Flow.RemotePort}";
 
     /// <summary>
-    /// Можно ли трогать сеть для этого потока. Ядерный анти-чит — стоп: маршрут и DSCP мы не применяем
-    /// молча туда, где за это можно получить блокировку аккаунта.
+    /// Нужно ли человеку предупреждение об анти-чите. Сетевые действия (маршрут и QoS) доступны всем:
+    /// это настройки Windows, в игру они не лезут и перехвата пакетов не требуют.
+    ///
+    /// Раньше здесь стояло «CanOptimize = false» для ядерного анти-чита, и окно честно повторяло:
+    /// «автоматические действия выключены, только пояснение» — при том, что маршрут и QoS для такой игры
+    /// как раз применяются. Одно имя обещало не то, что делает код.
     /// </summary>
-    public bool CanOptimize => Flow.AntiCheat != Core.Models.AntiCheatStatus.KnownKernelConflict;
+    public bool NeedsAntiCheatWarning => Flow.AntiCheat != Core.Models.AntiCheatStatus.VerifiedSafe;
 }
 
 /// <summary>
@@ -34,7 +38,8 @@ public sealed record UnknownGameCandidate(
     int CandidateCount,
     string EndpointText,
     string ReasonRu,
-    int Score = 0);
+    int Score = 0,
+    bool IsAmbiguousProcess = false);
 
 /// <summary>Итог одного поиска игры: что нашли, что не смогли прочитать и что из этого следует.</summary>
 public sealed record GameFlowDetectionReport(
@@ -43,7 +48,8 @@ public sealed record GameFlowDetectionReport(
     IReadOnlyList<string> NotesRu,
     int RowsRead,
     int PublicFlowRows,
-    int UnreadProcesses)
+    int UnreadProcesses,
+    int Ipv6FlowRows = 0)
 {
     /// <summary>Потоки в порядке «сначала наиболее игровые» — то, что нужно кнопке оптимизации.</summary>
     public IReadOnlyList<GameFlowInfo> Flows => Games.Select(g => g.Flow).ToList();
@@ -53,11 +59,11 @@ public sealed record GameFlowDetectionReport(
     public DetectedGameFlow? BestGame => Games.Count > 0 ? Games[0] : null;
 
     /// <summary>
-    /// Игры с ядерным анти-читом (Vanguard, Ricochet). Для них программа не поднимает фильтр и не применяет
-    /// сетевые действия без подтверждения — в интерфейсе это отдельная строка.
+    /// Игры с ядерным анти-читом (Vanguard, Ricochet, EAC). Сетевые действия для них те же — маршрут и QoS,
+    /// настройки Windows; в интерфейсе это отдельная строка, чтобы человек видел, что анти-чит работает в ядре.
     /// </summary>
     public IReadOnlyList<DetectedGameFlow> KernelProtectedGames =>
-        Games.Where(g => !g.CanOptimize).ToList();
+        Games.Where(g => g.Flow.AntiCheat == Core.Models.AntiCheatStatus.KnownKernelConflict).ToList();
 
     public bool HasKernelProtectedGame => KernelProtectedGames.Count > 0;
 
@@ -72,9 +78,15 @@ public sealed record GameFlowDetectionReport(
         }
 
         DetectedGameFlow best = Games[0];
-        string reason = best.CanOptimize
-            ? "сетевые действия разрешены"
-            : "ядерный анти-чит: автоматические действия выключены, только пояснение";
+        string reason = best.Flow.AntiCheat switch
+        {
+            Core.Models.AntiCheatStatus.VerifiedSafe =>
+                "маршрут и QoS разрешены, совместимость проверена",
+            Core.Models.AntiCheatStatus.KnownKernelConflict =>
+                "ядерный анти-чит: маршрут и QoS разрешены, перехвата пакетов в программе нет",
+            _ =>
+                "анти-чит не проверялся: маршрут и QoS разрешены, перехвата пакетов в программе нет",
+        };
 
         return $"Нашли: {best.GameTitleRu} — {best.EndpointText} ({best.Flow.Transport}), {reason}.";
     }
