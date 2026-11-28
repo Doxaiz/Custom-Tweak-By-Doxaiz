@@ -180,7 +180,23 @@
         </StackPanel>
 
         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-          <TextBlock Text="{Binding RttLineRu}" FontWeight="SemiBold" />
+          <!-- Главное число экрана — последний замер живого потока. Прочерк, а не ноль, пока
+               замера нет: «0 мс» выдавало бы отсутствие данных за идеальную сеть. Подпись рядом
+               называет, что это за число, а строка ниже договаривает остальное словами. -->
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" x:Name="HeroRttValue" Style="{StaticResource StatValue}"
+                       FontSize="38" LineHeight="42" Foreground="{StaticResource Accent}"
+                       Text="{Binding CurrentRttMs, StringFormat={}{0:0.#}, TargetNullValue=—}"
+                       ToolTip="Последний замер живого потока игры. Прочерк — замера ещё не было." />
+            <TextBlock Grid.Column="1" Style="{StaticResource Caption}" VerticalAlignment="Bottom"
+                       Margin="9,0,0,8" Text="мс · задержка сейчас" />
+          </Grid>
+          <TextBlock Style="{StaticResource CaptionStrong}" Margin="0,2,0,0" TextWrapping="Wrap"
+                     Text="{Binding RttLineRu}" />
           <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding StatusRu}" />
           <!-- Способ замера: строка появляется, только когда служба его назвала. Пустая строка —
                не «способ: неизвестно», а отсутствие строки: выдумывать способ нельзя. -->

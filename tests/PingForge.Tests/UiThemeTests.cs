@@ -243,6 +243,21 @@ public sealed class UiThemeTests
     }
 
     [Fact]
+    public void На_главном_экране_число_без_замера_показывается_прочерком()
+    {
+        // Крупная цифра — обещание точности: пока замера нет, на её месте прочерк. Ноль читался бы
+        // как «идеальная сеть», а число без подписи — как результат, которого не было.
+        string optimize = ReadChecked("checked-OptimizeView.xaml");
+        Assert.Contains("HeroRttValue", optimize, StringComparison.Ordinal);
+        Assert.Contains("TargetNullValue=—", optimize, StringComparison.Ordinal);
+        Assert.DoesNotContain("TargetNullValue=0", optimize, StringComparison.Ordinal);
+        Assert.Contains("мс · задержка сейчас", optimize, StringComparison.Ordinal);
+
+        // И само число берётся из живого замера, а не из константы.
+        Assert.Contains("{Binding CurrentRttMs", optimize, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Снимок_живой_проверки_берётся_из_окна_а_не_с_экрана()
     {
         // CopyFromScreen по прямоугольнику окна теряет правый край, если окно больше экрана
