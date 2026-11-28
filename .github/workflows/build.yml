@@ -129,7 +129,7 @@ jobs:
           }
         shell: pwsh
 
-      - name: Витрины — проверки: подробный макет
+      - name: Витрины — проверки подробного макета
         run: |
           node tools/check_ui_preview.js docs/pingforge-ui-preview.html 2>&1 | Tee-Object -Variable output
           if ($LASTEXITCODE -ne 0) {
@@ -138,7 +138,7 @@ jobs:
           }
         shell: pwsh
 
-      - name: Витрины — проверки: витрина
+      - name: Витрины — проверки витрины
         run: |
           node tools/check_app_site.js docs/custom-tweak-by-doxaiz.html 2>&1 | Tee-Object -Variable output
           if ($LASTEXITCODE -ne 0) {
